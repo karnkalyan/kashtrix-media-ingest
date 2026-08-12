@@ -54,19 +54,17 @@ const formatBitrate = (kbps: number) => {
   return `${kbps || 0} Kbps`;
 };
 
-const formatDuration = (startTime: string, endTime?: string, currentTime = Date.now()) => {
-  const start = new Date(startTime).getTime();
-  const end = endTime ? new Date(endTime).getTime() : currentTime;
-  const diff = Math.floor((end - start) / 1000);
-
-  if (diff <= 0) return endTime ? '0s' : 'Interrupted';
-  const h = Math.floor(diff / 3600);
-  const m = Math.floor((diff % 3600) / 60);
-  const s = diff % 60;
-
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+const defaultConfig: IngestRecordingOptions = {
+  autoRecord: false,
+  fileName: '{channel}_{date}_{time}',
+  formats: ['mp4'],
+  encoder: 'copy',
+  videoBitrate: 12000,
+  audioBitrate: 192,
+  resolution: 'source',
+  framerate: 0,
+  preset: 'fast',
+  continuous: true,
 };
 
 export const IngestServerView: React.FC<Props> = ({
@@ -89,6 +87,16 @@ export const IngestServerView: React.FC<Props> = ({
   const [recordingStatuses, setRecordingStatuses] = useState<Record<string, boolean>>({});
   const [historySearch, setHistorySearch] = useState('');
   const [historyPage, setHistoryPage] = useState(1);
+
+  // Recording control state
+  const [sourceType, setSourceType] = useState<'ingest' | 'device'>('ingest');
+  const [config, setConfig] = useState<IngestRecordingOptions>(defaultConfig);
+  const [videoDevices, setVideoDevices] = useState<string[]>([]);
+  const [audioDevices, setAudioDevices] = useState<string[]>([]);
+  const [videoDevice, setVideoDevice] = useState<string>('');
+  const [audioDevice, setAudioDevice] = useState<string>('');
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
 
   // SRT Listener & Relay Modals
   const [srtModalOpen, setSrtModalOpen] = useState(false);
@@ -115,6 +123,24 @@ export const IngestServerView: React.FC<Props> = ({
     }
   }, [fetchIngestHistory, fetchRecordings, fetchIngestStreams]);
 
+  const fetchConfig = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ingest/record/config', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setConfig(prev => ({ ...prev, ...data }));
+      }
+    } catch {}
+  }, []);
+
+  const refreshDevices = useCallback(() => {
+    setDevicesLoading(true);
+    sendRealtime({ type: 'capture_devices_request' });
+  }, []);
+
   const fetchProcesses = async () => {
     try {
       const token = localStorage.getItem('kte-auth-token');
@@ -123,14 +149,78 @@ export const IngestServerView: React.FC<Props> = ({
       });
       const data = await res.json();
       if (res.ok) setProcesses(data.processes || []);
-    } catch (e) {
-      // Ignore process fetch errors
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchConfig();
+
+    const unsubscribe = subscribeRealtime(msg => {
+      if (msg.type === 'capture_devices_response' && msg.payload) {
+        setVideoDevices(msg.payload.video || []);
+        setAudioDevices(msg.payload.audio || []);
+        setDevicesLoading(false);
+      }
+    });
+    refreshDevices();
+
+    return () => unsubscribe();
+  }, [fetchData, fetchConfig, refreshDevices]);
+
+  const saveConfig = async () => {
+    setSavingConfig(true);
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ingest/record/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(config),
+      });
+      if (res.ok) toast.success('Recording config saved');
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const toggleFormat = (format: IngestRecordingOptions['formats'][number]) => {
+    setConfig(prev => {
+      const current = prev.formats || ['mp4'];
+      const next = current.includes(format)
+        ? current.filter(f => f !== format)
+        : [...current, format];
+      return { ...prev, formats: next.length ? next : ['mp4'] };
+    });
+  };
+
+  const handleStartControlRecording = async () => {
+    const selected = sourceType === 'device'
+      ? (videoDevice || audioDevice || 'device')
+      : selectedStreamKey;
+
+    if (!selected) return toast.error('Select a valid stream or device source');
+
+    const [appName, streamName] = sourceType === 'device'
+      ? ['device', selected]
+      : selected.includes('/')
+      ? selected.split('/')
+      : ['live', selected];
+
+    try {
+      await startRecording(appName, streamName, {
+        ...config,
+        sourceType,
+        videoDevice,
+        audioDevice,
+      });
+      toast.success(`Started recording: ${selected}`);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to start recording');
+    }
+  };
 
   const localStreams = ingestStreams || {};
   const history = ingestHistory || [];
@@ -304,12 +394,27 @@ export const IngestServerView: React.FC<Props> = ({
       {/* Mode === 'recording' Professional Ingest & Device Capture Controls */}
       {mode === 'recording' && (
         <ProfessionalRecordingControl
-          settings={settings}
+          config={config}
+          setConfig={setConfig}
+          sourceType={sourceType}
+          setSourceType={setSourceType}
+          streams={localStreams}
+          selectedStreamKey={selectedStreamKey}
+          setSelectedStreamKey={setSelectedStreamKey}
+          videoDevices={videoDevices}
+          audioDevices={audioDevices}
+          videoDevice={videoDevice}
+          audioDevice={audioDevice}
+          setVideoDevice={setVideoDevice}
+          setAudioDevice={setAudioDevice}
+          refreshDevices={refreshDevices}
+          devicesLoading={devicesLoading}
+          toggleFormat={toggleFormat}
+          save={saveConfig}
+          saving={savingConfig}
+          start={handleStartControlRecording}
           profiles={profiles}
-          activeStreams={localStreams}
-          fetchData={fetchData}
-          startRecording={startRecording}
-          stopRecording={stopRecording}
+          mediaPort={settings.mediaPort}
         />
       )}
 
