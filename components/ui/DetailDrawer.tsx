@@ -51,4 +51,5 @@ const DetailDrawer: React.FC<DetailDrawerProps> = ({
   );
 };
 
+export const Drawer = DetailDrawer;
 export default DetailDrawer;

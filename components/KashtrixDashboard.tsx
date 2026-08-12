@@ -1,6 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FiActivity, FiArchive, FiHardDrive, FiPlay, FiRadio, FiRefreshCw, FiServer, FiUsers, FiVideo, FiX } from 'react-icons/fi';
+import {
+  Tv,
+  Zap,
+  Radio,
+  Archive,
+  HardDrive,
+  Users,
+  RefreshCw,
+  Play,
+  X,
+  Activity,
+  Server,
+  ChevronRight
+} from 'lucide-react';
 import Button from './ui/Button';
+import ProtocolBadge from './ui/ProtocolBadge';
 import { subscribeRealtime } from '../services/realtime';
 
 interface DashboardOverview {
@@ -33,10 +47,13 @@ const formatBytes = (bytes = 0) => {
 const emptyOverview: DashboardOverview = {
   generatedAt: '',
   totals: { channels: 0, runningChannels: 0, activeIngests: 0, activeRecordings: 0, recordings: 0, recordingBytes: 0, sessions: 0, viewers: 0, incomingBytes: 0, outgoingBytes: 0 },
-  streams: {}, recentSessions: [], recentRecordings: [],
+  streams: {},
+  recentSessions: [],
+  recentRecordings: [],
 };
 
 const dashboardCacheKey = 'kte-dashboard-overview';
+
 const readCachedOverview = (): DashboardOverview => {
   try {
     const cached = sessionStorage.getItem(dashboardCacheKey);
@@ -46,7 +63,7 @@ const readCachedOverview = (): DashboardOverview => {
   }
 };
 
-const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPort?: number }> = ({ onNavigate, mediaPort = 8080 }) => {
+export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPort?: number }> = ({ onNavigate, mediaPort = 8080 }) => {
   const [overview, setOverview] = useState<DashboardOverview>(readCachedOverview);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -64,19 +81,30 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
         setOverview(body);
         sessionStorage.setItem(dashboardCacheKey, JSON.stringify(body));
       } else if (response.status === 404) {
-        // Backward-compatible real-data fallback while an older backend process is being restarted.
         const [stateResponse, streamsResponse, recordingsResponse, historyResponse] = await Promise.all([
-          fetch('/api/state', { headers }), fetch('/api/ingest/streams', { headers }),
-          fetch('/api/ingest/recordings', { headers }), fetch('/api/ingest/history', { headers }),
+          fetch('/api/state', { headers }),
+          fetch('/api/ingest/streams', { headers }),
+          fetch('/api/ingest/recordings', { headers }),
+          fetch('/api/ingest/history', { headers }),
         ]);
-        if (![stateResponse, streamsResponse, recordingsResponse, historyResponse].every(item => item.ok)) throw new Error('Main API is not ready. Restart npm run dev.');
-        const [state, streamData, recordingData, historyData] = await Promise.all([stateResponse.json(), streamsResponse.json(), recordingsResponse.json(), historyResponse.json()]);
+        if (![stateResponse, streamsResponse, recordingsResponse, historyResponse].every(item => item.ok)) {
+          throw new Error('Main API server is loading');
+        }
+        const [state, streamData, recordingData, historyData] = await Promise.all([
+          stateResponse.json(),
+          streamsResponse.json(),
+          recordingsResponse.json(),
+          historyResponse.json(),
+        ]);
         const recordings = recordingData.recordings || [];
         const sessions = historyData.history || [];
         const streams = streamData.streams || {};
         const streamValues = Object.values(streams) as any[];
         const fallbackOverview = {
-          generatedAt: new Date().toISOString(), streams, recentSessions: sessions.slice(0, 8), recentRecordings: recordings.slice(0, 8),
+          generatedAt: new Date().toISOString(),
+          streams,
+          recentSessions: sessions.slice(0, 8),
+          recentRecordings: recordings.slice(0, 8),
           totals: {
             channels: state.channels?.length || 0,
             runningChannels: state.channels?.filter((channel: any) => channel.status === 'Running').length || 0,
@@ -98,7 +126,7 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
       setError('');
     } catch (cause: any) {
       if (showIndicator || !sessionStorage.getItem(dashboardCacheKey)) {
-        setError(cause.message || 'Unable to load dashboard');
+        setError(cause.message || 'Unable to load dashboard overview');
       }
     } finally {
       if (showIndicator) setRefreshing(false);
@@ -125,88 +153,229 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
       } else if (message.type === 'ingest_stats') {
         const streams = message.payload || {};
         const streamValues = Object.values(streams) as any[];
-        commit(current => ({ ...current, generatedAt: new Date().toISOString(), streams, totals: { ...current.totals, activeIngests: streamValues.length, activeRecordings: streamValues.filter(stream => stream?.isRecording).length, viewers: streamValues.reduce((total, stream) => total + Number(stream?.viewers || 0), 0) } }));
+        commit(current => ({
+          ...current,
+          generatedAt: new Date().toISOString(),
+          streams,
+          totals: {
+            ...current.totals,
+            activeIngests: streamValues.length,
+            activeRecordings: streamValues.filter(stream => stream?.isRecording).length,
+            viewers: streamValues.reduce((total, stream) => total + Number(stream?.viewers || 0), 0),
+          },
+        }));
       } else if (message.type === 'recordings_list') {
         const recordings = Array.isArray(message.payload) ? message.payload : [];
-        commit(current => ({ ...current, generatedAt: new Date().toISOString(), recentRecordings: recordings.slice(0, 8), totals: { ...current.totals, recordings: recordings.length, activeRecordings: recordings.filter(recording => recording?.is_active).length, recordingBytes: recordings.reduce((total, recording) => total + Number(recording?.size || 0), 0) } }));
-      } else if (message.type === 'ingest_history') {
-        const sessions = Array.isArray(message.payload) ? message.payload : [];
-        commit(current => ({ ...current, generatedAt: new Date().toISOString(), recentSessions: sessions.slice(0, 8) }));
+        commit(current => ({
+          ...current,
+          generatedAt: new Date().toISOString(),
+          recentRecordings: recordings.slice(0, 8),
+          totals: {
+            ...current.totals,
+            recordings: recordings.length,
+            activeRecordings: recordings.filter(recording => recording?.is_active).length,
+            recordingBytes: recordings.reduce((total, recording) => total + Number(recording?.size || 0), 0),
+          },
+        }));
       }
     }, setRealtimeConnected);
   }, []);
 
-  const cards = useMemo(() => [
-    { label: 'Configured channels', value: overview.totals.channels, detail: `${overview.totals.runningChannels} running`, icon: FiVideo, color: 'text-violet-600 bg-violet-50' },
-    { label: 'Live ingests', value: overview.totals.activeIngests, detail: 'RTMP inputs online', icon: FiRadio, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Recording now', value: overview.totals.activeRecordings, detail: `${overview.totals.recordings} archived files`, icon: FiActivity, color: 'text-rose-600 bg-rose-50' },
-    { label: 'Recording storage', value: formatBytes(overview.totals.recordingBytes), detail: 'Real files on disk', icon: FiHardDrive, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Peak viewers', value: overview.totals.viewers, detail: `${overview.totals.sessions} ingest sessions`, icon: FiUsers, color: 'text-amber-600 bg-amber-50' },
-  ], [overview]);
-
   return (
-    <div className="page-stack">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="dashboard-workspace page-stack space-y-4">
+      {/* Header Strip */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
         <div>
-          <h2 className="font-display text-xl font-bold text-[var(--text-primary)]">StreamOps Overview</h2>
-          <p className="text-xs text-[var(--text-secondary)]">Live API data from this ingest and transcode server.</p>
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">StreamOps Overview</h1>
+          <p className="mt-0.5 text-[12px] text-[#6F6078]">
+            Live API telemetry from this ingest and transcoding node
+          </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => fetchOverview(true)} loading={refreshing}><FiRefreshCw size={14} /> Refresh</Button>
+
+        <button
+          type="button"
+          onClick={() => fetchOverview(true)}
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+        >
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /> Refresh
+        </button>
       </div>
 
-      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+      {error && (
+        <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-3 text-[12px] font-semibold text-[#DC3545]">
+          {error}
+        </div>
+      )}
 
-      <div className="metric-grid">
-        {cards.map(({ label, value, detail, icon: Icon, color }) => (
-          <div key={label} className="metric-cell">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><p className="metric-cell__label">{label}</p><p className="metric-cell__value truncate">{value}</p></div>
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${color}`}><Icon size={15} /></span>
+      {/* KPI Cards Strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Channels</span>
+          <p className="font-mono text-[20px] font-bold text-[#1B1024]">{overview.totals.channels}</p>
+          <span className="text-[10px] text-[#16A36A] font-medium">{overview.totals.runningChannels} active</span>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Live Ingests</span>
+          <p className="font-mono text-[20px] font-bold text-[#16A36A]">{overview.totals.activeIngests}</p>
+          <span className="text-[10px] text-[#6F6078]">RTMP / SRT feeds</span>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Recs</span>
+          <p className="font-mono text-[20px] font-bold text-[#E11D72]">{overview.totals.activeRecordings}</p>
+          <span className="text-[10px] text-[#6F6078]">{overview.totals.recordings} archived</span>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Storage</span>
+          <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBytes(overview.totals.recordingBytes)}</p>
+          <span className="text-[10px] text-[#6F6078]">On disk</span>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs col-span-2 sm:col-span-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Viewers</span>
+          <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{overview.totals.viewers}</p>
+          <span className="text-[10px] text-[#6F6078]">{overview.totals.sessions} sessions</span>
+        </div>
+      </div>
+
+      {/* Main 2-Column Desktop Grid */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Left Column: Live Streams */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
+            <div>
+              <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Live Television Ingests</h2>
+              <p className="text-[11px] text-[#6F6078]">Active streams published to server</p>
             </div>
-            <p className="metric-cell__detail">{detail}</p>
+            <button
+              onClick={() => onNavigate?.('ingest')}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#6D32D9] hover:underline"
+            >
+              Open Ingest Control <ChevronRight size={13} />
+            </button>
           </div>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(280px,.7fr)]">
-        <section className="data-panel">
-          <div className="panel-header flex-col !items-stretch min-[420px]:flex-row min-[420px]:!items-center">
-            <div><h3 className="font-bold text-[var(--text-primary)]">Live television inputs</h3><p className="text-xs text-[var(--text-muted)]">Incoming streams reported by the ingest server</p></div>
-            <button onClick={() => onNavigate?.('ingest')} className="text-left text-xs font-bold text-[var(--primary)] min-[420px]:text-right">Open recording control →</button>
-          </div>
           {Object.keys(overview.streams).length === 0 ? (
-            <div className="compact-empty">No television input is live right now.</div>
+            <div className="grid min-h-[140px] place-items-center p-6 text-center text-[#6F6078] text-[12px]">
+              <div>
+                <Zap size={22} className="mx-auto text-[#6F6078]" />
+                <p className="mt-1 font-semibold text-[#1B1024]">No television inputs active</p>
+              </div>
+            </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="p-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Object.entries(overview.streams).map(([key, stream]: [string, any]) => (
-                <div key={key} className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-                  <div className="flex items-center justify-between gap-3"><p className="truncate font-bold text-[var(--text-primary)]">{stream.name || key}</p><span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-black text-emerald-700">LIVE</span></div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[10px]"><span><b className="block text-sm">{stream.incoming_kbps || 0}</b>Kbps in</span><span><b className="block text-sm">{stream.viewers || 0}</b>viewers</span><span><b className={`block text-sm ${stream.isRecording ? 'text-rose-600' : ''}`}>{stream.isRecording ? 'REC' : 'OFF'}</b>recording</span></div>
+                <div key={key} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#1B1024] text-[13px] truncate">{stream.name || key}</span>
+                    <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.2 text-[9px] font-bold text-[#16A36A]">
+                      LIVE
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 text-center font-mono text-[11px]">
+                    <div>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078]">Bitrate</span>
+                      <b className="text-[#2563EB]">{stream.incoming_kbps || 0}k</b>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078]">Viewers</span>
+                      <b className="text-[#1B1024]">{stream.viewers || 0}</b>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078]">Recording</span>
+                      <b className={stream.isRecording ? 'text-[#E11D72]' : 'text-[#6F6078]'}>
+                        {stream.isRecording ? 'REC' : 'OFF'}
+                      </b>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-        </section>
+        </div>
 
-        <section className="data-panel">
-          <div className="panel-header"><div className="flex items-center gap-2"><FiArchive className="text-[var(--primary)]" /><h3 className="panel-title">Latest recordings</h3></div></div>
-          <div className="divide-y divide-[var(--border)]">
-            {overview.recentRecordings.length === 0 && <p className="compact-empty">No recordings yet.</p>}
-            {overview.recentRecordings.slice(0, 6).map(recording => (
-              <div key={recording.id} className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--border)] pb-3 last:border-0">
-                <div className="min-w-0"><p className="truncate text-sm font-bold text-[var(--text-primary)]">{recording.file_name}</p><p className="text-[10px] text-[var(--text-muted)]">{recording.app}/{recording.stream} · {(recording.format || 'file').toUpperCase()}</p></div>
-                <div className="flex shrink-0 items-center gap-2"><span className="text-xs font-bold text-[var(--text-secondary)]">{formatBytes(Number(recording.size || 0))}</span><button onClick={() => setPreviewRecording(recording)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary-200)] hover:text-[var(--primary)]" title="Preview recording"><FiPlay size={13} /></button></div>
-              </div>
-            ))}
+        {/* Right Column: Latest Recordings */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
+            <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Latest Recordings</h2>
+            <button
+              onClick={() => onNavigate?.('recordings')}
+              className="text-[11px] font-semibold text-[#6D32D9] hover:underline"
+            >
+              View All
+            </button>
           </div>
-        </section>
+
+          <div className="divide-y divide-[#E8DFF0]">
+            {overview.recentRecordings.length === 0 ? (
+              <div className="p-6 text-center text-[#6F6078] text-[12px]">No recordings archived.</div>
+            ) : (
+              overview.recentRecordings.slice(0, 5).map(recording => (
+                <div key={recording.id} className="flex items-center justify-between p-3 transition-colors hover:bg-[#F4EEFF]/40">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-[#1B1024] text-[12px]" title={recording.file_name}>
+                      {recording.file_name}
+                    </p>
+                    <p className="text-[10px] text-[#6F6078]">
+                      {recording.app}/{recording.stream} • {formatBytes(Number(recording.size || 0))}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewRecording(recording)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E8DFF0] text-[#4A1B7A] hover:bg-[#F4EEFF]"
+                  >
+                    <Play size={13} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-[10px] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex items-center gap-2"><FiServer /><span className={`h-2 w-2 rounded-full ${realtimeConnected ? 'bg-emerald-500' : 'bg-amber-400'}`} />{realtimeConnected ? 'Realtime connected' : 'Realtime reconnecting'}</span><span>Last update: {overview.generatedAt ? new Date(overview.generatedAt).toLocaleString() : 'waiting…'}</span>
+      {/* Telemetry Footer Strip */}
+      <div className="flex items-center justify-between rounded-xl border border-[#E8DFF0] bg-white px-4 py-2.5 text-[11px] text-[#6F6078] shadow-xs">
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${realtimeConnected ? 'bg-[#16A36A]' : 'bg-[#D97706]'}`} />
+          <span className="font-semibold text-[#1B1024]">
+            {realtimeConnected ? 'Telemetry Feed Active' : 'Connecting to Telemetry Daemon...'}
+          </span>
+        </div>
+        <span className="font-mono">
+          Last poll: {overview.generatedAt ? new Date(overview.generatedAt).toLocaleTimeString() : 'waiting...'}
+        </span>
       </div>
 
-      {previewRecording && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setPreviewRecording(null); }}><div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl"><div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-white">{previewRecording.file_name}</h3><p className="text-[11px] text-slate-400">Recording preview</p></div><button onClick={() => setPreviewRecording(null)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10"><FiX size={18} /></button></div><div className="aspect-video bg-black"><video key={previewRecording.id} controls autoPlay playsInline className="h-full w-full object-contain" src={`/recording-preview/${previewRecording.id}`} /></div></div></div>}
+      {/* Recording Preview Modal */}
+      {previewRecording && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
+          onClick={e => { if (e.target === e.currentTarget) setPreviewRecording(null); }}
+        >
+          <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E8DFF0] bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
+              <h3 className="truncate font-display text-[15px] font-semibold text-[#1B1024]">
+                {previewRecording.file_name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPreviewRecording(null)}
+                className="rounded p-1 text-[#6F6078] hover:bg-[#F8F7FA]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="aspect-video bg-black">
+              <video
+                controls
+                autoPlay
+                playsInline
+                className="h-full w-full object-contain"
+                src={`/recording-preview/${previewRecording.id}`}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,12 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FiActivity, FiZap, FiRefreshCw, FiPlay, FiPlus, FiTrash2, FiGlobe, FiFilm, FiVideo, FiCheck, FiCopy, FiCheckCircle } from 'react-icons/fi';
+import {
+  Globe,
+  Film,
+  Video,
+  Zap,
+  Activity,
+  Play,
+  Plus,
+  Trash2,
+  RefreshCw,
+  CheckCircle2,
+  Copy,
+  Layers,
+  Info,
+  Check,
+  X
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppSettings, Channel, ChannelDestination, InputType, Protocol, TranscodingProfile } from '../types';
-import { LIVE_PROTOCOL_OPTIONS, RESOLUTION_OPTIONS, FRAMERATE_OPTIONS } from '../constants';
-import Button from './ui/Button';
+import { LIVE_PROTOCOL_OPTIONS } from '../constants';
+import SegmentedControl from './ui/SegmentedControl';
+import ProtocolBadge from './ui/ProtocolBadge';
+import CodeField from './ui/CodeField';
 import Select from './ui/Select';
-import Card from './ui/Card';
-import StatusBadge from './ui/StatusBadge';
+import DetailDrawer from './ui/DetailDrawer';
 import FileUpload from './FileUpload';
 import { sendRealtime, subscribeRealtime } from '../services/realtime';
 
@@ -33,6 +50,8 @@ interface Program {
 }
 
 interface Props {
+  isOpen: boolean;
+  onClose: () => void;
   profiles: TranscodingProfile[];
   settings: AppSettings;
   licenseStatus: string;
@@ -43,13 +62,13 @@ interface Props {
   setProfileId: (id: string) => void;
 }
 
-const inputTabs = [
-  { value: InputType.URL, label: 'URL', icon: FiGlobe },
-  { value: InputType.VOD, label: 'VOD', icon: FiFilm },
-  { value: InputType.DEVICE, label: 'Device', icon: FiVideo },
-  { value: InputType.LIVE, label: 'Live', icon: FiZap },
-  { value: InputType.SRT, label: 'SRT', icon: FiActivity },
-  { value: InputType.YOUTUBE, label: 'YouTube', icon: FiPlay },
+const inputSourceOptions = [
+  { value: InputType.URL, label: 'URL', icon: Globe },
+  { value: InputType.VOD, label: 'VOD', icon: Film },
+  { value: InputType.DEVICE, label: 'Device', icon: Video },
+  { value: InputType.LIVE, label: 'Live', icon: Zap },
+  { value: InputType.SRT, label: 'SRT', icon: Activity },
+  { value: InputType.YOUTUBE, label: 'YouTube', icon: Play },
 ];
 
 const destinationOptions = [
@@ -61,7 +80,7 @@ const destinationOptions = [
 ];
 
 const safeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'stream';
-const id = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, streamKey = '') => {
   const slug = safeName(name);
@@ -97,7 +116,18 @@ const playbackUrl = (protocol: Protocol, name: string, settings: AppSettings, ur
   return url;
 };
 
-const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addChannel, getTsPrograms, fetchIngestStreams, profileId, setProfileId }) => {
+export const Configurator: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  profiles,
+  settings,
+  licenseStatus,
+  addChannel,
+  getTsPrograms,
+  fetchIngestStreams,
+  profileId,
+  setProfileId,
+}) => {
   const [inputType, setInputType] = useState<InputType>(InputType.SRT);
   const [channelName, setChannelName] = useState('Main Feed');
   const [inputUrl, setInputUrl] = useState('srt://0.0.0.0:8890?mode=listener');
@@ -112,12 +142,16 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
   const [audioDevice, setAudioDevice] = useState('');
   const [liveStreams, setLiveStreams] = useState<any>({});
   const [loading, setLoading] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
   const [destinations, setDestinations] = useState<ChannelDestination[]>([
-    { id: id(), name: 'HLS Preview', protocol: Protocol.HLS, url: defaultUrl(Protocol.HLS, 'Main Feed', settings), playbackUrl: playbackUrl(Protocol.HLS, 'Main Feed', settings, defaultUrl(Protocol.HLS, 'Main Feed', settings)) },
+    {
+      id: uniqueId(),
+      name: 'HLS Preview',
+      protocol: Protocol.HLS,
+      url: defaultUrl(Protocol.HLS, 'Main Feed', settings),
+      playbackUrl: playbackUrl(Protocol.HLS, 'Main Feed', settings, defaultUrl(Protocol.HLS, 'Main Feed', settings)),
+    },
   ]);
 
-  const canOperate = licenseStatus === 'activated';
   const currentProgram = useMemo(() => programs.find(p => p.id === programId), [programId, programs]);
 
   const recordingOutputUrl = (destination: ChannelDestination) => {
@@ -187,13 +221,13 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
   const probeInput = async () => {
     let targetInput = inputUrl;
     if (inputType === InputType.LIVE) {
-       const stream = Object.values(liveStreams).find((s: any) => s.streamName === inputUrl || s.appName === inputUrl || `${s.app}/${s.name}` === inputUrl);
-       if (stream) targetInput = `rtmp://127.0.0.1:${settings.rtmpPort}/${(stream as any).app}/${(stream as any).name}`;
+      const stream = Object.values(liveStreams).find((s: any) => s.streamName === inputUrl || s.appName === inputUrl || `${s.app}/${s.name}` === inputUrl);
+      if (stream) targetInput = `rtmp://127.0.0.1:${settings.rtmpPort}/${(stream as any).app}/${(stream as any).name}`;
     }
 
-    if (!targetInput) return toast.error('Choose or enter an input first.');
+    if (!targetInput) return toast.error('Enter or select an input first.');
     if (inputType === InputType.YOUTUBE) return toast.error('Probing is not available for YouTube URLs.');
-    
+
     setLoading(true);
     try {
       const found = await getTsPrograms(targetInput);
@@ -223,7 +257,7 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
 
   const addDestination = () => {
     const url = defaultUrl(Protocol.RTMP, channelName, settings);
-    setDestinations(prev => [...prev, { id: id(), name: 'RTMP Output', protocol: Protocol.RTMP, url, playbackUrl: playbackUrl(Protocol.RTMP, channelName, settings, url) }]);
+    setDestinations(prev => [...prev, { id: uniqueId(), name: 'RTMP Output', protocol: Protocol.RTMP, url, playbackUrl: playbackUrl(Protocol.RTMP, channelName, settings, url) }]);
   };
 
   const createChannel = async () => {
@@ -241,8 +275,8 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
         finalInput = `device://audio=${audioDevice}`;
       }
     } else if (inputType === InputType.LIVE) {
-        const stream = Object.values(liveStreams).find((s: any) => s.streamName === inputUrl || s.appName === inputUrl || `${s.app}/${s.name}` === inputUrl);
-        if (stream) finalInput = `/${(stream as any).app}/${(stream as any).name}`;
+      const stream = Object.values(liveStreams).find((s: any) => s.streamName === inputUrl || s.appName === inputUrl || `${s.app}/${s.name}` === inputUrl);
+      if (stream) finalInput = `/${(stream as any).app}/${(stream as any).name}`;
     }
 
     if (!finalInput) return toast.error('Input is required.');
@@ -261,34 +295,25 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
       selectedAudioStream,
     });
     toast.success('Channel saved successfully.');
+    onClose();
   };
 
-  const copyUrl = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 1500);
-    toast.success('URL copied to clipboard');
-  };
-
-  const renderInput = () => {
+  const renderInputFields = () => {
     if (inputType === InputType.URL || inputType === InputType.SRT || inputType === InputType.YOUTUBE) {
       return (
         <div className="relative">
-          <input 
-            className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 pr-10 text-sm font-mono text-[var(--text-primary)] outline-none focus:border-[var(--primary)] focus:ring-4 focus:ring-[var(--primary)]/10" 
-            placeholder="srt://0.0.0.0:8890?mode=listener" 
-            value={inputUrl} 
-            onChange={e => setInputUrl(e.target.value)} 
+          <input
+            className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+            placeholder="srt://0.0.0.0:8890?mode=listener"
+            value={inputUrl}
+            onChange={e => setInputUrl(e.target.value)}
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500">
-            <FiCheckCircle size={18} />
-          </span>
         </div>
       );
     }
     if (inputType === InputType.VOD) {
       return (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Select label="Server VOD File" value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="Select VOD file" options={vodFiles.map(f => ({ value: f.name, label: f.originalName }))} />
           <FileUpload onFileUploaded={(file, original) => { setInputUrl(file); if (!channelName) setChannelName(original.replace(/\.[^.]+$/, '')); refreshVod(); }} selectedFileName={null} uploadButtonText="Upload VOD File" />
         </div>
@@ -296,7 +321,7 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
     }
     if (inputType === InputType.DEVICE) {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2">
           <Select label="Video Device" value={videoDevice} onChange={e => setVideoDevice(e.target.value)} placeholder="No video" options={videoDevices.map(name => ({ value: name, label: name }))} />
           <Select label="Audio Device" value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="No audio" options={audioDevices.map(name => ({ value: name, label: name }))} />
         </div>
@@ -305,19 +330,17 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
     if (inputType === InputType.LIVE) {
       return (
         <div className="flex gap-2">
-           <Select 
-            label="Active Ingest Stream" 
-            value={inputUrl} 
-            onChange={e => setInputUrl(e.target.value)} 
-            placeholder="Select stream" 
-            options={Object.values(liveStreams).map((s: any) => ({ value: `${s.app}/${s.name}`, label: `${s.app}/${s.name}` }))} 
+          <Select
+            label="Active Ingest Stream"
+            value={inputUrl}
+            onChange={e => setInputUrl(e.target.value)}
+            placeholder="Select stream"
+            options={Object.values(liveStreams).map((s: any) => ({ value: `${s.app}/${s.name}`, label: `${s.app}/${s.name}` }))}
             className="flex-1"
-           />
-           <Button type="button" variant="secondary" onClick={refreshLive} className="mt-6">
-              <span className={loading ? 'animate-spin' : ''}>
-                <FiRefreshCw size={14} />
-              </span>
-           </Button>
+          />
+          <button type="button" onClick={refreshLive} className="mt-6 flex h-9 w-9 items-center justify-center rounded-md border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] hover:bg-[#F4EEFF]">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
         </div>
       );
     }
@@ -327,176 +350,164 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
   const videoStreams = currentProgram?.streams.filter(s => s.type === 'video') || [];
   const audioStreams = currentProgram?.streams.filter(s => s.type === 'audio') || [];
 
+  const footerActions = (
+    <div className="flex items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={onClose}
+        className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[12px] font-semibold text-[#6F6078] hover:bg-[#F8F7FA]"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={createChannel}
+        disabled={loading}
+        className="flex h-9 items-center gap-1.5 rounded-md bg-[#351147] px-5 text-[12px] font-semibold text-white hover:bg-[#2B0D3A]"
+      >
+        <Play size={14} /> Save Live Channel
+      </button>
+    </div>
+  );
+
   return (
-    <div className="channel-composer page-stack">
-      {/* 1. Channel Composer Card */}
-      <Card>
-        <div className="flex flex-col gap-3 mb-4 min-[430px]:flex-row min-[430px]:items-start min-[430px]:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-extrabold text-[var(--text-primary)]">Channel Composer</h2>
-            <p className="text-xs text-[var(--text-secondary)]">Create live TV channels, assign inputs & transcoding profiles</p>
-          </div>
-          <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /> ACTIVATED
-          </span>
+    <DetailDrawer
+      open={isOpen}
+      onClose={onClose}
+      title="Create Channel"
+      subtitle="Configure live TV channel input, transcoding profile and outputs"
+      width="max-w-[500px]"
+      footer={footerActions}
+    >
+      <div className="space-y-4">
+        {/* 1. Input Source Type */}
+        <div>
+          <label className="mb-1.5 block text-[12px] font-semibold text-[#1B1024]">
+            1. Input Source <span className="text-[#E11D72]">*</span>
+          </label>
+          <SegmentedControl
+            options={inputSourceOptions}
+            value={inputType}
+            onChange={val => setInputType(val as InputType)}
+          />
         </div>
 
-        {/* Input Type Selector Grid */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
-          {inputTabs.map(tab => {
-            const Icon = tab.icon;
-            const isActive = inputType === tab.value;
-            return (
-              <button 
-                key={tab.value} 
-                onClick={() => setInputType(tab.value)} 
-                className={`flex flex-col items-center justify-center gap-1 h-14 rounded-[var(--radius-md)] border text-[11px] font-extrabold transition-all ${
-                  isActive 
-                    ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
-                    : 'bg-[var(--surface-muted)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                <Icon size={16} /> {tab.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="space-y-4">
+        {/* 2. Input Configuration */}
+        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-3">
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-bold text-[var(--text-primary)]">Channel Name <span className="text-red-500">*</span></label>
-              <span className="text-[10px] text-[var(--text-muted)] font-mono">9/100</span>
-            </div>
-            <input 
-              className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-[var(--primary)] focus:ring-4 focus:ring-[var(--primary)]/10" 
-              placeholder="Main Feed" 
-              value={channelName} 
-              onChange={e => setChannelName(e.target.value)} 
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-[var(--text-primary)] mb-1">Input Source <span className="text-red-500">*</span></label>
-            {renderInput()}
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">
+              Input Source URL / Device <span className="text-[#E11D72]">*</span>
+            </label>
+            {renderInputFields()}
           </div>
 
           <button
             type="button"
             onClick={probeInput}
             disabled={loading}
-            className="w-full h-11 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] text-xs font-bold text-[var(--text-primary)] flex items-center justify-center gap-2 transition-all shadow-[var(--shadow-sm)]"
+            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-[#E8DFF0] bg-white text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
           >
-            <span className={loading ? 'animate-spin' : ''}><FiRefreshCw size={14} /></span>
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             Probe Input Streams & Programs
           </button>
 
           {programs.length > 0 && (
-            <div className="rounded-[var(--radius-md)] border border-[var(--primary-200)] bg-[var(--primary-50)] p-4 space-y-3">
+            <div className="rounded-md border border-[#D8C6E8] bg-[#F4EEFF] p-3 space-y-2">
               <Select label="Program" value={programId?.toString() || ''} onChange={e => setProgramId(Number(e.target.value))} options={programs.map(p => ({ value: String(p.id), label: `${p.id} - ${p.name}` }))} />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <Select label="Video Stream" value={selectedVideoStream || ''} onChange={e => setSelectedVideoStream(e.target.value || undefined)} placeholder="No video" options={videoStreams.map(s => ({ value: s.index, label: `${s.index} ${s.codec} ${s.resolution || ''}` }))} />
                 <Select label="Audio Stream" value={selectedAudioStream || ''} onChange={e => setSelectedAudioStream(e.target.value || undefined)} placeholder="No audio" options={audioStreams.map(s => ({ value: s.index, label: `${s.index} ${s.codec} ${s.lang}` }))} />
               </div>
             </div>
           )}
+        </div>
 
-          <Select 
-            label="Transcoding Profile *" 
-            value={profileId} 
-            onChange={e => setProfileId(e.target.value)} 
-            options={profiles.map(p => ({ value: p.id, label: p.name }))} 
+        {/* 3. Channel Settings */}
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024]">
+              2. Channel Name <span className="text-[#E11D72]">*</span>
+            </label>
+            <input
+              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 text-[13px] font-semibold text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+              placeholder="Main Feed"
+              value={channelName}
+              onChange={e => setChannelName(e.target.value)}
+            />
+          </div>
+
+          <Select
+            label="Transcoding Profile *"
+            value={profileId}
+            onChange={e => setProfileId(e.target.value)}
+            options={profiles.map(p => ({ value: p.id, label: `${p.name} (${p.resolution || '1080p'})` }))}
           />
         </div>
-      </Card>
 
-      {/* 2. Output Destinations Card */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-extrabold text-[var(--text-primary)]">Output Destinations</h2>
-            <p className="text-xs text-[var(--text-secondary)]">Push to HLS, DASH, RTMP, YouTube, or local Recording files</p>
+        {/* 4. Output Destinations */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[12px] font-semibold text-[#1B1024]">
+              3. Output Destinations ({destinations.length})
+            </label>
+            <button
+              type="button"
+              onClick={addDestination}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#6D32D9] hover:underline"
+            >
+              <Plus size={13} /> Add Output
+            </button>
           </div>
-          <button 
-            type="button" 
-            onClick={addDestination}
-            className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-muted)] px-3 py-2 text-xs font-bold text-[var(--text-primary)] transition-all shadow-[var(--shadow-sm)] min-[430px]:w-auto"
-          >
-            <FiPlus size={14} /> Add Destination
-          </button>
-        </div>
 
-        <div className="space-y-4">
-          {destinations.map(destination => (
-            <div key={destination.id} className="min-w-0 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3 sm:p-4 space-y-3">
-              <div className="grid grid-cols-1 gap-3">
-                <Select label="Protocol" value={destination.protocol} onChange={e => setDestination(destination.id, { protocol: e.target.value as Protocol })} options={destinationOptions.map(o => ({ value: o.value, label: o.label }))} />
-                <div>
-                  <label className="block text-xs font-bold text-[var(--text-primary)] mb-1">Destination Label</label>
-                  <div className="flex min-w-0 flex-col gap-2 min-[360px]:flex-row min-[360px]:items-center">
-                    <input className="min-w-0 w-full flex-1 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--primary)]" placeholder="HLS Preview" value={destination.name} onChange={e => setDestination(destination.id, { name: e.target.value })} />
-                    <StatusBadge status="Active" />
+          <div className="space-y-2.5">
+            {destinations.map(dest => (
+              <div key={dest.id} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ProtocolBadge protocol={dest.protocol} />
+                    <input
+                      className="h-7 rounded border border-[#E8DFF0] bg-white px-2 text-[12px] font-semibold text-[#1B1024]"
+                      placeholder="Label"
+                      value={dest.name}
+                      onChange={e => setDestination(dest.id, { name: e.target.value })}
+                    />
                   </div>
-                </div>
-              </div>
-
-              {(destination.protocol === Protocol.YOUTUBE || destination.protocol === Protocol.FACEBOOK) && (
-                <input className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-mono text-[var(--text-primary)] outline-none" placeholder="Stream key" value={destination.streamKey || ''} onChange={e => {
-                  const url = defaultUrl(destination.protocol, channelName, settings, e.target.value);
-                  setDestination(destination.id, { streamKey: e.target.value, url, playbackUrl: playbackUrl(destination.protocol, channelName, settings, url) });
-                }} />
-              )}
-
-              {destination.protocol === Protocol.RECORDING ? (
-                <div className="grid grid-cols-1 gap-3">
-                  <input className="min-w-0 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm" placeholder="File name" value={destination.recording?.fileName || ''} onChange={e => setDestination(destination.id, { recording: { format: destination.recording?.format || 'mp4', ...destination.recording, fileName: e.target.value } })} />
-                  <Select label="Format" value={destination.recording?.format || 'mp4'} onChange={e => setDestination(destination.id, { recording: { ...destination.recording, format: e.target.value as any } })} options={['mp4', 'mkv', 'mov', 'ts', 'flv'].map(value => ({ value, label: value.toUpperCase() }))} />
-                </div>
-              ) : (
-                <div className="relative flex items-center">
-                  <input 
-                    className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 pr-10 text-xs font-mono text-[var(--text-primary)] outline-none" 
-                    placeholder="Output URL" 
-                    value={destination.url} 
-                    onChange={e => setDestination(destination.id, { url: e.target.value, playbackUrl: playbackUrl(destination.protocol, channelName, settings, e.target.value) })} 
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => copyUrl(destination.url)}
-                    className="absolute right-2 text-[var(--text-muted)] hover:text-[var(--primary)] transition-colors p-1"
-                    title="Copy URL"
+                  <button
+                    type="button"
+                    onClick={() => setDestinations(prev => prev.filter(d => d.id !== dest.id))}
+                    className="text-[#6F6078] hover:text-[#DC3545]"
+                    title="Remove destination"
                   >
-                    <FiCopy size={14} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
-              )}
 
-              {destination.playbackUrl && (
-                <p className="rounded-[var(--radius-sm)] bg-[var(--surface)] border border-[var(--border)] px-3 py-2 font-mono text-[11px] text-[var(--text-muted)] break-all">
-                  <strong className="text-[var(--primary)]">Play URL:</strong> {destination.playbackUrl}
-                </p>
-              )}
+                <Select
+                  label="Protocol"
+                  value={dest.protocol}
+                  onChange={e => setDestination(dest.id, { protocol: e.target.value as Protocol })}
+                  options={destinationOptions.map(o => ({ value: o.value, label: o.label }))}
+                />
 
-              <div className="flex justify-end pt-1">
-                <button type="button" className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 transition-colors" onClick={() => setDestinations(prev => prev.filter(item => item.id !== destination.id))}>
-                  <FiTrash2 size={14} /> Remove Destination
-                </button>
+                {(dest.protocol === Protocol.YOUTUBE || dest.protocol === Protocol.FACEBOOK) && (
+                  <input
+                    className="h-8 w-full rounded border border-[#E8DFF0] bg-white px-2.5 font-mono text-[11px]"
+                    placeholder="Stream key"
+                    value={dest.streamKey || ''}
+                    onChange={e => {
+                      const url = defaultUrl(dest.protocol, channelName, settings, e.target.value);
+                      setDestination(dest.id, { streamKey: e.target.value, url, playbackUrl: playbackUrl(dest.protocol, channelName, settings, url) });
+                    }}
+                  />
+                )}
+
+                <CodeField value={dest.url} label="Output URL" readOnly={false} />
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-
-        {/* Save Live Channel Gradient Button */}
-        <button 
-          type="button" 
-          onClick={createChannel} 
-          disabled={loading}
-          className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--primary)] text-[13px] font-semibold text-white transition-colors hover:bg-[var(--primary-hover)]"
-        >
-          <FiPlay size={16} /> Save Live Channel
-        </button>
-      </Card>
-    </div>
+      </div>
+    </DetailDrawer>
   );
 };
 

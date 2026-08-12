@@ -1,7 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FiArchive, FiCalendar, FiDownload, FiFilm, FiFilter, FiGrid, FiList, FiPlay, FiRefreshCw, FiSearch, FiTrash2, FiX } from 'react-icons/fi';
+import {
+  Archive,
+  Calendar,
+  Download,
+  Film,
+  Filter,
+  Grid,
+  List,
+  Play,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+  Radio,
+  Clock,
+  HardDrive
+} from 'lucide-react';
 import { AppSettings } from '../types';
+import ProtocolBadge from './ui/ProtocolBadge';
+import CodeField from './ui/CodeField';
 
 interface Props {
   realtimeRecordings: any[];
@@ -16,7 +34,9 @@ const formatBytes = (bytes = 0) => {
   return `${(bytes / Math.pow(1024, index)).toFixed(index ? 1 : 0)} ${units[index]}`;
 };
 
-const durationSeconds = (recording: any) => Math.max(0, Math.floor(((recording.end_time ? new Date(recording.end_time).getTime() : Date.now()) - new Date(recording.start_time).getTime()) / 1000));
+const durationSeconds = (recording: any) =>
+  Math.max(0, Math.floor(((recording.end_time ? new Date(recording.end_time).getTime() : Date.now()) - new Date(recording.start_time).getTime()) / 1000));
+
 const formatDuration = (seconds: number) => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -24,7 +44,7 @@ const formatDuration = (seconds: number) => {
   return hours ? `${hours}h ${minutes}m ${remainder}s` : minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
 };
 
-const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording }) => {
+export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording }) => {
   const [recordings, setRecordings] = useState<any[]>(realtimeRecordings);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<'cards' | 'table'>('table');
@@ -41,13 +61,15 @@ const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, delet
   const [sort, setSort] = useState('newest');
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState<any | null>(null);
-  const pageSize = 24;
+  const pageSize = 20;
 
   const loadAll = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('kte-auth-token');
-      const response = await fetch('/api/ingest/recordings?limit=5000', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const response = await fetch('/api/ingest/recordings?limit=5000', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Unable to load recording library');
       setRecordings(body.recordings || []);
@@ -58,13 +80,18 @@ const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, delet
     }
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+  }, []);
+
   useEffect(() => {
     if (!realtimeRecordings.length) return;
     setRecordings(current => {
       const updates = new Map(realtimeRecordings.map(item => [String(item.id), item]));
-      const merged = current.map(item => updates.has(String(item.id)) ? updates.get(String(item.id)) : item);
-      realtimeRecordings.forEach(item => { if (!current.some(existing => String(existing.id) === String(item.id))) merged.push(item); });
+      const merged = current.map(item => (updates.has(String(item.id)) ? updates.get(String(item.id)) : item));
+      realtimeRecordings.forEach(item => {
+        if (!current.some(existing => String(existing.id) === String(item.id))) merged.push(item);
+      });
       return merged;
     });
   }, [realtimeRecordings]);
@@ -73,66 +100,341 @@ const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, delet
   const channels = useMemo(() => Array.from(new Set(recordings.map(item => `${item.app}/${item.stream}`))).sort(), [recordings]);
   const encoders = useMemo(() => Array.from(new Set(recordings.map(item => String(item.encoder || 'copy')))).sort(), [recordings]);
   const resolutions = useMemo(() => Array.from(new Set(recordings.map(item => String(item.resolution || 'source')))).sort(), [recordings]);
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     const from = dateFrom ? new Date(dateFrom).getTime() : 0;
     const to = dateTo ? new Date(dateTo).getTime() : Number.MAX_SAFE_INTEGER;
-    return recordings.filter(recording => {
-      const started = new Date(recording.start_time).getTime();
-      const recordingFormat = String(recording.format || recording.file_name?.split('.').pop() || '').toLowerCase();
-      const searchable = `${recording.file_name} ${recording.app} ${recording.stream} ${recordingFormat} ${recording.encoder} ${recording.resolution}`.toLowerCase();
-      const recordingStatus = recording.is_active ? 'live' : recording.end_time ? 'completed' : 'interrupted';
-      return (!query || searchable.includes(query)) && (format === 'all' || recordingFormat === format) && (source === 'all' || recording.source_type === source) && (status === 'all' || recordingStatus === status) && (channel === 'all' || `${recording.app}/${recording.stream}` === channel) && (encoder === 'all' || String(recording.encoder || 'copy') === encoder) && (resolution === 'all' || String(recording.resolution || 'source') === resolution) && started >= from && started <= to;
-    }).sort((a, b) => {
-      if (sort === 'oldest') return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
-      if (sort === 'size-desc') return Number(b.size || 0) - Number(a.size || 0);
-      if (sort === 'duration-desc') return durationSeconds(b) - durationSeconds(a);
-      if (sort === 'name') return String(a.file_name).localeCompare(String(b.file_name));
-      return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
-    });
+    return recordings
+      .filter(recording => {
+        const started = new Date(recording.start_time).getTime();
+        const recordingFormat = String(recording.format || recording.file_name?.split('.').pop() || '').toLowerCase();
+        const searchable = `${recording.file_name} ${recording.app} ${recording.stream} ${recordingFormat} ${recording.encoder} ${recording.resolution}`.toLowerCase();
+        const recordingStatus = recording.is_active ? 'live' : recording.end_time ? 'completed' : 'interrupted';
+        return (
+          (!query || searchable.includes(query)) &&
+          (format === 'all' || recordingFormat === format) &&
+          (source === 'all' || recording.source_type === source) &&
+          (status === 'all' || recordingStatus === status) &&
+          (channel === 'all' || `${recording.app}/${recording.stream}` === channel) &&
+          (encoder === 'all' || String(recording.encoder || 'copy') === encoder) &&
+          (resolution === 'all' || String(recording.resolution || 'source') === resolution) &&
+          started >= from &&
+          started <= to
+        );
+      })
+      .sort((a, b) => {
+        if (sort === 'oldest') return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+        if (sort === 'size-desc') return Number(b.size || 0) - Number(a.size || 0);
+        if (sort === 'duration-desc') return durationSeconds(b) - durationSeconds(a);
+        if (sort === 'name') return String(a.file_name).localeCompare(String(b.file_name));
+        return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+      });
   }, [recordings, search, format, source, status, channel, encoder, resolution, dateFrom, dateTo, sort]);
 
   useEffect(() => setPage(1), [search, format, source, status, channel, encoder, resolution, dateFrom, dateTo, sort, view]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const storage = filtered.reduce((sum, item) => sum + Number(item.size || 0), 0);
-  const clearFilters = () => { setSearch(''); setFormat('all'); setSource('all'); setStatus('all'); setChannel('all'); setEncoder('all'); setResolution('all'); setDateFrom(''); setDateTo(''); setSort('newest'); };
+  const totalStorage = filtered.reduce((sum, item) => sum + Number(item.size || 0), 0);
+
   const remove = async (recording: any) => {
-    if (!window.confirm(`Delete ${recording.file_name}? This removes the recording file permanently.`)) return;
-    try { await deleteRecording(recording.id); setRecordings(current => current.filter(item => String(item.id) !== String(recording.id))); toast.success('Recording deleted'); } catch (error: any) { toast.error(error.message); }
+    if (!window.confirm(`Delete ${recording.file_name}? This removes the file permanently.`)) return;
+    try {
+      await deleteRecording(recording.id);
+      setRecordings(current => current.filter(item => String(item.id) !== String(recording.id)));
+      toast.success('Recording deleted');
+    } catch (error: any) {
+      toast.error(error.message);
+    }
   };
-  const mediaBase = window.location.origin;
 
-  return <div className="recording-library page-stack">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div><h2 className="flex items-center gap-2 text-lg font-semibold text-[var(--text-primary)]"><FiArchive size={17} className="text-[var(--primary)]" />Recording Library</h2><p className="mt-0.5 text-xs text-[var(--text-secondary)]">Search, inspect, preview and manage every television recording.</p></div>
-      <div className="flex items-center gap-2"><button onClick={loadAll} disabled={loading} className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-white px-3 text-xs font-semibold"><FiRefreshCw className={loading ? 'animate-spin' : ''} />Refresh all</button><div className="flex h-9 rounded-md border border-[var(--border)] bg-white p-0.5"><button onClick={() => setView('cards')} className={`rounded p-2 ${view === 'cards' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`} title="Card view"><FiGrid /></button><button onClick={() => setView('table')} className={`rounded p-2 ${view === 'table' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`} title="Table view"><FiList /></button></div></div>
-    </div>
+  const mediaBase = typeof window !== 'undefined' ? window.location.origin : '';
 
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><div className="rounded-xl border border-[var(--border)] bg-white p-4"><p className="text-[10px] font-semibold uppercase text-slate-400">Matching recordings</p><p className="mt-1 text-xl font-bold">{filtered.length}</p></div><div className="rounded-xl border border-[var(--border)] bg-white p-4"><p className="text-[10px] font-semibold uppercase text-slate-400">Storage</p><p className="mt-1 text-xl font-bold">{formatBytes(storage)}</p></div><div className="rounded-xl border border-[var(--border)] bg-white p-4"><p className="text-[10px] font-semibold uppercase text-slate-400">Recording now</p><p className="mt-1 text-xl font-bold text-rose-600">{filtered.filter(item => item.is_active).length}</p></div><div className="rounded-xl border border-[var(--border)] bg-white p-4"><p className="text-[10px] font-semibold uppercase text-slate-400">Formats</p><p className="mt-1 text-xl font-bold">{formats.length}</p></div></div>
+  return (
+    <div className="recording-library page-stack space-y-4">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+        <div>
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Recording Library</h1>
+          <p className="mt-0.5 text-[12px] text-[#6F6078]">
+            Search, preview, download and manage recorded media archives
+          </p>
+        </div>
 
-    <div><button onClick={() => setFiltersOpen(value => !value)} className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-white px-3 text-[11px] font-semibold"><FiFilter />{filtersOpen ? 'Hide filters' : 'Search & filters'}</button></div>
-    {filtersOpen && <section className="rounded-lg border border-[var(--border)] bg-white p-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <label className="relative sm:col-span-2"><FiSearch className="absolute left-3 top-3 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Filename, channel, codec…" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm" /></label>
-        <select value={channel} onChange={event => setChannel(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">All channels</option>{channels.map(item => <option key={item} value={item}>{item}</option>)}</select>
-        <select value={format} onChange={event => setFormat(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">All formats</option>{formats.map(item => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select>
-        <select value={source} onChange={event => setSource(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">All sources</option><option value="ingest">Live ingest</option><option value="device">Capture device</option></select>
-        <select value={status} onChange={event => setStatus(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">All statuses</option><option value="live">Recording now</option><option value="completed">Completed</option><option value="interrupted">Interrupted</option></select>
-        <select value={encoder} onChange={event => setEncoder(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">All hardware</option>{encoders.map(item => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select>
-        <select value={resolution} onChange={event => setResolution(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">All resolutions</option>{resolutions.map(item => <option key={item} value={item}>{item}</option>)}</select>
-        <select value={sort} onChange={event => setSort(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="size-desc">Largest first</option><option value="duration-desc">Longest first</option><option value="name">Filename A–Z</option></select>
-        <button onClick={clearFilters} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-600">Clear filters</button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={loadAll}
+            disabled={loading}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+          </button>
+
+          <div className="flex h-8 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-0.5">
+            <button
+              onClick={() => setView('table')}
+              className={`rounded p-1 text-[12px] ${view === 'table' ? 'bg-white text-[#351147] font-semibold shadow-xs' : 'text-[#6F6078]'}`}
+              title="Table View"
+            >
+              <List size={15} />
+            </button>
+            <button
+              onClick={() => setView('cards')}
+              className={`rounded p-1 text-[12px] ${view === 'cards' ? 'bg-white text-[#351147] font-semibold shadow-xs' : 'text-[#6F6078]'}`}
+              title="Grid View"
+            >
+              <Grid size={15} />
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-[11px] font-semibold text-slate-500"><FiCalendar className="mr-1 inline" />Started from<input type="datetime-local" value={dateFrom} onChange={event => setDateFrom(event.target.value)} className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" /></label><label className="text-[11px] font-semibold text-slate-500"><FiCalendar className="mr-1 inline" />Started until<input type="datetime-local" value={dateTo} onChange={event => setDateTo(event.target.value)} className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700" /></label></div>
-    </section>}
 
-    {!visible.length ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-14 text-center"><FiFilm className="mx-auto text-slate-300" size={30} /><p className="mt-3 text-sm font-semibold text-slate-500">No recordings match these filters.</p></div> : view === 'cards' ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{visible.map(recording => <article key={recording.id} className="min-w-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-sm"><button onClick={() => setPreview(recording)} className="group relative block aspect-video w-full bg-slate-900"><img src={`${mediaBase}/recording-thumbnail/${recording.id}.jpg`} alt="" loading="lazy" className="h-full w-full object-cover" onError={event => { event.currentTarget.style.display = 'none'; }} /><span className="absolute inset-0 flex items-center justify-center bg-black/10 transition group-hover:bg-black/30"><span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-indigo-600 shadow"><FiPlay /></span></span><span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-[9px] font-bold ${recording.is_active ? 'bg-rose-600 text-white' : 'bg-black/65 text-white'}`}>{recording.is_active ? 'LIVE' : String(recording.format || 'FILE').toUpperCase()}</span><span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">{formatDuration(durationSeconds(recording))}</span></button><div className="p-4"><h3 className="truncate text-sm font-semibold text-slate-800" title={recording.file_name}>{recording.file_name}</h3><p className="mt-1 truncate text-[11px] text-slate-500">{recording.app}/{recording.stream} · {recording.encoder || 'copy'} · {recording.resolution || 'source'}</p><p className="mt-2 text-[11px] text-slate-500">{new Date(recording.start_time).toLocaleString()} · {formatBytes(Number(recording.size || 0))}</p><div className="mt-3 flex gap-2"><button onClick={() => setPreview(recording)} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-indigo-50 px-3 py-2 text-[11px] font-semibold text-indigo-700"><FiPlay />Preview</button><a href={`${mediaBase}/recordings/${recording.app}/${recording.stream}/${recording.file_name}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 p-2 text-slate-600" title="Download"><FiDownload /></a><button onClick={() => remove(recording)} className="rounded-lg border border-slate-200 p-2 text-rose-600" title="Delete"><FiTrash2 /></button></div></div></article>)}</div> : <div className="overflow-x-auto rounded-2xl border border-[var(--border)] bg-white"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="px-4 py-3">Recording</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Started</th><th className="px-4 py-3">Duration</th><th className="px-4 py-3">Format</th><th className="px-4 py-3">Size</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visible.map(recording => <tr key={recording.id} className="text-xs"><td className="max-w-[280px] truncate px-4 py-3 font-semibold">{recording.file_name}</td><td className="px-4 py-3 text-slate-500">{recording.app}/{recording.stream}<span className="block text-[10px]">{recording.source_type || 'ingest'} · {recording.encoder || 'copy'}</span></td><td className="px-4 py-3 text-slate-500">{new Date(recording.start_time).toLocaleString()}</td><td className="px-4 py-3">{recording.is_active ? <span className="text-rose-600">LIVE · {formatDuration(durationSeconds(recording))}</span> : formatDuration(durationSeconds(recording))}</td><td className="px-4 py-3 font-semibold uppercase">{recording.format}</td><td className="px-4 py-3">{formatBytes(Number(recording.size || 0))}</td><td className="px-4 py-3"><div className="flex justify-end gap-2"><button onClick={() => setPreview(recording)} className="rounded-lg border p-2 text-indigo-600"><FiPlay /></button><a href={`${mediaBase}/recordings/${recording.app}/${recording.stream}/${recording.file_name}`} target="_blank" rel="noreferrer" className="rounded-lg border p-2"><FiDownload /></a><button onClick={() => remove(recording)} className="rounded-lg border p-2 text-rose-600"><FiTrash2 /></button></div></td></tr>)}</tbody></table></div>}
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Recordings</span>
+          <p className="font-mono text-[20px] font-bold text-[#1B1024]">{filtered.length}</p>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Total Storage</span>
+          <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBytes(totalStorage)}</p>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Jobs</span>
+          <p className="font-mono text-[20px] font-bold text-[#E11D72]">
+            {filtered.filter(item => item.is_active).length}
+          </p>
+        </div>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Formats</span>
+          <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{formats.length || 1}</p>
+        </div>
+      </div>
 
-    {pageCount > 1 && <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-xs"><span>Page {page} of {pageCount} · {filtered.length} results</span><div className="flex gap-2"><button disabled={page === 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Previous</button><button disabled={page === pageCount} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Next</button></div></div>}
+      {/* Search & Filter bar */}
+      <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search filename, channel, codec..."
+              className="h-8 w-full rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+            />
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
+          </div>
 
-    {preview && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget) setPreview(null); }}><div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950"><div className="flex items-center justify-between border-b border-white/10 px-4 py-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-white">{preview.file_name}</h3><p className="text-[10px] text-slate-400">{preview.app}/{preview.stream} · {new Date(preview.start_time).toLocaleString()}</p></div><button onClick={() => setPreview(null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><FiX /></button></div><div className="aspect-video bg-black"><video key={preview.id} controls autoPlay playsInline className="h-full w-full object-contain" src={`${mediaBase}/recording-preview/${preview.id}`} /></div></div></div>}
-  </div>;
+          <select
+            value={format}
+            onChange={e => setFormat(e.target.value)}
+            className="h-8 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 text-[12px] font-medium text-[#1B1024]"
+          >
+            <option value="all">All Formats</option>
+            {formats.map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}
+          </select>
+
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            className="h-8 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 text-[12px] font-medium text-[#1B1024]"
+          >
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="size-desc">Largest First</option>
+            <option value="duration-desc">Longest First</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
+        {visible.length === 0 ? (
+          <div className="grid min-h-[160px] place-items-center p-8 text-center">
+            <div>
+              <Archive size={28} className="mx-auto text-[#6F6078]" />
+              <h3 className="mt-2 font-display text-[14px] font-bold text-[#1B1024]">No recordings found</h3>
+              <p className="mt-1 text-[11px] text-[#6F6078]">No archived recordings matched the search criteria.</p>
+            </div>
+          </div>
+        ) : view === 'table' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+                  <th className="px-4 py-3">File Name</th>
+                  <th className="px-4 py-3">Channel / Source</th>
+                  <th className="px-4 py-3">Recorded Date</th>
+                  <th className="px-4 py-3">Duration</th>
+                  <th className="px-4 py-3">Format</th>
+                  <th className="px-4 py-3">File Size</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E8DFF0]">
+                {visible.map(recording => (
+                  <tr key={recording.id} className="transition-colors hover:bg-[#F4EEFF]/50">
+                    <td className="px-4 py-3 font-semibold text-[#1B1024] max-w-[240px] truncate" title={recording.file_name}>
+                      {recording.file_name}
+                    </td>
+                    <td className="px-4 py-3 text-[#6F6078]">
+                      <span className="font-semibold text-[#1B1024]">{recording.app}/{recording.stream}</span>
+                      <span className="block text-[10px] text-[#6F6078]">{recording.encoder || 'copy'} • {recording.resolution || 'source'}</span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078]">
+                      {new Date(recording.start_time).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[#6F6078]">
+                      {recording.is_active ? (
+                        <span className="text-[#E11D72] font-semibold">LIVE • {formatDuration(durationSeconds(recording))}</span>
+                      ) : (
+                        formatDuration(durationSeconds(recording))
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ProtocolBadge protocol={recording.format || 'mp4'} />
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[#6F6078]">
+                      {formatBytes(Number(recording.size || 0))}
+                    </td>
+                    <td className="px-4 py-3 text-right space-x-1">
+                      <button
+                        type="button"
+                        onClick={() => setPreview(recording)}
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+                      >
+                        <Play size={12} /> Preview
+                      </button>
+                      <a
+                        href={`${mediaBase}/recordings/${recording.app}/${recording.stream}/${recording.file_name}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F8F7FA]"
+                        title="Download"
+                      >
+                        <Download size={13} />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => remove(recording)}
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545]"
+                        title="Delete"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3.5 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visible.map(recording => (
+              <div key={recording.id} className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs">
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-[#1B1024] truncate text-[13px]" title={recording.file_name}>
+                      {recording.file_name}
+                    </h3>
+                    <ProtocolBadge protocol={recording.format || 'mp4'} size="sm" />
+                  </div>
+                  <p className="mt-1 text-[11px] text-[#6F6078] truncate">
+                    {recording.app}/{recording.stream} • {recording.resolution || 'source'}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#6F6078]">
+                    <span className="font-mono">{formatDuration(durationSeconds(recording))}</span>
+                    <span className="font-mono font-semibold">{formatBytes(Number(recording.size || 0))}</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex gap-2 pt-2 border-t border-[#E8DFF0]">
+                  <button
+                    type="button"
+                    onClick={() => setPreview(recording)}
+                    className="flex flex-1 items-center justify-center gap-1 rounded-md bg-[#F4EEFF] py-1.5 text-[11px] font-semibold text-[#4A1B7A] hover:bg-[#E8DFF0]"
+                  >
+                    <Play size={12} /> Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(recording)}
+                    className="rounded-md border border-[#E8DFF0] p-1.5 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545]"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination Footer */}
+        {pageCount > 1 && (
+          <div className="flex items-center justify-between border-t border-[#E8DFF0] bg-[#F8F7FA] px-4 py-2.5 text-[11px]">
+            <span className="text-[#6F6078]">Page {page} of {pageCount} • {filtered.length} items</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="rounded border border-[#E8DFF0] bg-white px-2.5 py-1 font-semibold text-[#6F6078] disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={page === pageCount}
+                onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                className="rounded border border-[#E8DFF0] bg-white px-2.5 py-1 font-semibold text-[#6F6078] disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Preview Modal */}
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
+          onClick={e => { if (e.target === e.currentTarget) setPreview(null); }}
+        >
+          <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E8DFF0] bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
+              <div className="min-w-0">
+                <h3 className="truncate font-display text-[15px] font-semibold text-[#1B1024]">
+                  {preview.file_name}
+                </h3>
+                <p className="text-[11px] text-[#6F6078]">
+                  {preview.app}/{preview.stream} • {new Date(preview.start_time).toLocaleString()}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                className="rounded-lg p-1.5 text-[#6F6078] hover:bg-[#F8F7FA]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="aspect-video bg-black">
+              <video
+                controls
+                autoPlay
+                playsInline
+                className="h-full w-full object-contain"
+                src={`${mediaBase}/recording-preview/${preview.id}`}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default RecordingLibrary;
