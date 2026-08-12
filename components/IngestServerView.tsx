@@ -22,7 +22,10 @@ import {
   CheckCircle2,
   Tv,
   Plus,
-  ArrowUpRight
+  ArrowUpRight,
+  Download,
+  Film,
+  HardDrive
 } from 'lucide-react';
 import { AppSettings, IngestRecordingOptions, TranscodingProfile } from '../types';
 import toast from 'react-hot-toast';
@@ -52,6 +55,13 @@ interface Props {
 const formatBitrate = (kbps: number) => {
   if (kbps >= 1000) return `${(kbps / 1000).toFixed(2)} Mbps`;
   return `${kbps || 0} Kbps`;
+};
+
+const formatBytes = (bytes = 0) => {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / Math.pow(1024, index)).toFixed(index ? 1 : 0)} ${units[index]}`;
 };
 
 const defaultConfig: IngestRecordingOptions = {
@@ -85,11 +95,9 @@ export const IngestServerView: React.FC<Props> = ({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectedStream, setInspectedStream] = useState<any>(null);
   const [recordingStatuses, setRecordingStatuses] = useState<Record<string, boolean>>({});
-  const [historySearch, setHistorySearch] = useState('');
-  const [historyPage, setHistoryPage] = useState(1);
 
   // Recording control state
-  const [sourceType, setSourceType] = useState<'ingest' | 'device'>('ingest');
+  const [sourceType, setSourceType] = useState<'ingest' | 'device'>('device');
   const [config, setConfig] = useState<IngestRecordingOptions>(defaultConfig);
   const [videoDevices, setVideoDevices] = useState<string[]>([]);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
@@ -98,7 +106,11 @@ export const IngestServerView: React.FC<Props> = ({
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
-  // SRT Listener & Relay Modals
+  // Recording Library Preview & Filter state
+  const [recSearch, setRecSearch] = useState('');
+  const [recPreview, setRecPreview] = useState<any | null>(null);
+
+  // SRT Listener & Relay Modals (Live Server mode)
   const [srtModalOpen, setSrtModalOpen] = useState(false);
   const [srtStreamName, setSrtStreamName] = useState('srt-feed');
   const [srtPort, setSrtPort] = useState('8890');
@@ -107,8 +119,6 @@ export const IngestServerView: React.FC<Props> = ({
   const [relayStreamPath, setRelayStreamPath] = useState('/live/main-feed');
   const [relayDestinationUrl, setRelayDestinationUrl] = useState('');
   const [processes, setProcesses] = useState<any[]>([]);
-
-  const itemsPerPage = 8;
 
   const fetchData = useCallback(async () => {
     try {
@@ -136,9 +146,24 @@ export const IngestServerView: React.FC<Props> = ({
     } catch {}
   }, []);
 
-  const refreshDevices = useCallback(() => {
+  const refreshDevices = useCallback(async () => {
     setDevicesLoading(true);
     sendRealtime({ type: 'capture_devices_request' });
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ffmpeg/devices', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.video) setVideoDevices(data.video);
+        if (data.audio) setAudioDevices(data.audio);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDevicesLoading(false);
+    }
   }, []);
 
   const fetchProcesses = async () => {
@@ -155,15 +180,15 @@ export const IngestServerView: React.FC<Props> = ({
   useEffect(() => {
     fetchData();
     fetchConfig();
+    refreshDevices();
 
     const unsubscribe = subscribeRealtime(msg => {
-      if (msg.type === 'capture_devices_response' && msg.payload) {
+      if ((msg.type === 'capture_devices' || msg.type === 'capture_devices_response') && msg.payload) {
         setVideoDevices(msg.payload.video || []);
         setAudioDevices(msg.payload.audio || []);
         setDevicesLoading(false);
       }
     });
-    refreshDevices();
 
     return () => unsubscribe();
   }, [fetchData, fetchConfig, refreshDevices]);
@@ -310,39 +335,239 @@ export const IngestServerView: React.FC<Props> = ({
     }
   };
 
+  const handleDeleteRecordItem = async (id: number | string) => {
+    if (!window.confirm('Delete this recording archive file?')) return;
+    try {
+      await deleteRecording(id);
+      toast.success('Recording deleted');
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
   const openInspector = (streamKey: string, streamData: any) => {
     setSelectedStreamKey(streamKey);
     setInspectedStream(streamData);
     setInspectorOpen(true);
   };
 
-  const filteredHistory = history.filter((h: any) =>
-    (h.stream || '').toLowerCase().includes(historySearch.toLowerCase()) ||
-    (h.app || '').toLowerCase().includes(historySearch.toLowerCase())
+  const filteredRecordings = recordings.filter((r: any) =>
+    (r.file_name || r.stream || '').toLowerCase().includes(recSearch.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredHistory.length / itemsPerPage) || 1;
-  const paginatedHistory = filteredHistory.slice((historyPage - 1) * itemsPerPage, historyPage * itemsPerPage);
-
+  const totalRecordingBytes = recordings.reduce((sum, r) => sum + Number(r.size || 0), 0);
   const rtmpEndpointUrl = `rtmp://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:${settings.rtmpPort || 1935}/live/{stream_key}`;
 
+  /* ══════════════════════════════════════════════════════════════════════════
+     INGEST SERVER MODE (RECORDS & DEVICE CAPTURE ONLY - NO LIVE STREAMS TABLE)
+     ══════════════════════════════════════════════════════════════════════════ */
+  if (mode === 'recording') {
+    return (
+      <div className="ingest-workspace page-stack space-y-4">
+        {/* Ingest Server Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Ingest Server & Capture</h1>
+              <span className="rounded-full bg-[#F4EEFF] border border-[#D8C6E8] px-2.5 py-0.5 text-[11px] font-semibold text-[#4A1B7A]">
+                {videoDevices.length} Video Device{videoDevices.length !== 1 ? 's' : ''} Detected
+              </span>
+            </div>
+            <p className="mt-0.5 text-[12px] text-[#6F6078]">
+              Hardware device capture, professional recording profiles, and recording archives
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={refreshDevices}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+            >
+              <RefreshCw size={14} className={devicesLoading ? 'animate-spin' : ''} /> Detect Devices
+            </button>
+          </div>
+        </div>
+
+        {/* Ingest Summary KPIs */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Video Devices</span>
+            <p className="font-mono text-[20px] font-bold text-[#1B1024]">{videoDevices.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Audio Devices</span>
+            <p className="font-mono text-[20px] font-bold text-[#2563EB]">{audioDevices.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Total Recordings</span>
+            <p className="font-mono text-[20px] font-bold text-[#E11D72]">{recordings.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Storage Used</span>
+            <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{formatBytes(totalRecordingBytes)}</p>
+          </div>
+        </div>
+
+        {/* Professional Device Capture & Recording Control */}
+        <ProfessionalRecordingControl
+          config={config}
+          setConfig={setConfig}
+          sourceType={sourceType}
+          setSourceType={setSourceType}
+          streams={localStreams}
+          selectedStreamKey={selectedStreamKey}
+          setSelectedStreamKey={setSelectedStreamKey}
+          videoDevices={videoDevices}
+          audioDevices={audioDevices}
+          videoDevice={videoDevice}
+          audioDevice={audioDevice}
+          setVideoDevice={setVideoDevice}
+          setAudioDevice={setAudioDevice}
+          refreshDevices={refreshDevices}
+          devicesLoading={devicesLoading}
+          toggleFormat={toggleFormat}
+          save={saveConfig}
+          saving={savingConfig}
+          start={handleStartControlRecording}
+          profiles={profiles}
+          mediaPort={settings.mediaPort}
+        />
+
+        {/* Recording Archives & Items Table */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
+          <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Recording Archives ({filteredRecordings.length})</h2>
+              <p className="text-[11px] text-[#6F6078]">Completed and active stream recording items</p>
+            </div>
+
+            <div className="relative">
+              <input
+                type="text"
+                value={recSearch}
+                onChange={e => setRecSearch(e.target.value)}
+                placeholder="Search recordings..."
+                className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+              />
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+                  <th className="px-4 py-3">File Name</th>
+                  <th className="px-4 py-3">Format</th>
+                  <th className="px-4 py-3">Encoder</th>
+                  <th className="px-4 py-3">Resolution</th>
+                  <th className="px-4 py-3">Size</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E8DFF0]">
+                {filteredRecordings.map((rec: any) => (
+                  <tr key={rec.id} className="transition-colors hover:bg-[#F4EEFF]/50">
+                    <td className="px-4 py-3 font-semibold text-[#1B1024]">
+                      <div className="flex items-center gap-2">
+                        <Film size={14} className="text-[#6D32D9]" />
+                        <span>{rec.file_name || rec.stream || `recording_${rec.id}`}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <ProtocolBadge protocol={(rec.format || 'mp4').toUpperCase()} />
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[#6F6078] uppercase">
+                      {rec.encoder || 'CPU'}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[#6F6078]">
+                      {rec.resolution || '1920x1080'}
+                    </td>
+                    <td className="px-4 py-3 font-mono font-semibold text-[#1B1024]">
+                      {formatBytes(rec.size || 0)}
+                    </td>
+                    <td className="px-4 py-3 text-right space-x-1">
+                      <button
+                        type="button"
+                        onClick={() => setRecPreview(rec)}
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+                      >
+                        <Play size={12} /> Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRecordItem(rec.id)}
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545]"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredRecordings.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-[#6F6078]">
+                      No recording archives found. Start a recording above to capture live feeds or device inputs.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Video Preview Modal */}
+        <DetailDrawer
+          open={!!recPreview}
+          onClose={() => setRecPreview(null)}
+          title={`Recording Preview — ${recPreview?.file_name || recPreview?.id}`}
+          subtitle="Video file playback and recording specifications"
+          width="max-w-[560px]"
+        >
+          {recPreview && (
+            <div className="space-y-4">
+              <MediaPreview
+                url={`/media/recordings/${recPreview.file_name}`}
+                title={recPreview.file_name}
+                maxHeight={320}
+              />
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078]">File Size</span>
+                  <p className="font-mono font-bold text-[#1B1024]">{formatBytes(recPreview.size || 0)}</p>
+                </div>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Format</span>
+                  <p className="font-mono font-bold text-[#2563EB]">{(recPreview.format || 'MP4').toUpperCase()}</p>
+                </div>
+              </div>
+              <CodeField value={`/media/recordings/${recPreview.file_name}`} label="Recording Storage Path" />
+            </div>
+          )}
+        </DetailDrawer>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     LIVE SERVER MODE (LIVE STREAMS, SRT LISTENERS & RTMP RELAYS ONLY)
+     ══════════════════════════════════════════════════════════════════════════ */
   return (
     <div className="ingest-workspace page-stack space-y-4">
-      {/* Header Strip */}
+      {/* Live Server Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-[18px] font-bold text-[#1B1024]">
-              {mode === 'recording' ? 'Ingest & Device Capture' : 'Live Server'}
-            </h1>
+            <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Live Server & Relay Controls</h1>
             <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2.5 py-0.5 text-[11px] font-semibold text-[#16A36A]">
               {activeStreamKeys.length} Live Stream{activeStreamKeys.length !== 1 ? 's' : ''}
             </span>
           </div>
           <p className="mt-0.5 text-[12px] text-[#6F6078]">
-            {mode === 'recording'
-              ? 'Television recording control, hardware encoder settings, and live ingest management'
-              : 'Incoming RTMP, SRT and live stream monitoring'}
+            Incoming RTMP, SRT streams, background relays, and live monitoring
           </p>
         </div>
 
@@ -371,10 +596,10 @@ export const IngestServerView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Top Summary KPI Row */}
+      {/* Live Server Summary KPI Row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Streams</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Ingests</span>
           <p className="font-mono text-[20px] font-bold text-[#1B1024]">{activeStreamKeys.length}</p>
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
@@ -382,43 +607,16 @@ export const IngestServerView: React.FC<Props> = ({
           <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBitrate(totalBitrateKbps)}</p>
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Recordings</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Recordings</span>
           <p className="font-mono text-[20px] font-bold text-[#E11D72]">{Object.keys(activeRecordingKeys).length}</p>
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Background Jobs</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Relays & Listeners</span>
           <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{processes.length}</p>
         </div>
       </div>
 
-      {/* Mode === 'recording' Professional Ingest & Device Capture Controls */}
-      {mode === 'recording' && (
-        <ProfessionalRecordingControl
-          config={config}
-          setConfig={setConfig}
-          sourceType={sourceType}
-          setSourceType={setSourceType}
-          streams={localStreams}
-          selectedStreamKey={selectedStreamKey}
-          setSelectedStreamKey={setSelectedStreamKey}
-          videoDevices={videoDevices}
-          audioDevices={audioDevices}
-          videoDevice={videoDevice}
-          audioDevice={audioDevice}
-          setVideoDevice={setVideoDevice}
-          setAudioDevice={setAudioDevice}
-          refreshDevices={refreshDevices}
-          devicesLoading={devicesLoading}
-          toggleFormat={toggleFormat}
-          save={saveConfig}
-          saving={savingConfig}
-          start={handleStartControlRecording}
-          profiles={profiles}
-          mediaPort={settings.mediaPort}
-        />
-      )}
-
-      {/* Live Active Streams Section */}
+      {/* Active Ingest Streams Table */}
       <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
