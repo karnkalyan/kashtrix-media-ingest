@@ -218,6 +218,12 @@ const useSystemStats = () => {
 
   useEffect(() => {
     fetchRestStats();
+    sendRealtime({ type: 'systeminfo' });
+
+    const interval = setInterval(() => {
+      sendRealtime({ type: 'systeminfo' });
+      fetchRestStats();
+    }, 2000);
 
     const unsubscribe = subscribeRealtime(
       message => {
@@ -228,6 +234,7 @@ const useSystemStats = () => {
       isConnected => {
         if (isConnected) {
           sendRealtime({ type: 'systeminfo' });
+          fetchRestStats();
         } else {
           setStats(prev => ({
             ...prev,
@@ -239,6 +246,7 @@ const useSystemStats = () => {
     );
 
     return () => {
+      clearInterval(interval);
       unsubscribe();
     };
   }, []);

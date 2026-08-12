@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import {
   FiActivity, FiKey, FiList, FiSettings, FiUser, FiUsers, FiCheckCircle,
-  FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown,
+  FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown, FiChevronLeft, FiChevronRight,
   FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv, FiBell,
   FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio
 } from 'react-icons/fi';
@@ -473,15 +473,17 @@ interface NavItem {
   id: ActiveView;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  group?: string;
+  group: string;
+  badge?: string;
+  badgeColor?: string;
   licenseModule?: string;
 }
 
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Operations' },
   { id: 'channels', label: 'Channels', icon: FiTv, group: 'Operations', licenseModule: 'live-tv' },
-  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', licenseModule: 'ingest-server' },
-  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', licenseModule: 'live-server' },
+  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
+  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
   { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media', licenseModule: 'recording-library' },
   { id: 'monitor', label: 'System Monitor', icon: FiActivity, group: 'Observability', licenseModule: 'system-monitor' },
   { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability' },
@@ -506,61 +508,109 @@ const Sidebar: React.FC<{
   mobileOpen: boolean;
   onMobileClose: () => void;
 }> = ({ activeView, setActiveView, collapsed, onToggle, licenseStatus, customerName, license, username, mobileOpen, onMobileClose }) => {
-  const renderNavItem = (item: NavItem) => {
-    const Icon = item.icon;
-    const isActive = activeView === item.id;
-    return (
-      <button
-        key={item.id}
-        onClick={() => { setActiveView(item.id); onMobileClose(); }}
-        className={`group relative flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[12px] font-medium transition-colors duration-150 ${
-          isActive
-            ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-[#6D32D9]'
-            : 'text-[#6F6078] hover:bg-[#F4EEFF]/50 hover:text-[#1B1024]'
-        } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
-        title={collapsed && !mobileOpen ? item.label : undefined}
-      >
-        <Icon size={16} className={`shrink-0 ${isActive ? 'text-[#6D32D9]' : 'text-[#6F6078] group-hover:text-[#1B1024]'}`} />
-        {(!collapsed || mobileOpen) && <span>{item.label}</span>}
-      </button>
-    );
-  };
+  const visibleItems = useMemo(() => {
+    return navItems.filter(item => username === 'karnkalyan@gmail.com' || hasLicenseModule(license, item.licenseModule));
+  }, [license, username]);
+
+  const groups = useMemo(() => {
+    const list: { name: string; items: NavItem[] }[] = [];
+    visibleItems.forEach(item => {
+      let g = list.find(x => x.name === item.group);
+      if (!g) {
+        g = { name: item.group, items: [] };
+        list.push(g);
+      }
+      g.items.push(item);
+    });
+    return list;
+  }, [visibleItems]);
 
   return (
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 ${
-          mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#27153B] bg-[#130B1C] text-white transition-all duration-200 shadow-xl ${
+          mobileOpen ? 'w-[230px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } ${collapsed && !mobileOpen ? 'lg:w-[68px]' : 'lg:w-[230px]'}`}
       >
-        {/* Brand Logo Lockup */}
-        <div className="border-b border-[#E8DFF0] px-3 py-3">
-          <KashtrixLogo size={collapsed && !mobileOpen ? 36 : 154} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
+        {/* Brand Header */}
+        <div className="flex h-14 items-center justify-between border-b border-[#27153B] px-3.5">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <KashtrixLogo size={collapsed && !mobileOpen ? 32 : 148} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
+          </div>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#371F52] bg-[#1E112B] text-[#B8A6CC] transition-colors hover:bg-[#6D32D9] hover:text-white"
+            title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          >
+            {collapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
+          </button>
         </div>
 
-        {/* Navigation Item Groups */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 scrollbar-hide">
-          {navItems.filter(item => username === 'karnkalyan@gmail.com' || hasLicenseModule(license, item.licenseModule)).map((item, index, visibleItems) => (
-            <React.Fragment key={item.id}>
-              {(!collapsed || mobileOpen) && (index === 0 || visibleItems[index - 1]?.group !== item.group) && (
-                <p className={`${index ? 'mt-3 border-t border-[#E8DFF0] pt-3' : 'pt-1'} px-2.5 pb-1 text-[9px] font-semibold uppercase tracking-wider text-[#6F6078]`}>
-                  {item.group}
-                </p>
+        {/* Navigation Items Grouped */}
+        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4 scrollbar-hide">
+          {groups.map(group => (
+            <div key={group.name} className="space-y-1">
+              {(!collapsed || mobileOpen) && (
+                <div className="px-2.5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#A494B5]">
+                  {group.name}
+                </div>
               )}
-              {renderNavItem(item)}
-            </React.Fragment>
+              {group.items.map(item => {
+                const Icon = item.icon;
+                const isActive = activeView === item.id;
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setActiveView(item.id); onMobileClose(); }}
+                    className={`group relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium transition-all duration-150 ${
+                      isActive
+                        ? 'bg-[#6D32D9] text-white font-semibold shadow-md shadow-[#6D32D9]/30'
+                        : 'text-[#C4B7D6] hover:bg-[#251538] hover:text-white'
+                    } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
+                    title={collapsed && !mobileOpen ? item.label : undefined}
+                  >
+                    <Icon size={17} className={`shrink-0 transition-colors ${isActive ? 'text-white' : 'text-[#A494B5] group-hover:text-white'}`} />
+                    
+                    {(!collapsed || mobileOpen) && (
+                      <div className="flex flex-1 items-center justify-between overflow-hidden">
+                        <span className="truncate">{item.label}</span>
+                        {item.badge && (
+                          <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white ${item.badgeColor || 'bg-[#6D32D9]'}`}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </nav>
 
-        {/* Footer Status Panel */}
-        {(!collapsed || mobileOpen) && (
-          <div className="border-t border-[#E8DFF0] p-3">
-            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 text-[11px]">
-              <div className="flex items-center gap-1.5 font-semibold text-[#1B1024]">
-                <FiShield className="text-[#6D32D9]" size={14} />
-                <span>{licenseStatus === 'activated' ? 'Pro License Active' : 'License Required'}</span>
+        {/* Footer License Status */}
+        {(!collapsed || mobileOpen) ? (
+          <div className="border-t border-[#27153B] p-3">
+            <div className="rounded-xl border border-[#371F52] bg-[#1E112B] p-2.5 text-[11px]">
+              <div className="flex items-center gap-2 font-semibold text-white">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#16A36A] opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#16A36A]" />
+                </span>
+                <span className="truncate">{licenseStatus === 'activated' ? 'Pro License Active' : 'License Active'}</span>
               </div>
+              <div className="mt-1 text-[10px] text-[#A494B5] truncate">
+                {customerName || 'KASHTRIX Media Engine'}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border-t border-[#27153B] p-2 text-center">
+            <div className="mx-auto grid h-8 w-8 place-items-center rounded-lg bg-[#1E112B] text-[#16A36A]" title="License Active">
+              <FiShield size={16} />
             </div>
           </div>
         )}
