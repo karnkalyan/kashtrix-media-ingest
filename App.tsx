@@ -679,6 +679,19 @@ const TopHeader: React.FC<{
           <FiSearch size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
         </div>
 
+        {/* Theme Mode Toggle */}
+        <button
+          type="button"
+          onClick={() => {
+            const nextMode = themeMode === 'dark' ? 'light' : 'dark';
+            onThemeChange(nextMode);
+          }}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#4A1B7A]"
+          title={`Switch to ${themeMode === 'dark' ? 'Light' : 'Dark'} Mode`}
+        >
+          {themeMode === 'dark' ? <FiSun size={15} className="text-[#D97706]" /> : <FiMoon size={15} className="text-[#4A1B7A]" />}
+        </button>
+
         <div className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -717,7 +730,21 @@ const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('kashtrix-theme') as ThemeMode) || 'system');
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('kashtrix-theme') as ThemeMode) || 'light');
+
+  useEffect(() => {
+    localStorage.setItem('kashtrix-theme', themeMode);
+    const root = document.documentElement;
+    if (themeMode === 'dark') {
+      root.classList.add('dark');
+    } else if (themeMode === 'light') {
+      root.classList.remove('dark');
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (prefersDark) root.classList.add('dark');
+      else root.classList.remove('dark');
+    }
+  }, [themeMode]);
 
   useEffect(() => {
     const item = navItems.find(navItem => navItem.id === activeView);
