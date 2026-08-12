@@ -61,8 +61,8 @@ const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'i
    LOGIN SCREEN
 ═══════════════════════════════════════════ */
 const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => Promise<void> }> = ({ onLogin }) => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
