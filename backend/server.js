@@ -1664,6 +1664,18 @@ app.delete('/api/ingest/processes/:id', authMiddleware, (req, res) => {
     res.json({ success: true });
 });
 
+app.get('/api/system/stats', authMiddleware, async (req, res) => {
+    try {
+        const stats = await systemApi.getFullSystemStats({
+            transcoderActiveStreams: activeChannels.size || 0,
+            transcoderIdleStreams: Math.max(0, 16 - (activeChannels.size || 0)),
+        });
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch system stats: ' + error.message });
+    }
+});
+
 // --- STATIC FRONTEND SERVING ---
 app.use(express.static(path.join(__dirname, '../dist')));
 app.use((req, res, next) => {
@@ -1675,7 +1687,11 @@ app.use((req, res, next) => {
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
-const websocketCanAccess = (client, modules) => client.user?.role === 'superadmin' || modules.some(module => licenseHasModule(getLicense(), module));
+const websocketCanAccess = (client, modules) => {
+    if (!client.user) return false;
+    if (client.user.role === 'superadmin' || client.user.role === 'admin') return true;
+    return modules.some(module => licenseHasModule(getLicense(), module));
+};
 
 let runningProcesses = {};
 
@@ -1801,7 +1817,10 @@ const startSystemStatsBroadcast = () => {
         if (polling || wss.clients.size === 0) return;
         polling = true;
         try {
-            const stats = await systemApi.getFullSystemStats();
+            const stats = await systemApi.getFullSystemStats({
+                transcoderActiveStreams: activeChannels.size || 0,
+                transcoderIdleStreams: Math.max(0, 16 - (activeChannels.size || 0)),
+            });
             broadcastSystemStats(stats);
         } catch (error) {
             console.error("System stats broadcast error:", error);
@@ -2288,7 +2307,7 @@ mediaServer.on('error', (err) => {
 const apiServer = server.listen(API_PORT, () => {
     console.log(`[API Server] Running on http://localhost:${API_PORT}`);
     console.log(`[WebSocket] Connected to ws://localhost:${API_PORT}`);
-    // startSystemStatsBroadcast(); // Removed to avoid high CPU usage, now client-requested
+    startSystemStatsBroadcast();
     startIngestStatsBroadcast();
 });
 

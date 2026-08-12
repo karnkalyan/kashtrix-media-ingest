@@ -501,7 +501,9 @@ const Sidebar: React.FC<{
         onClick={() => { setActiveView(item.id); onMobileClose(); }}
         className={`group relative flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[12px] font-medium transition-colors duration-150 ${
           isActive
-            ? 'bg-[var(--primary-subtle)] text-[var(--primary)] before:absolute before:-left-2 before:h-5 before:w-[3px] before:rounded-r before:bg-[var(--accent)]'
+            ? item.id === 'monitor'
+              ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold before:absolute before:-left-2 before:h-5 before:w-[3px] before:rounded-r before:bg-[#4A1B7A]'
+              : 'bg-[var(--primary-subtle)] text-[var(--primary)] before:absolute before:-left-2 before:h-5 before:w-[3px] before:rounded-r before:bg-[var(--accent)]'
             : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)]'
         } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
         title={collapsed && !mobileOpen ? item.label : undefined}
