@@ -529,19 +529,19 @@ const Sidebar: React.FC<{
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#27153B] bg-[#130B1C] text-white transition-all duration-200 shadow-xl ${
-          mobileOpen ? 'w-[230px] translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${collapsed && !mobileOpen ? 'lg:w-[68px]' : 'lg:w-[230px]'}`}
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs ${
+          mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
       >
         {/* Brand Header */}
-        <div className="flex h-14 items-center justify-between border-b border-[#27153B] px-3.5">
+        <div className="flex h-14 items-center justify-between border-b border-[#E8DFF0] px-3.5">
           <div className="flex items-center gap-2 overflow-hidden">
             <KashtrixLogo size={collapsed && !mobileOpen ? 32 : 148} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
           </div>
           <button
             type="button"
             onClick={onToggle}
-            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#371F52] bg-[#1E112B] text-[#B8A6CC] transition-colors hover:bg-[#6D32D9] hover:text-white"
+            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147]"
             title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {collapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
@@ -549,11 +549,11 @@ const Sidebar: React.FC<{
         </div>
 
         {/* Navigation Items Grouped */}
-        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4 scrollbar-hide">
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-3 scrollbar-hide">
           {groups.map(group => (
-            <div key={group.name} className="space-y-1">
+            <div key={group.name} className="space-y-0.5">
               {(!collapsed || mobileOpen) && (
-                <div className="px-2.5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#A494B5]">
+                <div className="px-2.5 pb-1 pt-1 text-[9px] font-bold uppercase tracking-wider text-[#6F6078]">
                   {group.name}
                 </div>
               )}
@@ -567,12 +567,12 @@ const Sidebar: React.FC<{
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
                     className={`group relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium transition-all duration-150 ${
                       isActive
-                        ? 'bg-[#6D32D9] text-white font-semibold shadow-md shadow-[#6D32D9]/30'
-                        : 'text-[#C4B7D6] hover:bg-[#251538] hover:text-white'
+                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold border-l-[3px] border-[#6D32D9]'
+                        : 'text-[#6F6078] hover:bg-[#F8F7FA] hover:text-[#1B1024]'
                     } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
-                    <Icon size={17} className={`shrink-0 transition-colors ${isActive ? 'text-white' : 'text-[#A494B5] group-hover:text-white'}`} />
+                    <Icon size={16} className={`shrink-0 transition-colors ${isActive ? 'text-[#6D32D9]' : 'text-[#6F6078] group-hover:text-[#1B1024]'}`} />
                     
                     {(!collapsed || mobileOpen) && (
                       <div className="flex flex-1 items-center justify-between overflow-hidden">
@@ -593,23 +593,23 @@ const Sidebar: React.FC<{
 
         {/* Footer License Status */}
         {(!collapsed || mobileOpen) ? (
-          <div className="border-t border-[#27153B] p-3">
-            <div className="rounded-xl border border-[#371F52] bg-[#1E112B] p-2.5 text-[11px]">
-              <div className="flex items-center gap-2 font-semibold text-white">
+          <div className="border-t border-[#E8DFF0] p-3">
+            <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 text-[11px]">
+              <div className="flex items-center gap-2 font-semibold text-[#1B1024]">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#16A36A] opacity-75" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-[#16A36A]" />
                 </span>
                 <span className="truncate">{licenseStatus === 'activated' ? 'Pro License Active' : 'License Active'}</span>
               </div>
-              <div className="mt-1 text-[10px] text-[#A494B5] truncate">
+              <div className="mt-0.5 text-[10px] text-[#6F6078] truncate">
                 {customerName || 'KASHTRIX Media Engine'}
               </div>
             </div>
           </div>
         ) : (
-          <div className="border-t border-[#27153B] p-2 text-center">
-            <div className="mx-auto grid h-8 w-8 place-items-center rounded-lg bg-[#1E112B] text-[#16A36A]" title="License Active">
+          <div className="border-t border-[#E8DFF0] p-2 text-center">
+            <div className="mx-auto grid h-8 w-8 place-items-center rounded-lg bg-[#F8F7FA] text-[#16A36A]" title="License Active">
               <FiShield size={16} />
             </div>
           </div>
