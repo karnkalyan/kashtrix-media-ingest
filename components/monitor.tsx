@@ -455,8 +455,17 @@ const PrimaryKpiRow: React.FC<{ stats: TelemetryState }> = ({ stats }) => {
   const diskVal = stats.diskLoad || 0;
   const totalBps = (stats.lastRx || 0) + (stats.lastTx || 0);
 
-  const memUsedStr = stats.memoryDetails ? `${stats.memoryDetails.usedFmt} / ${stats.memoryDetails.totalFmt}` : '—';
-  const diskUsedStr = stats.storageDetails ? `${stats.storageDetails.usedFmt} / ${stats.storageDetails.sizeFmt}` : '—';
+  const memUsedStr = stats.memoryDetails
+    ? `${stats.memoryDetails.usedFmt} / ${stats.memoryDetails.totalFmt}`
+    : `${memVal.toFixed(1)}% Allocated`;
+
+  const diskUsedStr = stats.storageDetails
+    ? `${stats.storageDetails.usedFmt} / ${stats.storageDetails.sizeFmt}`
+    : `${diskVal.toFixed(1)}% Used`;
+
+  const loadAvgDisplay = stats.loadAvg && stats.loadAvg.length > 0 && stats.loadAvg.some(l => l > 0)
+    ? stats.loadAvg.map(l => (typeof l === 'number' ? l.toFixed(2) : l)).join(' / ')
+    : `${((cpuVal / 100) * (stats.cpusCount || 1)).toFixed(2)}`;
 
   return (
     <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -494,8 +503,8 @@ const PrimaryKpiRow: React.FC<{ stats: TelemetryState }> = ({ stats }) => {
 
       <KpiCard
         label="Processes"
-        mainValue={`${stats.runningProcesses || '—'}`}
-        secondaryText={`Load average ${stats.loadAvg?.[0] !== undefined ? stats.loadAvg[0].toFixed(2) : '—'}`}
+        mainValue={`${stats.runningProcesses || 0}`}
+        secondaryText={`Load average ${loadAvgDisplay}`}
         icon={<Server size={16} />}
       />
 

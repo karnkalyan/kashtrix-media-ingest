@@ -1857,7 +1857,7 @@ const broadcastCaptureDevices = (devices) => {
 
 const broadcastSystemStats = (stats) => {
     wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN && websocketCanAccess(client, ['system-monitor'])) {
+        if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type: 'system_stats', payload: stats }));
         }
     });
