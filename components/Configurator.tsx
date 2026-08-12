@@ -8,8 +8,10 @@ import Select from './ui/Select';
 import Card from './ui/Card';
 import StatusBadge from './ui/StatusBadge';
 import FileUpload from './FileUpload';
+import { sendRealtime, subscribeRealtime } from '../services/realtime';
 
 const API_HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const WEB_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
 
 interface VODFile {
   name: string;
@@ -65,9 +67,9 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
   const slug = safeName(name);
   switch (protocol) {
     case Protocol.HLS:
-      return `http://${API_HOST}:${settings.mediaPort}/live/${slug}/index.m3u8`;
+      return `${WEB_ORIGIN}/live/${slug}/index.m3u8`;
     case Protocol.DASH:
-      return `http://${API_HOST}:${settings.mediaPort}/dash/${slug}/index.mpd`;
+      return `${WEB_ORIGIN}/dash/${slug}/index.mpd`;
     case Protocol.RTMP:
       return `rtmp://${API_HOST}:${settings.rtmpPort}/live/${slug}`;
     case Protocol.YOUTUBE:
@@ -79,7 +81,7 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
     case Protocol.UDP:
       return `udp://224.1.1.2:3000`;
     case Protocol.HTTP_TS:
-      return `http://${API_HOST}:${settings.mediaPort}/ts/${slug}.ts`;
+      return `${WEB_ORIGIN}/ts/${slug}.ts`;
     case Protocol.RECORDING:
       return `media/recordings/${slug}.mp4`;
     default:
@@ -89,8 +91,8 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
 
 const playbackUrl = (protocol: Protocol, name: string, settings: AppSettings, url: string) => {
   const slug = safeName(name);
-  if (protocol === Protocol.HLS) return `http://${API_HOST}:${settings.mediaPort}/live/${slug}/index.m3u8`;
-  if (protocol === Protocol.DASH) return `http://${API_HOST}:${settings.mediaPort}/dash/${slug}/index.mpd`;
+  if (protocol === Protocol.HLS) return `${WEB_ORIGIN}/live/${slug}/index.m3u8`;
+  if (protocol === Protocol.DASH) return `${WEB_ORIGIN}/dash/${slug}/index.mpd`;
   if (protocol === Protocol.RECORDING) return '';
   return url;
 };
@@ -137,12 +139,15 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
     setVodFiles(files);
   }, []);
 
-  const refreshDevices = useCallback(async () => {
-    const token = localStorage.getItem('kte-auth-token');
-    const devices = await fetch('/api/ffmpeg/devices', { headers: token ? { Authorization: `Bearer ${token}` } : {} }).then(res => res.json()).catch(() => ({ video: [], audio: [] }));
-    setVideoDevices(devices.video || []);
-    setAudioDevices(devices.audio || []);
+  const refreshDevices = useCallback(() => {
+    sendRealtime({ type: 'capture_devices_request' });
   }, []);
+
+  useEffect(() => subscribeRealtime(message => {
+    if (message.type !== 'capture_devices') return;
+    setVideoDevices(message.payload?.video || []);
+    setAudioDevices(message.payload?.audio || []);
+  }), []);
 
   const refreshLive = useCallback(async () => {
     setLoading(true);
@@ -323,7 +328,7 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
   const audioStreams = currentProgram?.streams.filter(s => s.type === 'audio') || [];
 
   return (
-    <div className="space-y-6">
+    <div className="channel-composer page-stack">
       {/* 1. Channel Composer Card */}
       <Card>
         <div className="flex flex-col gap-3 mb-4 min-[430px]:flex-row min-[430px]:items-start min-[430px]:justify-between">
@@ -347,7 +352,7 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
                 onClick={() => setInputType(tab.value)} 
                 className={`flex flex-col items-center justify-center gap-1 h-14 rounded-[var(--radius-md)] border text-[11px] font-extrabold transition-all ${
                   isActive 
-                    ? 'bg-gradient-to-r from-[var(--primary)] via-[var(--primary-light)] to-[var(--accent)] text-white border-transparent shadow-[var(--shadow-brand)]' 
+                    ? 'bg-[var(--primary)] text-white border-[var(--primary)]'
                     : 'bg-[var(--surface-muted)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
                 }`}
               >
@@ -486,7 +491,7 @@ const Configurator: React.FC<Props> = ({ profiles, settings, licenseStatus, addC
           type="button" 
           onClick={createChannel} 
           disabled={loading}
-          className="w-full mt-6 h-12 rounded-[var(--radius-md)] bg-gradient-to-r from-[var(--primary)] via-[var(--primary-light)] to-[var(--accent)] text-white font-extrabold text-sm shadow-[var(--shadow-brand)] hover:opacity-95 transition-all flex items-center justify-center gap-2"
+          className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--primary)] text-[13px] font-semibold text-white transition-colors hover:bg-[var(--primary-hover)]"
         >
           <FiPlay size={16} /> Save Live Channel
         </button>

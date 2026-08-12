@@ -1,5 +1,5 @@
 {
-  "name": "Kasvhi Transcode Engine",
+  "name": "KASHTRIX StreamOps",
   "description": "A professional, multi-channel live transcoding engine for simulating complex media workflows with reusable profiles and persistent channel management.",
   "requestFramePermissions": [
     "camera",

@@ -39,16 +39,16 @@ const ChannelDashboard: React.FC<Props> = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="channels-workspace page-stack">
       {/* 1. Active Channels Card */}
       <Card padding="none" className="overflow-hidden">
         <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-sm">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-subtle)] text-[var(--primary)]">
               <FiList size={20} />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-[var(--text-primary)]">Active Channels</h2>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">Channels</h2>
               <p className="text-xs text-[var(--text-secondary)]">
                 {channels.length} configured channels ({running} active, {stopped} stopped)
               </p>
@@ -114,8 +114,8 @@ const ChannelDashboard: React.FC<Props> = ({
                     <td className="px-5 py-3.5">
                       <StatusBadge status={channel.status === ChannelStatus.Running ? 'Running' : 'Stopped'} />
                     </td>
-                    <td className="px-5 py-3.5 font-semibold">0</td>
-                    <td className="px-5 py-3.5 font-mono text-[11px] text-[var(--text-muted)]">4.8 Mbps</td>
+                    <td className="px-5 py-3.5 text-[var(--text-muted)]">—</td>
+                    <td className="px-5 py-3.5 font-mono text-[11px] text-[var(--text-muted)]">{profiles.find(profile => profile.id === channel.profileId)?.videoBitrate ? `${profiles.find(profile => profile.id === channel.profileId)?.videoBitrate} Kbps` : 'Source'}</td>
                     <td className="px-5 py-3.5 font-mono text-[11px]">
                       {new Date((channel.uptime || 0) * 1000).toISOString().slice(11, 19)}
                     </td>

@@ -11,11 +11,11 @@ const Button: React.FC<ButtonProps> = ({
   variant = 'primary', size = 'md', loading = false,
   children, className = '', disabled, ...props
 }) => {
-  const base = 'inline-flex items-center justify-center gap-2 font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+  const base = 'inline-flex items-center justify-center gap-1.5 font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
 
   const variants: Record<string, string> = {
-    primary: 'bg-gradient-to-r from-[var(--primary)] via-[var(--primary-light)] to-[var(--accent)] text-white shadow-[var(--shadow-brand)] hover:opacity-90 hover:shadow-lg focus-visible:ring-[var(--primary)]',
-    secondary: 'bg-white border border-[var(--border)] text-[var(--text-primary)] shadow-[var(--shadow-sm)] hover:bg-[var(--surface-muted)] hover:border-[var(--border-strong)] focus-visible:ring-[var(--primary)]',
+    primary: 'border border-[var(--primary-light)] bg-[var(--primary-light)] text-white hover:bg-[var(--primary)] hover:border-[var(--primary)] focus-visible:ring-[var(--primary)]',
+    secondary: 'bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--surface-muted)] hover:border-[var(--border-strong)] focus-visible:ring-[var(--primary)]',
     ghost: 'text-[var(--primary)] hover:bg-[var(--primary-50)] focus-visible:ring-[var(--primary)]',
     danger: 'bg-[var(--danger)] text-white shadow-sm shadow-red-200 hover:bg-red-700 focus-visible:ring-[var(--danger)]',
     success: 'bg-[var(--success)] text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700 focus-visible:ring-[var(--success)]',
@@ -23,8 +23,8 @@ const Button: React.FC<ButtonProps> = ({
 
   const sizes: Record<string, string> = {
     sm: 'h-8 px-3 text-xs rounded-[var(--radius-sm)]',
-    md: 'h-10 px-5 text-sm rounded-[var(--radius-md)]',
-    lg: 'h-12 px-6 text-base rounded-[var(--radius-md)]',
+    md: 'h-9 px-3.5 text-xs rounded-[var(--radius-sm)]',
+    lg: 'h-11 px-5 text-sm rounded-[var(--radius-md)]',
     icon: 'h-10 w-10 rounded-[var(--radius-md)]',
   };
 

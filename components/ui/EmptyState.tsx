@@ -8,15 +8,15 @@ interface EmptyStateProps {
 }
 
 const EmptyState: React.FC<EmptyStateProps> = ({ icon, title, description, action }) => (
-  <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+  <div className="flex min-h-[120px] flex-col items-center justify-center px-5 py-6 text-center">
     {icon && (
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--primary-50)] text-[var(--primary)]">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--primary-50)] text-[var(--primary)]">
         {icon}
       </div>
     )}
-    <h3 className="text-base font-bold text-[var(--text-primary)]">{title}</h3>
-    {description && <p className="mt-1.5 max-w-sm text-sm text-[var(--text-muted)]">{description}</p>}
-    {action && <div className="mt-5">{action}</div>}
+    <h3 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h3>
+    {description && <p className="mt-1 max-w-sm text-xs text-[var(--text-muted)]">{description}</p>}
+    {action && <div className="mt-3">{action}</div>}
   </div>
 );
 

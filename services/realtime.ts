@@ -14,6 +14,7 @@ let reconnectTimer: number | undefined;
 let heartbeatTimer: number | undefined;
 let reconnectAttempt = 0;
 let connected = false;
+const pendingMessages: string[] = [];
 
 const publishStatus = (next: boolean) => {
   if (connected === next) return;
@@ -41,6 +42,7 @@ const connect = () => {
     if (socket !== current) return;
     reconnectAttempt = 0;
     publishStatus(true);
+    while (pendingMessages.length && current.readyState === WebSocket.OPEN) current.send(pendingMessages.shift()!);
     if (heartbeatTimer) window.clearInterval(heartbeatTimer);
     heartbeatTimer = window.setInterval(() => {
       if (current.readyState === WebSocket.OPEN) current.send(JSON.stringify({ type: 'ping' }));
@@ -63,6 +65,15 @@ const connect = () => {
     publishStatus(false);
     scheduleReconnect();
   };
+};
+
+export const sendRealtime = (message: RealtimeMessage) => {
+  const serialized = JSON.stringify(message);
+  if (socket?.readyState === WebSocket.OPEN) socket.send(serialized);
+  else {
+    pendingMessages.push(serialized);
+    connect();
+  }
 };
 
 export const subscribeRealtime = (listener: MessageListener, statusListener?: StatusListener) => {

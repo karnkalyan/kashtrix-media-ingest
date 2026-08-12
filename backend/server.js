@@ -17,7 +17,7 @@ const PrismaStore = require('./prismaStore');
 
 const NodeMediaServer = require('node-media-server');
 
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const bundledFfmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
 const multer = require('multer');
 
@@ -38,6 +38,10 @@ const loadEnvFile = () => {
     }
 };
 loadEnvFile();
+
+const ffmpegPath = process.env.FFMPEG_PATH || bundledFfmpegPath;
+const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
+const { getFFmpegDevices } = require('./getDevices');
 
 // --- CONFIGURATION ---
 
@@ -357,6 +361,7 @@ const seedDefaultProfiles = () => {
 seedDefaultProfiles();
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(cors());
 
@@ -699,7 +704,7 @@ app.post('/api/ffprobe-ts-programs', authMiddleware, (req, res) => {
     if (isNetwork) args.push('-timeout', '5000000');
     args.push(ffInput);
 
-    const proc = spawn('ffprobe', args);
+    const proc = spawn(ffprobePath, args);
     let stdout = '';
     proc.stdout.on('data', d => stdout += d);
     proc.on('close', code => {
@@ -727,21 +732,33 @@ app.post('/api/ffprobe-ts-programs', authMiddleware, (req, res) => {
     });
 });
 
-app.get('/api/ffmpeg/devices', authMiddleware, (req, res) => {
-    const proc = spawn(ffmpegPath, ['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
-    let stderr = '';
-    proc.stderr.on('data', d => stderr += d);
-    proc.on('close', () => {
-        const video = [], audio = [];
-        let section = null;
-        stderr.split('\n').forEach(line => {
-            if (line.includes('video devices')) section = video;
-            else if (line.includes('audio devices')) section = audio;
-            const m = line.match(/"([^"]+)"/);
-            if (m && section && !m[1].startsWith('@')) section.push(m[1]);
-        });
-        res.json({ video, audio });
-    });
+let captureDeviceCache = null;
+let captureDeviceScan = null;
+const CAPTURE_DEVICE_CACHE_MS = 5000;
+
+const scanCaptureDevices = async ({ refresh = false } = {}) => {
+    const now = Date.now();
+    if (!refresh && captureDeviceCache && now - captureDeviceCache.updatedAt < CAPTURE_DEVICE_CACHE_MS) {
+        return captureDeviceCache.devices;
+    }
+    if (captureDeviceScan) return captureDeviceScan;
+
+    // Device enumeration is an FFmpeg/DirectShow operation. ffprobe cannot list
+    // Windows capture devices. Use the bounded execFile implementation so stdin
+    // is closed and FFmpeg always exits after printing the device list.
+    captureDeviceScan = getFFmpegDevices(ffmpegPath)
+        .then(devices => {
+            captureDeviceCache = { devices, updatedAt: Date.now() };
+            return devices;
+        })
+        .finally(() => { captureDeviceScan = null; });
+
+    return captureDeviceScan;
+};
+
+app.get('/api/ffmpeg/devices', authMiddleware, async (req, res) => {
+    try { res.json(await scanCaptureDevices({ refresh: req.query.refresh === 'true' })); }
+    catch (error) { res.status(500).json({ error: error.message || 'Unable to detect capture devices' }); }
 });
 
 app.use(authMiddleware);
@@ -1402,7 +1419,7 @@ const getIngestStreams = async () => {
             const activeRecording = getActiveRecordingPayload(appName, streamName);
 
             // FIX: Add HLS URL to stream info so UI can construct correct URL
-            const hlsUrl = `http://localhost:${getSettings().mediaPort}/live/${streamName}/index.m3u8`;
+            const hlsUrl = `/live/${encodeURIComponent(streamName)}/index.m3u8`;
 
             streams[key] = {
                 app: appName,
@@ -1711,6 +1728,18 @@ wss.on('connection', (ws, request) => {
                 }
             } catch (error) {
                 console.error("Failed to respond to systeminfo request:", error);
+            }
+        }
+        if (message.type === 'capture_devices_request') {
+            if (!websocketCanAccess(ws, ['live-tv', 'ingest-server'])) {
+                ws.send(JSON.stringify({ type: 'module_denied', payload: { module: 'ingest-server' } }));
+                return;
+            }
+            try {
+                const devices = await scanCaptureDevices({ refresh: message.payload?.refresh === true });
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'capture_devices', payload: devices }));
+            } catch (error) {
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'capture_devices_error', payload: { error: error.message || 'Unable to detect capture devices' } }));
             }
         }
     });

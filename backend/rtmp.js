@@ -1,5 +1,5 @@
 const NodeMediaServer = require('node-media-server');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffmpegPath = process.env.FFMPEG_PATH || require('@ffmpeg-installer/ffmpeg').path;
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');

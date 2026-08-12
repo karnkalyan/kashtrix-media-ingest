@@ -3,7 +3,8 @@ import { Toaster, toast } from 'react-hot-toast';
 import {
   FiActivity, FiKey, FiList, FiSettings, FiUser, FiCheckCircle,
   FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown,
-  FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv,
+  FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv, FiBell,
+  FiSun, FiMoon,
 } from 'react-icons/fi';
 import { FaBroadcastTower } from 'react-icons/fa';
 import Configurator from './components/Configurator';
@@ -19,6 +20,7 @@ import KashtrixDashboard from './components/KashtrixDashboard';
 import RecordingLibrary from './components/RecordingLibrary';
 
 type ActiveView = 'dashboard' | 'channels' | 'live-server' | 'monitor' | 'ingest' | 'recordings' | 'settings' | 'license' | 'account';
+type ThemeMode = 'light' | 'dark' | 'system';
 
 const LICENSE_MODULE_OPTIONS = [
   { id: 'live-tv', label: 'Live TV & Channels', description: 'Channel composer, transcoding profiles and playout control.' },
@@ -41,18 +43,17 @@ const hasLicenseModule = (license: LicenseInfo, module?: string) => {
 /* ═══════════════════════════════════════════
    SHARED STYLES
 ═══════════════════════════════════════════ */
-const inputClass = 'w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-primary)] shadow-[var(--shadow-inner)] outline-none transition-all focus:border-[var(--primary)] focus:ring-4 focus:ring-[var(--primary)]/10 placeholder:text-[var(--text-muted)]';
+const inputClass = 'h-9 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12px] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/10 placeholder:text-[var(--text-muted)]';
 
 /* ═══════════════════════════════════════════
-   KASHTRIX LOGO SVG
+   OFFICIAL KASHTRIX STREAMOPS LOGO
 ═══════════════════════════════════════════ */
-const KashtrixLogo: React.FC<{ size?: number }> = ({ size = 36 }) => (
-  <div className="flex items-center justify-center rounded-xl bg-gradient-to-br from-[var(--primary)] via-[var(--primary-light)] to-[var(--accent)] text-white shadow-[var(--shadow-brand)]" style={{ width: size, height: size }}>
-    <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2L2 7l10 5 10-5-10-5z" />
-      <path d="M2 17l10 5 10-5" />
-      <path d="M2 12l10 5 10-5" />
-    </svg>
+const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ size = 176, variant = 'wordmark' }) => (
+  <div
+    className={`brand-lockup brand-lockup--${variant} shrink-0`}
+    style={{ width: size, height: variant === 'full' ? Math.round(size * 0.66) : variant === 'icon' ? size : Math.round(size * 0.22) }}
+  >
+    <img src="/main-logo.png" alt="KASHTRIX StreamOps" draggable={false} />
   </div>
 );
 
@@ -84,7 +85,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
       <Toaster position="top-right" toastOptions={{ style: { background: 'var(--surface)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--border)', fontSize: '14px' } }} />
 
       {/* Left brand panel */}
-      <div className="hidden lg:flex lg:w-1/2 xl:w-[55%] items-center justify-center bg-gradient-to-br from-[var(--primary)] via-[var(--primary-light)] to-[var(--accent)] p-12 relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-1/2 xl:w-[55%] items-center justify-center bg-[#2B0D3A] p-12 relative overflow-hidden">
         {/* Decorative network lines */}
         <div className="absolute inset-0 opacity-10">
           <svg width="100%" height="100%" viewBox="0 0 800 600" fill="none">
@@ -104,19 +105,9 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
           </svg>
         </div>
         <div className="relative z-10 max-w-md text-white">
-          <div className="flex items-center gap-4 mb-10">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-              <FaBroadcastTower size={28} />
-            </div>
-          </div>
-          <h1 className="text-4xl font-extrabold tracking-tight leading-tight">
-            KASHTRIX
-          </h1>
-          <p className="mt-2 text-sm font-semibold tracking-widest uppercase opacity-80">
-            IPTV • OTT • Middleware
-          </p>
+          <KashtrixLogo size={390} variant="full" />
           <p className="mt-8 text-lg font-medium leading-relaxed opacity-90">
-            Powering Seamless Streaming Experiences
+            Live Streaming • Transcoding • Ingest
           </p>
           <p className="mt-4 text-sm leading-relaxed opacity-70">
             Enterprise-grade IPTV management, OTT content delivery, and middleware administration. Manage live TV, VOD, subscriptions, devices, and streaming infrastructure from a single unified platform.
@@ -129,11 +120,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
         <div className="w-full max-w-[420px]">
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-10 lg:hidden">
-            <KashtrixLogo size={44} />
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight text-[var(--text-primary)]">KASHTRIX</h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">IPTV • OTT • Middleware</p>
-            </div>
+            <KashtrixLogo size={210} />
           </div>
 
           <div className="hidden lg:block mb-10">
@@ -178,7 +165,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
           </form>
 
           <p className="mt-8 text-center text-xs text-[var(--text-muted)]">
-            Kashtrix Admin Panel v2.0 — Enterprise Streaming Platform
+            KASHTRIX StreamOps — Live Streaming • Transcoding • Ingest
           </p>
         </div>
       </div>
@@ -205,10 +192,10 @@ const SettingsView: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
     }
   };
   return (
-    <Card className="max-w-3xl">
+    <Card className="max-w-4xl" padding="sm">
       <h2 className="text-xl font-bold text-[var(--text-primary)]">Application Settings</h2>
       <p className="mt-1 text-sm text-[var(--text-secondary)]">Configure ports and server settings. Backend restart applies changes.</p>
-      <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         {[
           ['rtmpPort', 'RTMP Ingest Port', 'Primary RTMP input port'],
           ['httpPort', 'HTTP Stream Port', 'DASH/HLS stream distribution port'],
@@ -251,10 +238,12 @@ const AccountView: React.FC<{ username?: string; onSave: (payload: { username: s
     }
   };
   return (
-    <Card className="max-w-xl">
+    <div className="grid max-w-5xl gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <Card padding="sm"><p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Administrator</p><div className="mt-3 flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-full bg-[var(--primary-subtle)] font-display font-bold text-[var(--primary)]">{username.charAt(0).toUpperCase()}</span><div className="min-w-0"><p className="truncate text-sm font-semibold">{username}</p><p className="text-[10px] text-[var(--text-muted)]">StreamOps administrator</p></div></div></Card>
+    <Card padding="sm">
       <h2 className="text-xl font-bold text-[var(--text-primary)]">Login Management</h2>
       <p className="mt-1 text-sm text-[var(--text-secondary)]">Update the administrator username and password.</p>
-      <div className="mt-6 space-y-5">
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div>
           <label className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">Username</label>
           <input className={inputClass} value={nextUsername} onChange={e => setNextUsername(e.target.value)} />
@@ -267,11 +256,11 @@ const AccountView: React.FC<{ username?: string; onSave: (payload: { username: s
           <label className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">New Password</label>
           <input className={inputClass} type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Leave blank to keep current" />
         </div>
-        <Button onClick={save} loading={saving} disabled={!currentPassword}>
+        <Button className="md:col-span-2 md:w-fit" onClick={save} loading={saving} disabled={!currentPassword}>
           {saving ? 'Updating...' : 'Update Account'}
         </Button>
       </div>
-    </Card>
+    </Card></div>
   );
 };
 
@@ -365,12 +354,12 @@ const LicenseView: React.FC<{
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <Card>
         <h2 className="text-xl font-bold text-[var(--text-primary)]">License Activation</h2>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">Paste a JWT license token to activate.</p>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-5 md:grid-cols-2">
+        <div className="mt-4 grid grid-cols-2 gap-3 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-3">
           <div><p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Status</p><p className="mt-1 text-sm font-bold text-[var(--text-primary)]">{license.status}</p></div>
           <div><p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Customer</p><p className="mt-1 text-sm font-bold text-[var(--text-primary)]">{license.customerName || 'Not activated'}</p></div>
           <div><p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Email</p><p className="mt-1 text-sm font-bold text-[var(--text-primary)]">{license.customerEmail || '-'}</p></div>
@@ -407,7 +396,7 @@ const LicenseView: React.FC<{
       {canShowGenerator && <Card>
         <h2 className="text-xl font-bold text-[var(--text-primary)]">License Generator</h2>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">Generator admin: <span className="font-bold text-[var(--primary)]">karnkalyan@gmail.com</span></p>
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
           <input className={inputClass} value={generator.adminEmail} onChange={e => setGenerator(prev => ({ ...prev, adminEmail: e.target.value }))} placeholder="Generator email" />
           <input className={inputClass} type="password" value={generator.adminPassword} onChange={e => setGenerator(prev => ({ ...prev, adminPassword: e.target.value }))} placeholder="Generator password" />
           <input className={inputClass} value={generator.customerName} onChange={e => setGenerator(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Customer name" />
@@ -428,36 +417,19 @@ const LicenseView: React.FC<{
           <textarea readOnly className={`${inputClass} mt-6 h-28 resize-none font-mono text-[10px] text-[var(--text-muted)]`} value={generated} onFocus={e => e.currentTarget.select()} />
         )}
 
-        <div className="mt-10">
-          <h3 className="mb-4 text-sm font-extrabold uppercase tracking-widest text-[var(--text-primary)]">All Generated Licenses</h3>
-          <div className="space-y-3 max-h-72 overflow-y-auto pr-2 scrollbar-hide">
-            {licensesList.map(l => (
-              <div key={l.id} className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-4 transition-all hover:bg-[var(--surface-hover)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-sm font-bold text-[var(--text-primary)] block">{l.customer_name}</span>
-                    <span className="text-[10px] font-semibold text-[var(--text-muted)] block">{l.customer_email || 'No email provided'}</span>
-                  </div>
-                  <div className="text-right">
-                    <StatusBadge status={l.status} />
-                    <p className="text-[9px] font-medium text-[var(--text-muted)] mt-1 uppercase">Exp: {new Date(l.expires_at).toLocaleDateString()}</p>
-                  </div>
-                </div>
-                <code className="text-[10px] leading-relaxed break-all text-[var(--text-muted)]">{l.license_key}</code>
-                <div className="flex flex-wrap gap-1">{(l.features || []).map((feature: string) => <span key={feature} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-600">{LICENSE_MODULE_OPTIONS.find(module => module.id === feature)?.label || feature}</span>)}</div>
-                <p className="break-all font-mono text-[9px] text-slate-500">HWID: {l.hardware_id || 'Legacy / unbound'}</p>
-                <Button
-                  variant={l.status === 'active' ? 'danger' : 'success'}
-                  size="sm"
-                  className="w-full"
-                  onClick={() => toggleStatus(l)}
-                  loading={loading}
-                >
-                  {l.status === 'active' ? 'Suspend License' : 'Reactivate'}
-                </Button>
-              </div>
-            ))}
-            {licensesList.length === 0 && <p className="text-xs text-[var(--text-muted)] font-medium">No licenses generated yet.</p>}
+        <div className="mt-6">
+          <h3 className="mb-3 text-xs font-semibold text-[var(--text-primary)]">Generated licenses</h3>
+          <div className="data-panel data-table-wrap max-h-72">
+            <table className="data-table min-w-[720px]"><thead><tr><th>Customer</th><th>Modules</th><th>HWID</th><th>Expires</th><th>Status</th><th className="text-right">Actions</th></tr></thead><tbody>
+              {licensesList.map(l => <tr key={l.id}>
+                <td><p className="font-semibold">{l.customer_name}</p><p className="text-[9px] text-[var(--text-muted)]">{l.customer_email || 'No email'}</p></td>
+                <td>{(l.features || []).length} modules</td>
+                <td><code className="block max-w-[150px] truncate text-[9px]" title={l.hardware_id}>{l.hardware_id || 'Legacy / unbound'}</code></td>
+                <td>{new Date(l.expires_at).toLocaleDateString()}</td><td><StatusBadge status={l.status} /></td>
+                <td><div className="flex justify-end gap-2"><button onClick={() => navigator.clipboard.writeText(l.license_key)} className="h-8 rounded-md border border-[var(--border)] px-2.5 text-[10px] font-semibold">Copy token</button><button onClick={() => toggleStatus(l)} disabled={loading} className={`h-8 rounded-md px-2.5 text-[10px] font-semibold text-white ${l.status === 'active' ? 'bg-[var(--danger)]' : 'bg-[var(--success)]'}`}>{l.status === 'active' ? 'Suspend' : 'Reactivate'}</button></div></td>
+              </tr>)}
+              {licensesList.length === 0 && <tr><td colSpan={6}><div className="compact-empty">No licenses generated yet.</div></td></tr>}
+            </tbody></table>
           </div>
         </div>
       </Card>}
@@ -488,21 +460,21 @@ const ExpiredScreen: React.FC<{ license: LicenseInfo; username?: string; onActiv
 interface NavItem {
   id: ActiveView;
   label: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
   group?: string;
   licenseModule?: string;
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2 },
-  { id: 'channels', label: 'Live TV & Channels', icon: FiTv, licenseModule: 'live-tv' },
-  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, licenseModule: 'ingest-server' },
-  { id: 'recordings', label: 'Recording Library', icon: FiArchive, licenseModule: 'recording-library' },
-  { id: 'live-server', label: 'Live Server', icon: FiServer, licenseModule: 'live-server' },
-  { id: 'monitor', label: 'System Monitor', icon: FiActivity, licenseModule: 'system-monitor' },
-  { id: 'settings', label: 'Settings', icon: FiSettings },
-  { id: 'license', label: 'License', icon: FiKey },
-  { id: 'account', label: 'Account', icon: FiUser },
+  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Operations' },
+  { id: 'channels', label: 'Live TV & Channels', icon: FiTv, group: 'Operations', licenseModule: 'live-tv' },
+  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', licenseModule: 'ingest-server' },
+  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', licenseModule: 'live-server' },
+  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media', licenseModule: 'recording-library' },
+  { id: 'monitor', label: 'System Monitor', icon: FiActivity, group: 'Observability', licenseModule: 'system-monitor' },
+  { id: 'settings', label: 'Settings', icon: FiSettings, group: 'System' },
+  { id: 'license', label: 'License', icon: FiKey, group: 'System' },
+  { id: 'account', label: 'Account', icon: FiUser, group: 'System' },
 ];
 
 /* ═══════════════════════════════════════════
@@ -527,14 +499,14 @@ const Sidebar: React.FC<{
       <button
         key={item.id}
         onClick={() => { setActiveView(item.id); onMobileClose(); }}
-        className={`group relative flex items-center gap-3.5 rounded-[var(--radius-md)] px-3.5 py-2.5 text-sm font-semibold transition-all duration-200 w-full text-left ${
+        className={`group relative flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[12px] font-medium transition-colors duration-150 ${
           isActive
-            ? 'bg-gradient-to-r from-[var(--primary)] via-[var(--primary-light)] to-[var(--accent)] text-white shadow-[var(--shadow-brand)]'
-            : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]'
+            ? 'bg-[var(--primary-subtle)] text-[var(--primary)] before:absolute before:-left-2 before:h-5 before:w-[3px] before:rounded-r before:bg-[var(--accent)]'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)]'
         } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
         title={collapsed && !mobileOpen ? item.label : undefined}
       >
-        <Icon size={19} className={`shrink-0 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--primary)]'}`} />
+        <Icon size={16} className={`shrink-0 ${isActive ? 'text-[var(--operational-purple)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'}`} />
         {(!collapsed || mobileOpen) && <span>{item.label}</span>}
       </button>
     );
@@ -543,45 +515,38 @@ const Sidebar: React.FC<{
   const sidebarContent = (
     <>
       {/* Logo */}
-      <div className="px-4 pt-6 pb-6">
-        <div className={`flex items-center gap-3.5 ${collapsed && !mobileOpen ? 'justify-center' : ''}`}>
-          <KashtrixLogo size={collapsed && !mobileOpen ? 40 : 42} />
-          {(!collapsed || mobileOpen) && (
-            <div className="min-w-0">
-              <h1 className="text-lg font-extrabold tracking-tight text-[var(--text-primary)]">KASHTRIX</h1>
-              <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-[var(--primary)]">IPTV • OTT • Middleware</p>
-            </div>
-          )}
+      <div className="border-b border-[var(--border)] px-3 py-3">
+        <div className={`flex flex-col ${collapsed && !mobileOpen ? 'items-center' : 'items-start'}`}>
+          <KashtrixLogo size={collapsed && !mobileOpen ? 36 : 154} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
+          {(!collapsed || mobileOpen) && <p className="mt-1 text-[9px] font-medium tracking-wide text-[var(--text-muted)]">Streaming · Transcoding · Ingest</p>}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 space-y-1 scrollbar-hide">
-        {/* Main nav label */}
-        {(!collapsed || mobileOpen) && (
-          <p className="px-3.5 pt-2 pb-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Main</p>
-        )}
-        {navItems.filter(item => username === 'karnkalyan@gmail.com' || hasLicenseModule(license, item.licenseModule)).map(renderNavItem)}
+      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 scrollbar-hide">
+        {navItems.filter(item => username === 'karnkalyan@gmail.com' || hasLicenseModule(license, item.licenseModule)).map((item, index, visibleItems) => (
+          <React.Fragment key={item.id}>
+            {(!collapsed || mobileOpen) && (index === 0 || visibleItems[index - 1]?.group !== item.group) && <p className={`${index ? 'mt-3 border-t border-[var(--border)] pt-3' : 'pt-1'} px-2.5 pb-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]`}>{item.group}</p>}
+            {renderNavItem(item)}
+          </React.Fragment>
+        ))}
 
       </nav>
 
       {/* Bottom status card */}
       {(!collapsed || mobileOpen) && (
-        <div className="p-4">
-          <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-            <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
-              <span className="text-[var(--primary)]"><FiShield size={16} /></span>
-              License
+        <div className="border-t border-[var(--border)] p-3">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-secondary)] p-2.5">
+            <div className="flex items-center gap-2 text-[10px] font-semibold text-[var(--text-primary)]">
+              <FiShield className="text-[var(--primary)]" size={14} />
+              {licenseStatus === 'activated' ? 'Pro License Active' : 'License status'}
             </div>
-            <p className="mt-2 text-xs font-semibold text-[var(--text-secondary)]">
-              {licenseStatus === 'activated' ? 'Pro License Active' : licenseStatus === 'expired' ? 'License Expired' : 'Trial Mode'}
-            </p>
             {customerName && (
-              <p className="mt-1 truncate text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">{customerName}</p>
+              <p className="mt-1 truncate text-[9px] font-semibold uppercase tracking-wider text-[var(--primary)]">{customerName}</p>
             )}
-            <div className="mt-2 flex items-center gap-1.5">
+            <div className="mt-1.5 flex items-center gap-1.5">
               <span className={`h-2 w-2 rounded-full ${licenseStatus === 'activated' ? 'bg-emerald-500' : licenseStatus === 'expired' ? 'bg-red-500' : 'bg-amber-500'}`} />
-              <span className="text-[10px] font-semibold text-[var(--text-muted)]">
+              <span className="text-[9px] font-medium text-[var(--text-muted)]">
                 {licenseStatus === 'activated' ? 'All Systems Operational' : licenseStatus === 'expired' ? 'License Required' : 'Limited Features'}
               </span>
             </div>
@@ -598,9 +563,9 @@ const Sidebar: React.FC<{
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-full flex flex-col border-r border-[var(--border)] bg-[var(--surface)] transition-all duration-300 ${
-          mobileOpen ? 'translate-x-0 w-[268px]' : '-translate-x-full lg:translate-x-0'
-        } ${collapsed && !mobileOpen ? 'lg:w-[76px]' : 'lg:w-[268px]'}`}
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[var(--border)] bg-[var(--surface)] transition-all duration-200 ${
+          mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
       >
         {sidebarContent}
       </aside>
@@ -619,11 +584,14 @@ const TopHeader: React.FC<{
   onMobileMenuOpen: () => void;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
-}> = ({ activeView, username, saveStatus, onLogout, onMobileMenuOpen, sidebarCollapsed, onToggleSidebar }) => {
+  themeMode: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
+}> = ({ activeView, username, saveStatus, onLogout, onMobileMenuOpen, sidebarCollapsed, onToggleSidebar, themeMode, onThemeChange }) => {
   const [fullscreen, setFullscreen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const viewLabels: Record<string, string> = {
+    dashboard: 'Operations Dashboard',
     channels: 'Channels',
     monitor: 'System Monitor',
     ingest: 'Ingest Server',
@@ -632,6 +600,17 @@ const TopHeader: React.FC<{
     settings: 'Settings',
     license: 'License',
     account: 'Account',
+  };
+  const viewDescriptions: Record<string, string> = {
+    dashboard: 'Realtime television operations overview',
+    channels: 'Live TV channel composition and transcoding',
+    monitor: 'Infrastructure health and performance telemetry',
+    ingest: 'Television Recording Control & Live Ingest Management',
+    recordings: 'Search, preview and manage recorded media',
+    'live-server': 'Incoming stream monitoring and distribution',
+    settings: 'Network ports and platform configuration',
+    license: 'HWID-bound feature access management',
+    account: 'Administrator profile and security',
   };
 
   const toggleFullscreen = () => {
@@ -645,7 +624,7 @@ const TopHeader: React.FC<{
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/80 px-4 sm:px-6 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 flex h-[58px] items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-3 sm:px-5">
       <div className="flex items-center gap-3">
         {/* Mobile menu button */}
         <button
@@ -666,14 +645,27 @@ const TopHeader: React.FC<{
         </button>
 
         <div>
-          <h2 className="text-lg font-bold text-[var(--text-primary)] sm:text-xl">{viewLabels[activeView] || activeView}</h2>
-          <p className="hidden text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] sm:block">
-            Manage configurations
+          <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">{viewLabels[activeView] || activeView}</h2>
+          <p className="hidden text-[10px] text-[var(--text-muted)] sm:block">
+            {viewDescriptions[activeView] || 'Manage configurations'}
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        <label className="relative hidden xl:block">
+          <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+          <input aria-label="Search" placeholder="Search anything..." className="h-9 w-52 rounded-md border border-[var(--border)] bg-[var(--surface-secondary)] pl-9 pr-3 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--primary)]" />
+        </label>
+        <button className="relative hidden h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 sm:flex" aria-label="Notifications"><FiBell size={17} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-pink-500 ring-2 ring-white" /></button>
+        <button
+          onClick={() => onThemeChange(themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light')}
+          className="flex h-9 w-9 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)]"
+          aria-label={`Theme: ${themeMode}. Change theme`}
+          title={`Theme: ${themeMode}`}
+        >
+          {themeMode === 'dark' ? <FiMoon size={16} /> : <FiSun size={16} />}
+        </button>
         {/* Sync status */}
         {saveStatus === 'saving' && (
           <span className="hidden sm:flex items-center gap-2 text-xs font-bold text-[var(--primary)] animate-pulse">
@@ -699,9 +691,9 @@ const TopHeader: React.FC<{
         <div className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-1.5 pr-3.5 shadow-[var(--shadow-sm)] transition-all hover:shadow-[var(--shadow-md)]"
+            className="flex items-center gap-2.5 rounded-xl py-1.5 pl-1.5 pr-2 transition-all hover:bg-slate-50"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[var(--primary-100)] to-[var(--primary-200)] text-sm font-bold text-[var(--primary)]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--primary-subtle)] text-sm font-bold text-[var(--primary)]">
               {username?.charAt(0).toUpperCase() || 'U'}
             </div>
             <span className="hidden text-sm font-semibold text-[var(--text-primary)] sm:block">{username || 'User'}</span>
@@ -739,6 +731,20 @@ const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('kashtrix-theme') as ThemeMode) || 'system');
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const resolved = themeMode === 'system' ? (media.matches ? 'dark' : 'light') : themeMode;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+    };
+    applyTheme();
+    localStorage.setItem('kashtrix-theme', themeMode);
+    media.addEventListener('change', applyTheme);
+    return () => media.removeEventListener('change', applyTheme);
+  }, [themeMode]);
 
   useEffect(() => {
     const item = navItems.find(navItem => navItem.id === activeView);
@@ -753,7 +759,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-[var(--background)] font-sans text-[var(--text-primary)]">
+    <div className="kashtrix-app flex min-h-screen bg-[var(--background)] font-sans text-[var(--text-primary)]">
       <Toaster
         position="top-right"
         toastOptions={{
@@ -784,7 +790,7 @@ const App: React.FC = () => {
       />
 
       {/* Main content */}
-      <div className={`flex flex-1 flex-col min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-[76px]' : 'lg:ml-[268px]'}`}>
+      <div className={`flex min-h-screen flex-1 flex-col transition-all duration-200 ${sidebarCollapsed ? 'lg:ml-[64px]' : 'lg:ml-[224px]'}`}>
         {/* Header */}
         <TopHeader
           activeView={activeView}
@@ -794,13 +800,15 @@ const App: React.FC = () => {
           onMobileMenuOpen={() => setMobileMenuOpen(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+          themeMode={themeMode}
+          onThemeChange={setThemeMode}
         />
 
         {/* Content area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-[var(--content-padding)] scrollbar-hide">
-          {activeView === 'dashboard' && <KashtrixDashboard onNavigate={setActiveView} mediaPort={engine.state.settings.mediaPort} />}
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5 scrollbar-hide">
+          {activeView === 'dashboard' && <KashtrixDashboard onNavigate={view => setActiveView(view as ActiveView)} mediaPort={engine.state.settings.mediaPort} />}
           {activeView === 'channels' && (
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[380px_1fr]">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
               <Configurator
                 profiles={engine.state.profiles}
                 settings={engine.state.settings}

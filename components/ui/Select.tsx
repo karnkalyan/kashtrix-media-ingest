@@ -6,25 +6,27 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   options: { value: string; label: string; disabled?: boolean }[];
   error?: string;
   helperText?: string;
+  placeholder?: string;
 }
 
-const Select: React.FC<SelectProps> = ({ label, options, error, helperText, className = '', ...props }) => (
+const Select: React.FC<SelectProps> = ({ label, options, error, helperText, placeholder, className = '', ...props }) => (
   <div className={className}>
     {label && (
-      <label className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">
+      <label className="mb-1.5 block text-xs font-medium text-[var(--text-primary)]">
         {label}
         {props.required && <span className="ml-1 text-[var(--danger)]">*</span>}
       </label>
     )}
     <div className="relative">
       <select
-        className={`w-full appearance-none rounded-[var(--radius-md)] border bg-[var(--surface)] px-4 py-2.5 pr-10 text-sm text-[var(--text-primary)] shadow-[var(--shadow-inner)] outline-none transition-all focus:ring-4 ${
+        className={`h-9 w-full appearance-none rounded-[var(--radius-sm)] border bg-[var(--surface)] px-3 pr-9 text-[12px] text-[var(--text-primary)] outline-none focus:ring-2 ${
           error
             ? 'border-[var(--danger)] focus:border-[var(--danger)] focus:ring-red-100'
             : 'border-[var(--border)] focus:border-[var(--primary)] focus:ring-[var(--primary)]/10'
         }`}
         {...props}
       >
+        {placeholder && <option value="" disabled>{placeholder}</option>}
         {options.map(opt => (
           <option key={opt.value} value={opt.value} disabled={opt.disabled}>
             {opt.label}

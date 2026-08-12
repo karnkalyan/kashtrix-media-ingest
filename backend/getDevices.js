@@ -1,18 +1,23 @@
 const { execFile } = require('child_process');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffmpegPath = process.env.FFMPEG_PATH || require('@ffmpeg-installer/ffmpeg').path;
 
 /**
  * List available FFmpeg capture devices on Windows using DirectShow.
  * @returns {Promise<{video: string[], audio: string[]}>}
  */
-function getFFmpegDevices() {
+function getFFmpegDevices(executable = ffmpegPath) {
     return new Promise((resolve, reject) => {
-        execFile(ffmpegPath, ['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], { encoding: 'utf8' }, (error, stdout, stderr) => {
+        execFile(executable, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], {
+            encoding: 'utf8',
+            windowsHide: true,
+            timeout: 15000,
+            maxBuffer: 1024 * 1024,
+        }, (error, stdout, stderr) => {
             const output = stderr || stdout;
 
             if (error && !output.includes('DirectShow video devices') && !output.includes('DirectShow audio devices')) {
                 console.error('FFmpeg execution error (Devices):', error.message);
-                return reject(new Error(`Failed to run FFmpeg command: ${error.message}.`));
+                return reject(new Error(`Failed to run FFmpeg device discovery: ${error.message}.`));
             }
 
             try {

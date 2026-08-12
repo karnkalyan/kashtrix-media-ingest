@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.4.10
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -32,9 +32,13 @@ services:
       KTE_LICENSE_ADMIN_EMAIL: ${KTE_LICENSE_ADMIN_EMAIL}
       KTE_LICENSE_ADMIN_PASSWORD: ${KTE_LICENSE_ADMIN_PASSWORD}
       KTE_HWID: ${KTE_HWID:-}
+      FFMPEG_PATH: /usr/local/bin/ffmpeg
+      FFPROBE_PATH: /usr/local/bin/ffprobe
     ports:
       - "1935:1935"
-      - "8080:8080"
+    expose:
+      - "3005"
+      - "8080"
     volumes:
       - recording-data:/app/media
     healthcheck:
@@ -54,7 +58,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "3000:80"
+      - "${HTTP_PORT:-3000}:80"
     networks:
       - kashtrix
 
@@ -65,4 +69,3 @@ volumes:
 networks:
   kashtrix:
     driver: bridge
-

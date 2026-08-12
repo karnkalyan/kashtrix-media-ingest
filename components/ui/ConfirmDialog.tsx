@@ -37,7 +37,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             className={`rounded-[var(--radius-md)] px-4 py-2.5 text-sm font-semibold text-white transition-all disabled:opacity-50 ${
               variant === 'danger'
                 ? 'bg-[var(--danger)] hover:bg-red-700 shadow-sm shadow-red-200'
-                : 'bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] hover:opacity-90 shadow-[var(--shadow-brand)]'
+                : 'bg-[var(--primary)] hover:bg-[var(--primary-hover)]'
             }`}
           >
             {loading ? 'Processing...' : confirmLabel}

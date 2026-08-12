@@ -1,11 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FiActivity, FiCpu, FiDatabase, FiHardDrive, FiRefreshCw, FiWifi } from 'react-icons/fi';
-
-const getWsUrl = () => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const token = localStorage.getItem('kte-auth-token') || '';
-  return `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`;
-};
+import { subscribeRealtime } from '../services/realtime';
 
 const initialStats = {
   cpuLoad: 0,
@@ -39,91 +34,53 @@ const formatBytes = (bytes: number) => {
 
 const useSystemStats = () => {
   const [stats, setStats] = useState(initialStats);
-  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    let reconnectTimer: number | undefined;
-    let active = true;
     const maxHistory = 20;
-
     const nextHistory = (prev: any, key: keyof typeof prev.history, value: number) => ([...prev.history[key].slice(-maxHistory + 1), value]);
-
-    const connect = () => {
-      const ws = new WebSocket(getWsUrl());
-      wsRef.current = ws;
-      
-      let statsTimer: number | undefined;
-
-      ws.onopen = () => {
-        setStats(prev => ({ ...prev, isHealthy: true, error: '' }));
-        // Initial request
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send('systeminfo');
-        }
-        // Periodic request every 2s
-        statsTimer = window.setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send('systeminfo');
-          }
-        }, 2000);
-      };
-
-      ws.onmessage = event => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === 'system_stats') {
-            const payload = message.payload;
-            const totalRx = (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.rx_sec || 0), 0);
-            const totalTx = (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.tx_sec || 0), 0);
-            setStats(prev => ({
-              ...prev,
-              ...payload,
-              isHealthy: true,
-              error: '',
-              lastRx: totalRx,
-              lastTx: totalTx,
-              history: {
-                cpu: nextHistory(prev, 'cpu', payload.cpuLoad || 0),
-                mem: nextHistory(prev, 'mem', payload.memLoad || 0),
-                disk: nextHistory(prev, 'disk', payload.diskLoad || 0),
-                rx: nextHistory(prev, 'rx', totalRx),
-                tx: nextHistory(prev, 'tx', totalTx),
-              },
-            }));
-          }
-        } catch {
-          setStats(prev => ({ ...prev, error: 'Unable to parse monitor data' }));
-        }
-      };
-      ws.onclose = () => {
-        setStats(prev => ({ ...prev, isHealthy: false, error: 'Disconnected. Reconnecting...' }));
-        if (statsTimer) window.clearInterval(statsTimer);
-        if (active) reconnectTimer = window.setTimeout(connect, 5000);
-      };
-    };
-
-    connect();
-    return () => {
-      active = false;
-      if (reconnectTimer) window.clearTimeout(reconnectTimer);
-      wsRef.current?.close();
-    };
+    return subscribeRealtime(message => {
+      if (message.type !== 'system_stats' || !message.payload) return;
+      const payload = message.payload;
+      const totalRx = (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.rx_sec || 0), 0);
+      const totalTx = (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.tx_sec || 0), 0);
+      setStats(prev => ({
+        ...prev,
+        ...payload,
+        isHealthy: true,
+        error: '',
+        lastRx: totalRx,
+        lastTx: totalTx,
+        history: {
+          cpu: nextHistory(prev, 'cpu', payload.cpuLoad || 0),
+          mem: nextHistory(prev, 'mem', payload.memLoad || 0),
+          disk: nextHistory(prev, 'disk', payload.diskLoad || 0),
+          rx: nextHistory(prev, 'rx', totalRx),
+          tx: nextHistory(prev, 'tx', totalTx),
+        },
+      }));
+    }, isConnected => {
+      setStats(prev => ({
+        ...prev,
+        isHealthy: isConnected,
+        error: isConnected ? '' : 'Realtime connection unavailable',
+      }));
+    });
   }, []);
 
   return stats;
 };
 
 const UsageCard: React.FC<{ label: string; value: number; icon: React.ReactNode; tone: string }> = ({ label, value, icon, tone }) => (
-  <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+  <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
     <div className="flex items-center justify-between">
       <div>
         <p className="text-sm font-medium text-slate-500">{label}</p>
-        <p className="mt-2 text-3xl font-bold text-slate-950">{(value || 0).toFixed(1)}%</p>
+        <p className="metric-value mt-1 text-2xl font-semibold text-slate-950">{(value || 0).toFixed(1)}%</p>
       </div>
-      <div className={`grid h-11 w-11 place-items-center rounded-lg ${tone}`}>{icon}</div>
+      <div className={`grid h-9 w-9 place-items-center rounded-lg ${tone}`}>{icon}</div>
     </div>
-    <div className="mt-4 h-2 rounded-full bg-slate-100">
-      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-400 transition-all" style={{ width: `${Math.min(value || 0, 100)}%` }} />
+    <div className="mt-3 h-1.5 rounded-full bg-slate-100">
+      <div className="h-full rounded-full bg-violet-600 transition-all" style={{ width: `${Math.min(value || 0, 100)}%` }} />
     </div>
   </div>
 );
@@ -149,7 +106,7 @@ const SystemMonitor = () => {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="system-monitor page-stack">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -244,7 +201,7 @@ const SystemMonitor = () => {
                     <span>{(load || 0).toFixed(0)}%</span>
                   </div>
                   <div className="mt-2 h-1.5 rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-400" style={{ width: `${Math.min(load || 0, 100)}%` }} />
+                    <div className="h-full rounded-full bg-violet-600" style={{ width: `${Math.min(load || 0, 100)}%` }} />
                   </div>
                 </div>
               ))}

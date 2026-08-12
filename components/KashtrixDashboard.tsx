@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FiActivity, FiArchive, FiHardDrive, FiPlay, FiRadio, FiRefreshCw, FiServer, FiUsers, FiVideo, FiX } from 'react-icons/fi';
-import Card from './ui/Card';
 import Button from './ui/Button';
 import { subscribeRealtime } from '../services/realtime';
 
@@ -75,6 +74,7 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
         const recordings = recordingData.recordings || [];
         const sessions = historyData.history || [];
         const streams = streamData.streams || {};
+        const streamValues = Object.values(streams) as any[];
         const fallbackOverview = {
           generatedAt: new Date().toISOString(), streams, recentSessions: sessions.slice(0, 8), recentRecordings: recordings.slice(0, 8),
           totals: {
@@ -85,9 +85,9 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
             recordings: recordings.length,
             recordingBytes: recordings.reduce((total: number, recording: any) => total + Number(recording.size || 0), 0),
             sessions: sessions.length,
-            viewers: Object.values(streams).reduce((total: number, stream: any) => total + Number(stream.viewers || 0), 0),
-            incomingBytes: Object.values(streams).reduce((total: number, stream: any) => total + Number(stream.total_in_bytes || 0), 0),
-            outgoingBytes: Object.values(streams).reduce((total: number, stream: any) => total + Number(stream.total_out_bytes || 0), 0),
+            viewers: streamValues.reduce((total, stream) => total + Number(stream.viewers || 0), 0),
+            incomingBytes: streamValues.reduce((total, stream) => total + Number(stream.total_in_bytes || 0), 0),
+            outgoingBytes: streamValues.reduce((total, stream) => total + Number(stream.total_out_bytes || 0), 0),
           },
         };
         setOverview(fallbackOverview);
@@ -145,10 +145,10 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
   ], [overview]);
 
   return (
-    <div className="min-w-0 space-y-6">
+    <div className="page-stack">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-extrabold text-[var(--text-primary)]">Kashtrix Operations</h2>
+          <h2 className="font-display text-xl font-bold text-[var(--text-primary)]">StreamOps Overview</h2>
           <p className="text-xs text-[var(--text-secondary)]">Live API data from this ingest and transcode server.</p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => fetchOverview(true)} loading={refreshing}><FiRefreshCw size={14} /> Refresh</Button>
@@ -156,26 +156,26 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="metric-grid">
         {cards.map(({ label, value, detail, icon: Icon, color }) => (
-          <Card key={label} className="min-w-0">
+          <div key={label} className="metric-cell">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{label}</p><p className="mt-2 truncate text-2xl font-extrabold text-[var(--text-primary)]">{value}</p></div>
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${color}`}><Icon size={19} /></span>
+              <div className="min-w-0"><p className="metric-cell__label">{label}</p><p className="metric-cell__value truncate">{value}</p></div>
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${color}`}><Icon size={15} /></span>
             </div>
-            <p className="mt-3 text-xs font-medium text-[var(--text-secondary)]">{detail}</p>
-          </Card>
+            <p className="metric-cell__detail">{detail}</p>
+          </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Card className="min-w-0 xl:col-span-2">
-          <div className="mb-4 flex flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(280px,.7fr)]">
+        <section className="data-panel">
+          <div className="panel-header flex-col !items-stretch min-[420px]:flex-row min-[420px]:!items-center">
             <div><h3 className="font-bold text-[var(--text-primary)]">Live television inputs</h3><p className="text-xs text-[var(--text-muted)]">Incoming streams reported by the ingest server</p></div>
             <button onClick={() => onNavigate?.('ingest')} className="text-left text-xs font-bold text-[var(--primary)] min-[420px]:text-right">Open recording control →</button>
           </div>
           {Object.keys(overview.streams).length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text-muted)]">No television input is live right now.</div>
+            <div className="compact-empty">No television input is live right now.</div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {Object.entries(overview.streams).map(([key, stream]: [string, any]) => (
@@ -186,12 +186,12 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
               ))}
             </div>
           )}
-        </Card>
+        </section>
 
-        <Card className="min-w-0">
-          <div className="mb-4 flex items-center gap-2"><FiArchive className="text-[var(--primary)]" /><h3 className="font-bold text-[var(--text-primary)]">Latest recordings</h3></div>
-          <div className="space-y-3">
-            {overview.recentRecordings.length === 0 && <p className="rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--text-muted)]">No recordings yet.</p>}
+        <section className="data-panel">
+          <div className="panel-header"><div className="flex items-center gap-2"><FiArchive className="text-[var(--primary)]" /><h3 className="panel-title">Latest recordings</h3></div></div>
+          <div className="divide-y divide-[var(--border)]">
+            {overview.recentRecordings.length === 0 && <p className="compact-empty">No recordings yet.</p>}
             {overview.recentRecordings.slice(0, 6).map(recording => (
               <div key={recording.id} className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--border)] pb-3 last:border-0">
                 <div className="min-w-0"><p className="truncate text-sm font-bold text-[var(--text-primary)]">{recording.file_name}</p><p className="text-[10px] text-[var(--text-muted)]">{recording.app}/{recording.stream} · {(recording.format || 'file').toUpperCase()}</p></div>
@@ -199,14 +199,14 @@ const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPor
               </div>
             ))}
           </div>
-        </Card>
+        </section>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-xs text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-[10px] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
         <span className="flex items-center gap-2"><FiServer /><span className={`h-2 w-2 rounded-full ${realtimeConnected ? 'bg-emerald-500' : 'bg-amber-400'}`} />{realtimeConnected ? 'Realtime connected' : 'Realtime reconnecting'}</span><span>Last update: {overview.generatedAt ? new Date(overview.generatedAt).toLocaleString() : 'waiting…'}</span>
       </div>
 
-      {previewRecording && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setPreviewRecording(null); }}><div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl"><div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-white">{previewRecording.file_name}</h3><p className="text-[11px] text-slate-400">Recording preview</p></div><button onClick={() => setPreviewRecording(null)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10"><FiX size={18} /></button></div><div className="aspect-video bg-black"><video key={previewRecording.id} controls autoPlay playsInline className="h-full w-full object-contain" src={`http://${window.location.hostname}:${mediaPort}/recording-preview/${previewRecording.id}`} /></div></div></div>}
+      {previewRecording && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) setPreviewRecording(null); }}><div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl"><div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-white">{previewRecording.file_name}</h3><p className="text-[11px] text-slate-400">Recording preview</p></div><button onClick={() => setPreviewRecording(null)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10"><FiX size={18} /></button></div><div className="aspect-video bg-black"><video key={previewRecording.id} controls autoPlay playsInline className="h-full w-full object-contain" src={`/recording-preview/${previewRecording.id}`} /></div></div></div>}
     </div>
   );
 };

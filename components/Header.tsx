@@ -30,7 +30,7 @@ const Header: React.FC<Props> = ({ saveStatus, license, username, onLogout }) =>
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-xl shadow-sm">
       <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3 lg:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-400 text-white shadow-lg shadow-cyan-300/30">
+          <div className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--primary)] text-white">
             <FaBroadcastTower className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -46,7 +46,7 @@ const Header: React.FC<Props> = ({ saveStatus, license, username, onLogout }) =>
           </span>
           {license.expiresAt && <span className="hidden text-xs text-slate-500 xl:block">Expires {new Date(license.expiresAt).toLocaleDateString()}</span>}
           <span className="hidden text-xs font-medium text-slate-600 md:inline">{username}</span>
-          <button onClick={onLogout} className="rounded-full bg-gradient-to-r from-sky-600 to-cyan-500 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-cyan-200/40 transition hover:from-sky-500 hover:to-cyan-400">Logout</button>
+          <button onClick={onLogout} className="rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--primary-hover)]">Logout</button>
         </div>
       </div>
     </header>

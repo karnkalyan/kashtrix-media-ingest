@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FiRefreshCw, FiVideo, FiZap, FiExternalLink, FiList, FiSearch,
   FiChevronLeft, FiChevronRight, FiDisc, FiSquare, FiDownload,
-  FiActivity, FiUsers, FiCpu, FiTrash2, FiPlay, FiX
+  FiActivity, FiUsers, FiCpu, FiTrash2, FiPlay, FiX, FiArchive
 } from 'react-icons/fi';
 import { AppSettings, IngestRecordingOptions, TranscodingProfile } from '../types';
 import toast from 'react-hot-toast';
 import ProfessionalRecordingControl from './ProfessionalRecordingControl';
+import { sendRealtime, subscribeRealtime } from '../services/realtime';
 
 interface Props {
   fetchIngestStreams: () => Promise<any>;
@@ -69,7 +70,7 @@ const formatPlaybackTime = (seconds: number) => {
 const StatBadge: React.FC<{ label: string; value: React.ReactNode; sub?: string; color: string }> = ({ label, value, sub, color }) => (
   <div className="text-center">
     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mb-1">{label}</p>
-    <p className={`text-[13px] font-black ${color} leading-none`}>{value}</p>
+    <p className={`metric-value text-[13px] font-bold ${color} leading-none`}>{value}</p>
     {sub && <p className="text-[9px] text-slate-400 mt-0.5 font-medium">{sub}</p>}
   </div>
 );
@@ -179,23 +180,24 @@ export const IngestServerView: React.FC<Props> = ({
       .catch(error => console.error(error));
   }, []);
 
-  const fetchCaptureDevices = useCallback(async () => {
+  const fetchCaptureDevices = useCallback(() => {
     setDevicesLoading(true);
-    try {
-      const token = localStorage.getItem('kte-auth-token');
-      const response = await fetch('/api/ffmpeg/devices', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Unable to detect capture devices');
+    sendRealtime({ type: 'capture_devices_request' });
+  }, []);
+
+  useEffect(() => subscribeRealtime(message => {
+    if (message.type === 'capture_devices') {
+      const body = message.payload || {};
       setVideoDevices(body.video || []);
       setAudioDevices(body.audio || []);
       setVideoDevice(current => current || body.video?.[0] || '');
       setAudioDevice(current => current || body.audio?.[0] || '');
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
       setDevicesLoading(false);
+    } else if (message.type === 'capture_devices_error') {
+      setDevicesLoading(false);
+      toast.error(message.payload?.error || 'Unable to detect capture devices');
     }
-  }, []);
+  }), []);
 
   useEffect(() => { fetchCaptureDevices(); }, [fetchCaptureDevices]);
 
@@ -332,18 +334,32 @@ const handleToggleRecord = async (app: string, stream: string) => {
     setRecordingsPage(page => Math.min(page, Math.max(1, totalRecordingPages || 1)));
   }, [totalRecordingPages]);
 
+  const activeRecording = recordings.find((recording: any) => recording?.is_active);
+  const selectedIngest: any = selectedStreamKey ? localStreams[selectedStreamKey] : null;
+  const sourceLabel = sourceType === 'device'
+    ? (videoDevice || audioDevice || 'No capture device selected')
+    : (selectedIngest?.name || selectedStreamKey || 'No live ingest selected');
+
   return (
-    <div className="space-y-8 sm:space-y-12 pb-20 min-w-0">
-      {mode === 'recording' && <section className="recording-console rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800 sm:text-xl"><FiDisc className="text-rose-500" /> Television Recording Control</h2>
-            <p className="mt-1 text-sm text-slate-500">Configure the source, filename, encoding profile and archive formats.</p>
+    <div className={`ingest-workspace page-stack pb-8 ${mode === 'live' ? 'live-server-workspace' : ''}`}>
+      {mode === 'recording' && <section className="recording-console space-y-4">
+        <div className="app-panel grid min-w-0 divide-y divide-slate-100 overflow-hidden lg:grid-cols-[1fr_1.35fr_1fr_1.35fr] lg:divide-x lg:divide-y-0">
+          <div className="flex min-w-0 items-center gap-3 p-4">
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${activeRecording ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}><FiActivity /></span>
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Ingest status</p><p className={`mt-1 text-sm font-semibold ${activeRecording ? 'text-emerald-600' : 'text-slate-700'}`}>{activeRecording ? 'Recording live' : 'Ready'}</p>{activeRecording && <p className="mt-0.5 text-[10px] text-slate-500">{formatDuration(activeRecording.start_time, undefined, durationClock)}</p>}</div>
           </div>
-          <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-medium text-slate-700 sm:justify-start">
-            Automatically record new incoming streams
-            <input type="checkbox" checked={!!recordingConfig.autoRecord} onChange={event => setRecordingConfig(previous => ({ ...previous, autoRecord: event.target.checked }))} className="h-4 w-4 accent-rose-600" />
-          </label>
+          <div className="flex min-w-0 items-center gap-3 p-4">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600"><FiVideo /></span>
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Source device</p><p className="mt-1 truncate text-xs font-semibold text-slate-800" title={sourceLabel}>{sourceLabel}</p><p className="mt-0.5 text-[10px] text-slate-500">{sourceType === 'device' ? (audioDevice || 'Video capture') : 'Live network ingest'}</p></div>
+          </div>
+          <div className="flex min-w-0 items-center gap-3 p-4">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-fuchsia-50 text-fuchsia-600"><FiCpu /></span>
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Encoding profile</p><p className="mt-1 truncate text-xs font-semibold text-slate-800">Custom recording · {recordingConfig.encoder.toUpperCase()}</p><p className="mt-0.5 text-[10px] text-slate-500">{recordingConfig.videoCodec?.toUpperCase()} / {recordingConfig.resolution} / {recordingConfig.framerate || 'source'} fps</p></div>
+          </div>
+          <div className="flex flex-col justify-center gap-3 p-4">
+            <label className="flex items-center justify-between gap-3 text-[10px] font-medium text-slate-600"><span>Automatically record incoming streams</span><input type="checkbox" checked={!!recordingConfig.autoRecord} onChange={event => setRecordingConfig(previous => ({ ...previous, autoRecord: event.target.checked }))} className="h-4 w-4 accent-fuchsia-600" /></label>
+            <div className="flex gap-2"><button type="button" onClick={saveRecordingConfig} disabled={savingConfig} className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{savingConfig ? 'Saving...' : 'Save defaults'}</button>{activeRecording && <button type="button" onClick={() => handleToggleRecord(activeRecording.app, activeRecording.stream)} className="flex-1 rounded-md bg-red-600 px-3 py-2 text-[10px] font-semibold text-white hover:bg-red-700"><FiSquare className="mr-1 inline" />Stop recording</button>}</div>
+          </div>
         </div>
 
         <ProfessionalRecordingControl
@@ -357,11 +373,11 @@ const handleToggleRecord = async (app: string, stream: string) => {
           profiles={profiles} mediaPort={settings.mediaPort}
         />
       </section>}
-      {mode === 'live' && <section>
-        <div className="flex items-start justify-between gap-3 mb-6 sm:items-center sm:mb-8">
+      {mode === 'live' && <section className="space-y-4">
+        <div className="flex items-start justify-between gap-3 sm:items-center">
           <div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-3">
-              <span className="text-amber-500"><FiZap size={24} /></span> Incoming Live Streams
+            <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <span className="text-violet-600"><FiZap size={19} /></span> Incoming live streams
             </h2>
             <p className="text-sm text-slate-500 font-medium mt-1">
               Real-time monitoring - {Object.keys(localStreams).length} active stream{Object.keys(localStreams).length !== 1 ? 's' : ''}
@@ -369,32 +385,35 @@ const handleToggleRecord = async (app: string, stream: string) => {
           </div>
           <button
             onClick={fetchData}
-            className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:rotate-180 transition-all duration-300 shadow-sm"
+            className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
           >
-            <FiRefreshCw size={20} />
+            <FiRefreshCw size={15} />
           </button>
         </div>
 
         {Object.keys(localStreams).length === 0 ? (
-          <div className="rounded-3xl sm:rounded-[40px] border border-dashed border-slate-200 bg-white/40 p-8 sm:p-20 text-center backdrop-blur-sm">
-            <div className="bg-slate-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-slate-300"><FiVideo size={32} /></span>
+          <div className="app-panel border-dashed p-8 text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
+              <span className="text-slate-300"><FiVideo size={19} /></span>
             </div>
-            <h3 className="text-xl font-bold text-slate-400">No active RTMP streams found</h3>
-            <p className="text-sm text-slate-400 mt-2 max-w-sm mx-auto">
+            <h3 className="text-sm font-semibold text-slate-500">No active RTMP streams found</h3>
+            <p className="mx-auto mt-1 max-w-sm text-[11px] text-slate-400">
               Push your content to the server to see them listed here.
             </p>
-            <div className="mt-8 max-w-full break-all inline-block px-4 sm:px-6 py-3 bg-slate-800 rounded-2xl text-[10px] font-mono text-slate-300 uppercase tracking-widest shadow-xl">
+            <div className="mt-4 inline-block max-w-full break-all rounded-md bg-slate-800 px-4 py-2 font-mono text-[10px] text-slate-300">
               rtmp://{window.location.hostname}:{settings.rtmpPort}/live/stream_name
             </div>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="data-panel data-table-wrap">
+            <table className="data-table min-w-[980px]">
+              <thead><tr><th>Stream</th><th>Protocols</th><th>Video / Audio</th><th>Ingress</th><th>Egress</th><th>Viewers</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+              <tbody>
             {Object.entries(localStreams).map(([key, data]: [string, any]) => {
               const app = data.app || 'live';
               const stream = data.name || key;
               const rtmpUrl = `rtmp://${window.location.hostname}:${settings.rtmpPort}/${app}/${stream}`;
-              const hlsUrl = `http://${window.location.hostname}:${settings.mediaPort}/${app}/${stream}/index.m3u8`;
+              const hlsUrl = `${window.location.origin}/${app}/${stream}/index.m3u8`;
               const isRecording = !!(data.isRecording || recordingStatuses[`${app}/${stream}`] || activeRecordingKeys[`${app}/${stream}`]);
               const video = data.publisher?.video;
               const audio = data.publisher?.audio;
@@ -403,94 +422,42 @@ const handleToggleRecord = async (app: string, stream: string) => {
               const outBytes = data.total_out_bytes || 0;
 
               return (
-                <div key={key} className="group relative rounded-[32px] border border-white/60 bg-white/60 p-6 shadow-2xl shadow-slate-200/40 backdrop-blur-xl transition-all duration-300 hover:translate-y-[-4px] hover:shadow-slate-300/50">
-                  <div className="flex justify-between items-start mb-5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-600 border border-emerald-100">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span> LIVE
-                      </span>
-                      {isRecording && (
-                        <span className="flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1.5 text-[10px] font-black text-rose-600 border border-rose-100 animate-pulse">
-                          <FiDisc size={12} /> REC
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {video?.codec && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">{video.codec}</span>}
-                      {audio?.codec && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">{audio.codec}</span>}
-                    </div>
-                  </div>
-
-                  <h3 className="text-xl font-black text-slate-800 truncate mb-1">{stream}</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-5">{app}</p>
-
-                  <div className="space-y-2.5 mb-5">
-                    <div className="group/item relative flex items-center overflow-hidden bg-slate-900 rounded-[18px] p-3.5 hover:bg-slate-800 transition-all cursor-default">
-                      <div className="flex-1 min-w-0">
-                        <label className="text-[8px] font-black uppercase tracking-widest text-indigo-400 mb-0.5 block">RTMP Ingest</label>
-                        <p className="text-[11px] font-mono text-white truncate">{rtmpUrl}</p>
-                      </div>
-                    </div>
-                    <a href={hlsUrl} target="_blank" rel="noreferrer" className="group/item relative flex items-center overflow-hidden bg-slate-100 rounded-[18px] p-3.5 hover:bg-white hover:border-slate-200 border border-transparent transition-all">
-                      <div className="flex-1 min-w-0">
-                        <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-0.5 block">HLS Preview</label>
-                        <p className="text-[11px] font-mono text-slate-600 truncate">{hlsUrl}</p>
-                      </div>
-                      <FiExternalLink size={13} className="text-slate-400 ml-2 shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity" />
-                    </a>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-slate-50 border border-slate-100 mb-4">
-                    <StatBadge label="Incoming" value={formatBitrate(data.incoming_kbps || 0)} sub={inBytes > 0 ? formatDataSize(inBytes) : undefined} color="text-indigo-600" />
-                    <div className="border-x border-slate-200">
-                      <StatBadge label="Outgoing" value={formatBitrate(data.outgoing_kbps || 0)} sub={outBytes > 0 ? formatDataSize(outBytes) : undefined} color="text-emerald-600" />
-                    </div>
-                    <StatBadge label="Viewers" value={data.viewers || 0} sub={data.viewers > 0 ? 'connected' : 'none'} color="text-slate-800" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 mb-5">
-                    <div className="bg-indigo-50/60 rounded-2xl p-3 border border-indigo-100/60">
-                      <p className="text-[8px] font-black uppercase tracking-widest text-indigo-400 mb-1.5 flex items-center gap-1"><FiCpu size={9} /> Video</p>
-                      <p className="text-[12px] font-black text-slate-800">{resolutionText}</p>
-                    </div>
-                    <div className="bg-emerald-50/60 rounded-2xl p-3 border border-emerald-100/60">
-                      <p className="text-[8px] font-black uppercase tracking-widest text-emerald-500 mb-1.5 flex items-center gap-1"><FiActivity size={9} /> Audio</p>
-                      <p className="text-[12px] font-black text-slate-800">{audio?.codec || 'AAC'}</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <FiUsers size={14} className="text-slate-400" />
-                      <span className="text-[11px] font-bold text-slate-500">{data.viewers > 0 ? `${data.viewers} watching` : 'No viewers'}</span>
-                    </div>
-                    <button onClick={() => handleToggleRecord(app, stream)} className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shrink-0 ${isRecording ? 'bg-rose-500 text-white shadow-rose-200 hover:bg-rose-600' : 'bg-slate-800 text-white shadow-slate-200 hover:bg-slate-700'}`}>
-                      {isRecording ? <><FiSquare size={13} /> Stop Rec</> : <><FiDisc size={13} /> Start Rec</>}
-                    </button>
-                  </div>
-                </div>
+                <tr key={key}>
+                  <td><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-500" /><div className="min-w-0"><p className="max-w-[180px] truncate font-semibold">{stream}</p><p className="text-[9px] text-slate-400">{app}</p></div></div></td>
+                  <td><div className="flex items-center gap-2"><span className="rounded bg-[var(--primary-subtle)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--operational-purple)]">RTMP</span><a href={hlsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[var(--primary)]">HLS <FiExternalLink size={10} /></a></div><p className="mt-1 max-w-[180px] truncate font-mono text-[9px] text-slate-400" title={rtmpUrl}>{rtmpUrl}</p></td>
+                  <td><p className="font-mono font-semibold">{resolutionText}</p><p className="text-[9px] text-slate-400">{video?.codec || 'H264'} / {audio?.codec || 'AAC'}</p></td>
+                  <td><p className="font-mono">{formatBitrate(data.incoming_kbps || 0)}</p><p className="text-[9px] text-slate-400">{formatDataSize(inBytes)}</p></td>
+                  <td><p className="font-mono">{formatBitrate(data.outgoing_kbps || 0)}</p><p className="text-[9px] text-slate-400">{formatDataSize(outBytes)}</p></td>
+                  <td className="font-mono">{data.viewers || 0}</td>
+                  <td>{isRecording ? <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--accent)]"><FiDisc /> Recording</span> : <span className="text-slate-400">Live</span>}</td>
+                  <td><div className="flex justify-end gap-2"><a href={hlsUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2.5 text-[10px] font-semibold text-slate-600"><FiPlay /> Monitor</a><button onClick={() => handleToggleRecord(app, stream)} className={`inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[10px] font-semibold text-white ${isRecording ? 'bg-[var(--danger)]' : 'bg-[var(--primary)]'}`}>{isRecording ? <><FiSquare /> Stop</> : <><FiDisc /> Record</>}</button></div></td>
+                </tr>
               );
             })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>}
 
-      {mode === 'recording' && <section>
-        <div className="flex items-center justify-between mb-8">
+      {mode === 'recording' && <section className="app-panel overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-100 p-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-800 flex items-center gap-3">
-              <span className="text-rose-500"><FiDisc size={24} /></span> Recording Archives
+            <h2 className="panel-kicker">
+              <FiArchive size={14} /> Recording archives
             </h2>
-            <p className="text-sm text-slate-500 font-medium mt-1">Access and management - {recordings.length} recordings</p>
+            <p className="mt-1 text-[11px] font-medium text-slate-500">Access and management · {recordings.length} recordings</p>
           </div>
         </div>
 
         {recordings.length === 0 ? (
-          <div className="rounded-[32px] border border-dashed border-slate-200 bg-white/40 p-16 text-center backdrop-blur-sm">
-            <h3 className="text-lg font-bold text-slate-400">No recordings yet</h3>
+          <div className="m-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-14 text-center">
+            <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-violet-50 text-violet-400"><FiArchive size={24} /></span>
+            <h3 className="mt-3 text-sm font-semibold text-slate-700">No recordings yet</h3>
+            <p className="mt-1 text-[11px] text-slate-400">Your recorded television files will appear here.</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-[32px] border border-white/60 bg-white/40 shadow-xl backdrop-blur-xl">
+          <div className="overflow-hidden bg-white">
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
@@ -528,7 +495,7 @@ const handleToggleRecord = async (app: string, stream: string) => {
                           <button onClick={() => setPreviewRecording(rec)} className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:border-indigo-200 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center w-10" title="Preview recording">
                             <FiPlay size={15} />
                           </button>
-                          <a href={`http://${window.location.hostname}:${settings.mediaPort}/recordings/${rec.app}/${rec.stream}/${rec.file_name}`} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center w-10" title="Download">
+                          <a href={`/recordings/${rec.app}/${rec.stream}/${rec.file_name}`} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 transition-all shadow-sm flex items-center justify-center w-10" title="Download">
                             <FiDownload size={15} />
                           </a>
                           <button onClick={() => handleDeleteRecording(rec.id)} className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-rose-600 transition-all shadow-sm flex items-center justify-center w-10" title="Delete recording">
@@ -547,19 +514,19 @@ const handleToggleRecord = async (app: string, stream: string) => {
       </section>}
 
       {mode === 'live' && <section>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div className="mb-3 flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div>
-            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-              <span className="text-indigo-500"><FiList size={24} /></span> Stream History
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <span className="text-indigo-500"><FiList size={16} /></span> Stream history
             </h2>
           </div>
           <div className="relative max-w-sm w-full">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><FiSearch size={16} /></span>
-            <input type="text" placeholder="Search history..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white border border-slate-200 text-sm outline-none transition-all focus:ring-4 focus:ring-indigo-500/10" />
+            <input type="text" placeholder="Search history..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-[11px] outline-none focus:border-[var(--primary)]" />
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[32px] border border-white/60 bg-white/40 shadow-xl backdrop-blur-xl">
+        <div className="data-panel">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -595,7 +562,7 @@ const handleToggleRecord = async (app: string, stream: string) => {
 
       {previewRecording && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Recording preview" onMouseDown={event => { if (event.target === event.currentTarget) setPreviewRecording(null); }}>
-          <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl">
+          <div className="w-full max-w-3xl overflow-hidden rounded-lg border border-white/10 bg-slate-950 shadow-2xl">
             <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 sm:px-5">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold text-white">{previewRecording.file_name}</h3>
@@ -604,7 +571,7 @@ const handleToggleRecord = async (app: string, stream: string) => {
               <button onClick={() => setPreviewRecording(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white" aria-label="Close preview"><FiX size={18} /></button>
             </div>
             <div className="aspect-video w-full bg-black">
-              <video key={`${previewRecording.id}-${previewVersion}`} controls autoPlay playsInline className="h-full w-full object-contain" src={`http://${window.location.hostname}:${settings.mediaPort}/recording-preview/${previewRecording.id}?start=${previewOffset}`} onTimeUpdate={event => setPreviewPosition(event.currentTarget.currentTime)} onLoadedMetadata={event => setPreviewDuration(event.currentTarget.duration)} onDurationChange={event => setPreviewDuration(event.currentTarget.duration)}>
+              <video key={`${previewRecording.id}-${previewVersion}`} controls autoPlay playsInline className="h-full w-full object-contain" src={`/recording-preview/${previewRecording.id}?start=${previewOffset}`} onTimeUpdate={event => setPreviewPosition(event.currentTarget.currentTime)} onLoadedMetadata={event => setPreviewDuration(event.currentTarget.duration)} onDurationChange={event => setPreviewDuration(event.currentTarget.duration)}>
                 Your browser does not support video playback.
               </video>
             </div>

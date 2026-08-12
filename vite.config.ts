@@ -20,6 +20,11 @@ export default defineConfig(({ mode }) => {
             target: 'ws://localhost:3005',
             ws: true,
           },
+          // Media paths use the same URLs locally and in production.
+          '^/(live|dash|hls|recordings|recording-thumbnail|recording-preview|vod|ts)': {
+            target: 'http://localhost:8080',
+            changeOrigin: true,
+          },
         },
       },
       plugins: [
