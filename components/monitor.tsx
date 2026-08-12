@@ -325,20 +325,18 @@ const CompactProgressBar: React.FC<{ value: number; color?: string; bg?: string 
 /* ══════════════════════════════════════════════════════════════════════════
    1. PAGE HEADER (Compact, Single Page Header)
    ══════════════════════════════════════════════════════════════════════════ */
-const SystemHeader: React.FC<{
+interface SystemHeaderProps {
   connectionStatus: string;
   lastUpdated: number | null;
   onRefresh: () => void;
-  selectedServer: string;
-  setSelectedServer: (server: string) => void;
   selectedTimeRange: string;
   setSelectedTimeRange: (range: string) => void;
-}> = ({
+}
+
+const SystemHeader: React.FC<SystemHeaderProps> = ({
   connectionStatus,
   lastUpdated,
   onRefresh,
-  selectedServer,
-  setSelectedServer,
   selectedTimeRange,
   setSelectedTimeRange,
 }) => {
@@ -373,20 +371,6 @@ const SystemHeader: React.FC<{
 
       {/* Compact Controls Bar (34-38px height) */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Server Selector */}
-        <div className="relative">
-          <select
-            value={selectedServer}
-            onChange={e => setSelectedServer(e.target.value)}
-            className="h-[34px] appearance-none rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-3 pr-8 text-[12px] font-medium text-[#1B1024] outline-none transition-colors hover:border-[#4A1B7A] focus:border-[#4A1B7A]"
-          >
-            <option value="stream-node-01">stream-node-01 (Primary)</option>
-            <option value="stream-node-02">stream-node-02 (Backup)</option>
-            <option value="ingest-edge-01">ingest-edge-01 (Edge)</option>
-          </select>
-          <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
-        </div>
-
         {/* Time Range Selector */}
         <div className="relative">
           <select
@@ -1103,7 +1087,6 @@ const TelemetryStatusFooter: React.FC<{ stats: TelemetryState }> = ({ stats }) =
    ══════════════════════════════════════════════════════════════════════════ */
 const SystemMonitor: React.FC = () => {
   const { stats, manualRefresh } = useSystemStats();
-  const [selectedServer, setSelectedServer] = useState('stream-node-01');
   const [selectedTimeRange, setSelectedTimeRange] = useState('15m');
 
   return (
@@ -1113,8 +1096,6 @@ const SystemMonitor: React.FC = () => {
         connectionStatus={stats.connectionStatus}
         lastUpdated={stats.lastUpdatedTime}
         onRefresh={manualRefresh}
-        selectedServer={selectedServer}
-        setSelectedServer={setSelectedServer}
         selectedTimeRange={selectedTimeRange}
         setSelectedTimeRange={setSelectedTimeRange}
       />
