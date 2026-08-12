@@ -182,13 +182,23 @@ export const IngestServerView: React.FC<Props> = ({
     fetchConfig();
     refreshDevices();
 
-    const unsubscribe = subscribeRealtime(msg => {
-      if ((msg.type === 'capture_devices' || msg.type === 'capture_devices_response') && msg.payload) {
-        setVideoDevices(msg.payload.video || []);
-        setAudioDevices(msg.payload.audio || []);
-        setDevicesLoading(false);
+    const unsubscribe = subscribeRealtime(
+      msg => {
+        if ((msg.type === 'capture_devices' || msg.type === 'capture_devices_response') && msg.payload) {
+          const v = msg.payload.video || [];
+          const a = msg.payload.audio || [];
+          setVideoDevices(prev => Array.from(new Set([...prev, ...v])));
+          setAudioDevices(prev => Array.from(new Set([...prev, ...a])));
+          setDevicesLoading(false);
+        }
+      },
+      isConnected => {
+        if (isConnected) {
+          sendRealtime({ type: 'capture_devices_request' });
+          refreshDevices();
+        }
       }
-    });
+    );
 
     return () => unsubscribe();
   }, [fetchData, fetchConfig, refreshDevices]);

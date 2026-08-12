@@ -1760,6 +1760,13 @@ wss.on('connection', (ws, request) => {
     }
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
+
+    scanCaptureDevices().then(devices => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'capture_devices', payload: devices }));
+            ws.send(JSON.stringify({ type: 'capture_devices_response', payload: devices }));
+        }
+    }).catch(() => {});
     ws.on('message', async (data) => {
         const raw = data.toString();
         let message;
@@ -1839,6 +1846,15 @@ const broadcastDashboardOverview = (overview) => {
     });
 };
 
+const broadcastCaptureDevices = (devices) => {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN && websocketCanAccess(client, ['live-tv', 'ingest-server'])) {
+            client.send(JSON.stringify({ type: 'capture_devices', payload: devices }));
+            client.send(JSON.stringify({ type: 'capture_devices_response', payload: devices }));
+        }
+    });
+};
+
 const broadcastSystemStats = (stats) => {
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN && websocketCanAccess(client, ['system-monitor'])) {
@@ -1874,19 +1890,21 @@ const startIngestStatsBroadcast = () => {
         ingestPolling = true;
         try {
             if (wss.clients.size > 0) {
-                const [ingest, history, recordings] = await Promise.all([
+                const [ingest, history, recordings, devices] = await Promise.all([
                     getIngestStreams(),
                     Promise.resolve({
                         history: db.prepare('SELECT * FROM stream_sessions ORDER BY start_time DESC LIMIT 50').all()
                     }),
                     Promise.resolve({
                         recordings: listRecordings(100)
-                    })
+                    }),
+                    scanCaptureDevices()
                 ]);
 
                 broadcastIngestStats(ingest.streams || {});
                 broadcastHistory(history.history);
                 broadcastRecordings(recordings.recordings);
+                broadcastCaptureDevices(devices);
                 broadcastDashboardOverview(buildDashboardOverview(ingest.streams || {}));
 
                 if (Object.keys(ingest.streams || {}).length > 0) {
