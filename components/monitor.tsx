@@ -302,16 +302,12 @@ interface SystemHeaderProps {
   connectionStatus: string;
   lastUpdated: number | null;
   onRefresh: () => void;
-  selectedTimeRange: string;
-  setSelectedTimeRange: (range: string) => void;
 }
 
 const SystemHeader: React.FC<SystemHeaderProps> = ({
   connectionStatus,
   lastUpdated,
   onRefresh,
-  selectedTimeRange,
-  setSelectedTimeRange,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -334,29 +330,15 @@ const SystemHeader: React.FC<SystemHeaderProps> = ({
             connectionStatus === 'connected' ? 'bg-[#F0FDF4] text-[#16A36A] border border-[#BBF7D0]' : 'bg-[#FEF2F2] text-[#DC3545] border border-[#FECACA]'
           }`}>
             <span className={`h-1.5 w-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-[#16A36A] animate-pulse' : 'bg-[#DC3545]'}`} />
-            {connectionStatus === 'connected' ? 'Live Telemetry' : 'Disconnected'}
+            {connectionStatus === 'connected' ? 'Live Telemetry Stream (WebSocket)' : 'Disconnected'}
           </span>
         </div>
         <p className="mt-0.5 text-[12px] text-[#6F6078]">
-          Infrastructure health and real-time performance telemetry
+          Real-time hardware performance telemetry streamed live over WebSocket
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <select
-            value={selectedTimeRange}
-            onChange={e => setSelectedTimeRange(e.target.value)}
-            className="h-[34px] appearance-none rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-3 pr-8 text-[12px] font-medium text-[#1B1024] outline-none transition-colors hover:border-[#4A1B7A] focus:border-[#4A1B7A]"
-          >
-            <option value="15m">Last 15 Minutes</option>
-            <option value="1h">Last 1 Hour</option>
-            <option value="6h">Last 6 Hours</option>
-            <option value="24h">Last 24 Hours</option>
-          </select>
-          <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
-        </div>
-
         <button
           onClick={onRefresh}
           className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147]"
@@ -973,7 +955,6 @@ const TelemetryStatusFooter: React.FC<{ stats: TelemetryState }> = ({ stats }) =
 
 const SystemMonitor: React.FC = () => {
   const { stats, manualRefresh } = useSystemStats();
-  const [selectedTimeRange, setSelectedTimeRange] = useState('15m');
 
   return (
     <div className="system-monitor page-stack space-y-4">
@@ -982,8 +963,6 @@ const SystemMonitor: React.FC = () => {
         connectionStatus={stats.connectionStatus}
         lastUpdated={stats.lastUpdatedTime}
         onRefresh={manualRefresh}
-        selectedTimeRange={selectedTimeRange}
-        setSelectedTimeRange={setSelectedTimeRange}
       />
 
       {/* 2. Top Health Bar */}
