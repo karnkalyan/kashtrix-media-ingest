@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum DeviceStatus {
+  OFFLINE
+  IDLE
+  PLAYING
+  BUFFERING
+  ERROR
+  MAINTENANCE
+}
+
+enum LogType {
+  AUTH
+  CONNECTION
+  PLAYBACK_ERROR
+  SYSTEM
+}
+
+model User {
+  id                Int              @id @default(autoincrement())
+  email             String           @unique
+  username          String?          @unique
+  passwordHash      String
+  firstName         String?
+  lastName          String?
+  role              Role             @default(USER)
+  subscription      SubscriptionTier @default(FREE)
+  maxDevicesAllowed Int              @default(5)
+  isActive          Boolean          @default(true)
+  devices           Device[]
+  deviceGroups      DeviceGroup[]
+  auditLogs         AuditLog[]
+  lastLogin         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model DeviceGroup {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devices     Device[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+model StreamChannel {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  streamUrl   String   @db.Text
+  type        String?
+  description String?
+  devices     Device[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Device {
+  id             Int             @id @default(autoincrement())
+  hwid           String          @unique
+  name           String?
+  isActivated    Boolean         @default(false)
+  streamUrl      String?         @db.Text
+  status         DeviceStatus    @default(OFFLINE)
+  lastSeen       DateTime        @default(now())
+  model          String?
+  brand          String?
+  osVersion      String?
+  appVersion     String?
+  ipAddress      String?
+  sdkVersion     Int?
+  screenRes      String?
+  userId         Int?
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  groupId        Int?
+  group          DeviceGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  channelId      Int?
+  channel        StreamChannel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  connectionLogs ConnectionLog[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([status])
+}
+
+model ConnectionLog {
+  id        String   @id @default(uuid())
+  deviceId  Int
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  event     String
+  details   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  targetId  String?
+  type      LogType
+  details   String?  @db.Text
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
+
+model TranscodeChannel {
+  id                  String   @id
+  name                String
+  data                String   @db.Text
+  status              String   @default("Stopped")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model TranscodeProfile {
+  id        String   @id
+  name      String
+  data      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model KvStore {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model GeneratedLicense {
+  id            Int      @id @default(autoincrement())
+  customerName  String
+  customerEmail String?
+  licenseKey    String   @db.Text
+  status        String   @default("active")
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+}
+
+model StreamSession {
+  id            Int       @id @default(autoincrement())
+  app           String
+  stream        String
+  startTime     DateTime  @default(now())
+  endTime       DateTime?
+  maxViewers    Int       @default(0)
+  totalBytes    BigInt    @default(0)
+  outgoingBytes BigInt    @default(0)
+  videoInfo     String?   @db.Text
+  audioInfo     String?   @db.Text
+}
+
+model StreamRecording {
+  id        Int       @id @default(autoincrement())
+  app       String
+  stream    String
+  filePath  String    @db.Text
+  fileName  String
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  size      BigInt    @default(0)
+  format       String  @default("mp4")
+  videoBitrate Int     @default(0)
+  audioBitrate Int     @default(0)
+  encoder      String  @default("copy")
+  resolution   String?
+  continuous   Boolean @default(false)
+  sourceType   String  @default("ingest")
+  settingsJson String? @db.Text
+}
+
+model VodContent {
+  id               Int      @id @default(autoincrement())
+  title            String
+  fileName         String
+  fileSize         BigInt   @default(0)
+  genre            String?
+  releaseYear      Int?
+  duration         Int?
+  status           String   @default("published")
+  posterUrl        String?  @db.Text
+  encodingProgress Int      @default(100)
+  createdAt        DateTime @default(now())
+}
+
+model Series {
+  id           Int      @id @default(autoincrement())
+  title        String
+  posterUrl    String?  @db.Text
+  seasonsCount Int      @default(1)
+  episodeCount Int      @default(0)
+  status       String   @default("published")
+  createdAt    DateTime @default(now())
+}
+
+model EpgProgram {
+  id          Int      @id @default(autoincrement())
+  channelId   String
+  title       String
+  description String?  @db.Text
+  startTime   DateTime
+  endTime     DateTime
+  status      String   @default("imported")
+  createdAt   DateTime @default(now())
+}
+
+model SubscriptionPackage {
+  id           Int      @id @default(autoincrement())
+  name         String
+  price        Float    @default(0.0)
+  durationDays Int      @default(30)
+  deviceLimit  Int      @default(5)
+  maxStreams   Int      @default(1)
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+}

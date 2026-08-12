@@ -1,0 +1,253 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Plus Jakarta Sans", "system-ui", "sans-serif";
+  --font-display: "Plus Jakarta Sans", "Inter", "sans-serif";
+
+  --color-gray-900: #111827;
+  --color-gray-800: #1F2937;
+  --color-gray-700: #374151;
+  --color-gray-600: #4B5563;
+
+  @keyframes fade-in-down {
+    0% { opacity: 0; transform: translateY(-10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in-up {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  @keyframes slide-in-right {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(0); }
+  }
+  @keyframes slide-in-left {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(0); }
+  }
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes spin-slow {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes scale-in {
+    0% { transform: scale(0.95); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  --animate-fade-in-down: fade-in-down 0.3s ease-out;
+  --animate-fade-in-up: fade-in-up 0.3s ease-out;
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-slide-in-right: slide-in-right 0.3s ease-out;
+  --animate-slide-in-left: slide-in-left 0.3s ease-out;
+  --animate-pulse-soft: pulse-soft 2s ease-in-out infinite;
+  --animate-scale-in: scale-in 0.2s ease-out;
+}
+
+/* ═══════════════════════════════════════════════
+   KASHTRIX DESIGN TOKENS
+   ═══════════════════════════════════════════════ */
+:root {
+  /* Backgrounds */
+  --background: #F8FAFC;
+  --background-secondary: #F5F3FF;
+  --surface: #FFFFFF;
+  --surface-muted: #F8F7FC;
+  --surface-hover: #F3F0FF;
+
+  /* Borders */
+  --border: #E5E7EB;
+  --border-strong: #D8DCE7;
+  --border-focus: #7C3AED;
+
+  /* Text */
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --text-inverse: #FFFFFF;
+
+  /* Brand */
+  --primary: #7C3AED;
+  --primary-dark: #6D28D9;
+  --primary-light: #A855F7;
+  --primary-50: #F5F3FF;
+  --primary-100: #EDE9FE;
+  --primary-200: #DDD6FE;
+
+  /* Accent */
+  --accent: #EC4899;
+  --accent-dark: #DB2777;
+  --accent-light: #F472B6;
+
+  /* Status */
+  --success: #16A34A;
+  --success-bg: #F0FDF4;
+  --success-border: #BBF7D0;
+  --warning: #F59E0B;
+  --warning-bg: #FFFBEB;
+  --warning-border: #FDE68A;
+  --danger: #DC2626;
+  --danger-bg: #FEF2F2;
+  --danger-border: #FECACA;
+  --info: #0284C7;
+  --info-bg: #F0F9FF;
+  --info-border: #BAE6FD;
+
+  /* Gradients */
+  --gradient-brand: linear-gradient(135deg, #7C3AED 0%, #A855F7 45%, #EC4899 100%);
+  --gradient-brand-hover: linear-gradient(135deg, #6D28D9 0%, #9333EA 45%, #DB2777 100%);
+  --gradient-subtle: linear-gradient(135deg, #F5F3FF 0%, #FDF2F8 100%);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 16px 40px rgba(76, 29, 149, 0.12);
+  --shadow-xl: 0 24px 60px rgba(76, 29, 149, 0.15);
+  --shadow-brand: 0 4px 14px rgba(124, 58, 237, 0.25);
+  --shadow-inner: inset 0 2px 4px rgba(15, 23, 42, 0.04);
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Spacing */
+  --sidebar-width: 268px;
+  --sidebar-collapsed: 76px;
+  --header-height: 72px;
+  --content-padding: 28px;
+
+  /* Typography */
+  font-family: Inter, "Plus Jakarta Sans", system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light;
+  color: var(--text-primary);
+  background-color: var(--background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ═══════════════════════════════════════════════
+   SCROLLBAR
+   ═══════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(124, 58, 237, 0.25); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(124, 58, 237, 0.4); }
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ═══════════════════════════════════════════════
+   SKELETON LOADING
+   ═══════════════════════════════════════════════ */
+.skeleton {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ═══════════════════════════════════════════════
+   FOCUS STYLES
+   ═══════════════════════════════════════════════ */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ═══════════════════════════════════════════════
+   REDUCED MOTION
+   ═══════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE TABLE SCROLL
+   ═══════════════════════════════════════════════ */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Professional recording console: restrained hierarchy and compact controls. */
+.recording-console .font-black {
+  font-weight: 600;
+}
+
+.recording-console label {
+  font-weight: 500;
+  color: #334155;
+}
+
+.recording-console section {
+  border-color: #e8edf4;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.recording-console input,
+.recording-console select {
+  border-radius: 9px;
+  border-color: #dce3ec;
+  box-shadow: none;
+}
+
+.recording-console input:focus,
+.recording-console select:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.08);
+}
+
+/* ═══════════════════════════════════════════════
+   DRAWER OVERLAY
+   ═══════════════════════════════════════════════ */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 40;
+  animation: fade-in 0.2s ease-out;
+}
+
+/* ═══════════════════════════════════════════════
+   NETWORK DECORATION (subtle brand motif)
+   ═══════════════════════════════════════════════ */
+.brand-decoration {
+  position: relative;
+  overflow: hidden;
+}
+.brand-decoration::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -30%;
+  width: 80%;
+  height: 200%;
+  background: radial-gradient(ellipse at center, rgba(124, 58, 237, 0.04) 0%, transparent 70%);
+  pointer-events: none;
+}

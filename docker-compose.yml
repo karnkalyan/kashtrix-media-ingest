@@ -1,0 +1,68 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kashtrix_db}
+      MYSQL_USER: ${MYSQL_USER:-kashtrix}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks:
+      - kashtrix
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-kashtrix}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-kashtrix_db}
+      KTE_JWT_SECRET: ${KTE_JWT_SECRET}
+      KTE_DEFAULT_USERNAME: ${KTE_DEFAULT_USERNAME:-admin}
+      KTE_DEFAULT_PASSWORD: ${KTE_DEFAULT_PASSWORD}
+      KTE_LICENSE_ADMIN_EMAIL: ${KTE_LICENSE_ADMIN_EMAIL}
+      KTE_LICENSE_ADMIN_PASSWORD: ${KTE_LICENSE_ADMIN_PASSWORD}
+      KTE_HWID: ${KTE_HWID:-}
+    ports:
+      - "1935:1935"
+      - "8080:8080"
+    volumes:
+      - recording-data:/app/media
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3005/api/license/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    networks:
+      - kashtrix
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    networks:
+      - kashtrix
+
+volumes:
+  mysql-data:
+  recording-data:
+
+networks:
+  kashtrix:
+    driver: bridge
+

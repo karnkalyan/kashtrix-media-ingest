@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Player</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
+
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --red: #ff2d2d;
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --border: rgba(255, 255, 255, 0.07);
+      --text: #e8e8e8;
+      --muted: #555;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      font-family: 'DM Mono', monospace;
+      overflow: hidden;
+      color: var(--text);
+    }
+
+    #root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: contain;
+      background: #000;
+    }
+
+    #live-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      opacity: 0;
+      transition: opacity 0.4s;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+
+    #live-badge.show {
+      opacity: 1;
+    }
+
+    #live-badge .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.75);
+      }
+    }
+
+    #loader {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: var(--bg);
+      transition: opacity 0.5s;
+    }
+
+    #loader.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 2px solid var(--border);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #loader p {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #error {
+      display: none;
+      position: absolute;
+      inset: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: var(--bg);
+      padding: 24px;
+      text-align: center;
+    }
+
+    #error.show {
+      display: flex;
+    }
+
+    #error .icon {
+      font-size: 36px;
+      line-height: 1;
+    }
+
+    #error strong {
+      font-size: 13px;
+      color: var(--text);
+      letter-spacing: 0.05em;
+    }
+
+    #error span {
+      font-size: 11px;
+      color: var(--muted);
+      max-width: 280px;
+      line-height: 1.6;
+    }
+
+    #error button {
+      margin-top: 8px;
+      padding: 7px 18px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    #error button:hover {
+      border-color: var(--red);
+      background: rgba(255, 45, 45, 0.08);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div id="loader">
+      <div class="spinner"></div>
+      <p>Connecting…</p>
+    </div>
+
+    <video id="video" controls autoplay playsinline></video>
+
+    <div id="live-badge">
+      <span class="dot"></span>
+      LIVE
+    </div>
+
+    <div id="error">
+      <span class="icon">📡</span>
+      <strong>Stream unavailable</strong>
+      <span id="error-msg">The stream could not be loaded.</span>
+      <button onclick="retryStream()">↺ Retry</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const url = params.get('url');
+    const type = (params.get('type') || 'hls').toLowerCase();
+
+    const video = document.getElementById('video');
+    const loader = document.getElementById('loader');
+    const errorBox = document.getElementById('error');
+    const errMsg = document.getElementById('error-msg');
+    const badge = document.getElementById('live-badge');
+
+    let hlsInstance = null;
+
+    function hideLoader() { loader.classList.add('hidden'); }
+    function showError(msg) {
+      hideLoader();
+      errMsg.textContent = msg || 'The stream could not be loaded.';
+      errorBox.classList.add('show');
+      badge.classList.remove('show');
+    }
+
+    video.addEventListener('playing', () => { hideLoader(); if (type === 'hls') badge.classList.add('show'); });
+    video.addEventListener('waiting', () => badge.classList.remove('show'));
+    video.addEventListener('error', () => showError('Video playback error.'));
+
+    function initStream() {
+      if (!url) { showError('No stream URL was provided.'); return; }
+      errorBox.classList.remove('show');
+      loader.classList.remove('hidden');
+      badge.classList.remove('show');
+      if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+
+      if (type === 'hls') {
+        if (Hls.isSupported()) {
+          hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: true });
+          hlsInstance.loadSource(url);
+          hlsInstance.attachMedia(video);
+          hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => { }));
+          hlsInstance.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) showError('HLS error: ' + data.type); });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = url; video.play().catch(() => { });
+        } else {
+          showError('HLS is not supported in this browser.');
+        }
+      } else {
+        video.src = url; video.play().catch(() => { });
+      }
+    }
+
+    function retryStream() { initStream(); }
+    initStream();
+  </script>
+</body>
+
+</html>
