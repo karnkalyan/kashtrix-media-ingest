@@ -1493,6 +1493,42 @@ app.get('/api/dashboard/overview', authMiddleware, async (req, res) => {
     res.json(buildDashboardOverview(ingest.streams || {}));
 });
 
+// === USER MANAGEMENT ENDPOINTS ===
+app.get('/api/users', authMiddleware, (req, res) => {
+    const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+    res.json({ success: true, users });
+});
+
+app.post('/api/users', authMiddleware, (req, res) => {
+    const { username, password, role } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (existing) return res.status(409).json({ error: 'Username already exists' });
+    const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+        .run(username, hashPassword(password), role || 'admin');
+    res.status(201).json({ success: true, message: 'User created successfully', userId: result.lastInsertRowid });
+});
+
+app.put('/api/users/:id', authMiddleware, (req, res) => {
+    const { id } = req.params;
+    const { username, password, role } = req.body || {};
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const nextUsername = username || user.username;
+    const nextHash = password ? hashPassword(password) : user.password_hash;
+    db.prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ?').run(nextUsername, nextHash, id);
+    res.json({ success: true, message: 'User updated successfully' });
+});
+
+app.delete('/api/users/:id', authMiddleware, (req, res) => {
+    const { id } = req.params;
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.username === req.user.sub) return res.status(400).json({ error: 'Cannot delete logged in user account' });
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    res.json({ success: true, message: 'User deleted successfully' });
+});
+
 app.get('/api/ingest/history', authMiddleware, (req, res) => {
     const history = db.prepare('SELECT * FROM stream_sessions ORDER BY start_time DESC LIMIT 50').all();
     res.json({ success: true, history });

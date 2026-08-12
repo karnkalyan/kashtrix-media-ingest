@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import {
-  FiActivity, FiKey, FiList, FiSettings, FiUser, FiCheckCircle,
+  FiActivity, FiKey, FiList, FiSettings, FiUser, FiUsers, FiCheckCircle,
   FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown,
   FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv, FiBell,
-  FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff
+  FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio
 } from 'react-icons/fi';
 import { FaBroadcastTower } from 'react-icons/fa';
 import ChannelDashboard from './components/JobQueue';
@@ -21,8 +21,9 @@ import Tabs from './components/ui/Tabs';
 import KashtrixDashboard from './components/KashtrixDashboard';
 import RecordingLibrary from './components/RecordingLibrary';
 import EventsAndAlerts from './components/EventsAndAlerts';
+import UserManagementView from './components/UserManagementView';
 
-type ActiveView = 'dashboard' | 'channels' | 'live-server' | 'monitor' | 'ingest' | 'recordings' | 'events' | 'settings' | 'license' | 'account';
+type ActiveView = 'dashboard' | 'channels' | 'live-server' | 'monitor' | 'ingest' | 'recordings' | 'events' | 'users' | 'settings' | 'license' | 'account';
 type ThemeMode = 'light' | 'dark' | 'system';
 
 const LICENSE_MODULE_OPTIONS = [
@@ -316,7 +317,6 @@ const LicenseView: React.FC<{
 }> = ({ status, license, username, onActivate, onGenerate, fetchLicenses, suspendLicense, resumeLicense, resetLicense }) => {
   const [key, setKey] = useState('');
   const [generated, setGenerated] = useState('');
-  const [showToken, setShowToken] = useState(false);
   const [generator, setGenerator] = useState({ adminEmail: 'karnkalyan@gmail.com', adminPassword: '', customerName: '', customerEmail: '', days: 365, hardwareId: license.systemHwid || '', features: LICENSE_MODULE_OPTIONS.map(m => m.id) as string[] });
   const [loading, setLoading] = useState(false);
   const [licensesList, setLicensesList] = useState<any[]>([]);
@@ -485,13 +485,14 @@ const navItems: NavItem[] = [
   { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media', licenseModule: 'recording-library' },
   { id: 'monitor', label: 'System Monitor', icon: FiActivity, group: 'Observability', licenseModule: 'system-monitor' },
   { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability' },
+  { id: 'users', label: 'User Management', icon: FiUsers, group: 'System' },
   { id: 'settings', label: 'Settings', icon: FiSettings, group: 'System' },
   { id: 'license', label: 'License', icon: FiKey, group: 'System' },
   { id: 'account', label: 'Account', icon: FiUser, group: 'System' },
 ];
 
 /* ═══════════════════════════════════════════
-   SIDEBAR COMPONENT
+   SIDEBAR COMPONENT (REBUILT FROM SCRATCH)
    ═══════════════════════════════════════════ */
 const Sidebar: React.FC<{
   activeView: ActiveView;
@@ -533,10 +534,12 @@ const Sidebar: React.FC<{
           mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
       >
+        {/* Brand Logo Lockup */}
         <div className="border-b border-[#E8DFF0] px-3 py-3">
           <KashtrixLogo size={collapsed && !mobileOpen ? 36 : 154} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
         </div>
 
+        {/* Navigation Item Groups */}
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 scrollbar-hide">
           {navItems.filter(item => username === 'karnkalyan@gmail.com' || hasLicenseModule(license, item.licenseModule)).map((item, index, visibleItems) => (
             <React.Fragment key={item.id}>
@@ -550,6 +553,7 @@ const Sidebar: React.FC<{
           ))}
         </nav>
 
+        {/* Footer Status Panel */}
         {(!collapsed || mobileOpen) && (
           <div className="border-t border-[#E8DFF0] p-3">
             <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 text-[11px]">
@@ -589,6 +593,7 @@ const TopHeader: React.FC<{
     recordings: 'Recording Library',
     'live-server': 'Live Server',
     events: 'Events & Alerts',
+    users: 'User Management',
     settings: 'Settings',
     license: 'License',
     account: 'Account',
@@ -764,6 +769,7 @@ const App: React.FC = () => {
           )}
           {activeView === 'recordings' && <RecordingLibrary realtimeRecordings={engine.recordings} settings={engine.state.settings} deleteRecording={engine.deleteRecording} />}
           {activeView === 'events' && <EventsAndAlerts />}
+          {activeView === 'users' && <UserManagementView currentUser={engine.auth.user?.username} />}
           {activeView === 'settings' && <SettingsView settings={engine.state.settings} onSave={engine.updateSettings} />}
           {activeView === 'license' && <LicenseView status={engine.auth.license.status} license={engine.auth.license} username={engine.auth.user?.username} onActivate={engine.activateLicense} onGenerate={engine.generateLicense} fetchLicenses={engine.fetchLicenses} suspendLicense={engine.suspendLicense} resumeLicense={engine.resumeLicense} resetLicense={engine.resetLicense} />}
           {activeView === 'account' && <AccountView username={engine.auth.user?.username} onSave={engine.changeAccount} />}

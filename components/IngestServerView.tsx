@@ -20,7 +20,9 @@ import {
   Radio,
   Sliders,
   CheckCircle2,
-  Tv
+  Tv,
+  Plus,
+  ArrowUpRight
 } from 'lucide-react';
 import { AppSettings, IngestRecordingOptions, TranscodingProfile } from '../types';
 import toast from 'react-hot-toast';
@@ -50,14 +52,6 @@ interface Props {
 const formatBitrate = (kbps: number) => {
   if (kbps >= 1000) return `${(kbps / 1000).toFixed(2)} Mbps`;
   return `${kbps || 0} Kbps`;
-};
-
-const formatDataSize = (bytes: number) => {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 };
 
 const formatDuration = (startTime: string, endTime?: string, currentTime = Date.now()) => {
@@ -95,12 +89,17 @@ export const IngestServerView: React.FC<Props> = ({
   const [recordingStatuses, setRecordingStatuses] = useState<Record<string, boolean>>({});
   const [historySearch, setHistorySearch] = useState('');
   const [historyPage, setHistoryPage] = useState(1);
-  const [videoDevices, setVideoDevices] = useState<string[]>([]);
-  const [audioDevices, setAudioDevices] = useState<string[]>([]);
-  const [videoDevice, setVideoDevice] = useState('');
-  const [audioDevice, setAudioDevice] = useState('');
-  const [devicesLoading, setDevicesLoading] = useState(false);
-  const [durationClock, setDurationClock] = useState(Date.now());
+
+  // SRT Listener & Relay Modals
+  const [srtModalOpen, setSrtModalOpen] = useState(false);
+  const [srtStreamName, setSrtStreamName] = useState('srt-feed');
+  const [srtPort, setSrtPort] = useState('8890');
+
+  const [relayModalOpen, setRelayModalOpen] = useState(false);
+  const [relayStreamPath, setRelayStreamPath] = useState('/live/main-feed');
+  const [relayDestinationUrl, setRelayDestinationUrl] = useState('');
+  const [processes, setProcesses] = useState<any[]>([]);
+
   const itemsPerPage = 8;
 
   const fetchData = useCallback(async () => {
@@ -110,10 +109,24 @@ export const IngestServerView: React.FC<Props> = ({
         fetchRecordings(),
         fetchIngestStreams(),
       ]);
+      fetchProcesses();
     } catch (e) {
       console.error(e);
     }
   }, [fetchIngestHistory, fetchRecordings, fetchIngestStreams]);
+
+  const fetchProcesses = async () => {
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ingest/processes', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (res.ok) setProcesses(data.processes || []);
+    } catch (e) {
+      // Ignore process fetch errors
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -150,7 +163,60 @@ export const IngestServerView: React.FC<Props> = ({
       }
       fetchData();
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || 'Failed to toggle recording');
+    }
+  };
+
+  const startSrtListener = async () => {
+    if (!srtPort || !srtStreamName) return toast.error('Port and stream name are required');
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ingest/srt/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ port: Number(srtPort), streamName: srtStreamName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start SRT listener');
+      toast.success(`SRT Listener active on port ${srtPort}`);
+      setSrtModalOpen(false);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const startRtmpRelay = async () => {
+    if (!relayStreamPath || !relayDestinationUrl) return toast.error('Stream path and destination URL required');
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ingest/relay/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ streamPath: relayStreamPath, destinationUrl: relayDestinationUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start RTMP relay');
+      toast.success('RTMP relay established');
+      setRelayModalOpen(false);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const stopProcess = async (id: string) => {
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch(`/api/ingest/processes/${id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error('Failed to stop process');
+      toast.success('Process terminated');
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message);
     }
   };
 
@@ -172,7 +238,7 @@ export const IngestServerView: React.FC<Props> = ({
 
   return (
     <div className="ingest-workspace page-stack space-y-4">
-      {/* 1. Header Strip */}
+      {/* Header Strip */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -190,7 +256,21 @@ export const IngestServerView: React.FC<Props> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSrtModalOpen(true)}
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF]"
+          >
+            <Activity size={13} className="text-[#16A36A]" /> Add SRT Listener
+          </button>
+          <button
+            type="button"
+            onClick={() => setRelayModalOpen(true)}
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF]"
+          >
+            <ArrowUpRight size={13} className="text-[#2563EB]" /> Add RTMP Relay
+          </button>
           <button
             type="button"
             onClick={fetchData}
@@ -201,7 +281,7 @@ export const IngestServerView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 2. Top Summary KPI Row */}
+      {/* Top Summary KPI Row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Streams</span>
@@ -216,8 +296,8 @@ export const IngestServerView: React.FC<Props> = ({
           <p className="font-mono text-[20px] font-bold text-[#E11D72]">{Object.keys(activeRecordingKeys).length}</p>
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">RTMP Port</span>
-          <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{settings.rtmpPort || 1935}</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Background Jobs</span>
+          <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{processes.length}</p>
         </div>
       </div>
 
@@ -233,7 +313,7 @@ export const IngestServerView: React.FC<Props> = ({
         />
       )}
 
-      {/* 3. Live Active Streams Section */}
+      {/* Live Active Streams Section */}
       <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -319,7 +399,6 @@ export const IngestServerView: React.FC<Props> = ({
             </table>
           </div>
         ) : (
-          /* Compact Empty State (max 220px height) */
           <div className="grid min-h-[160px] place-items-center p-6 text-center">
             <div>
               <Zap size={24} className="mx-auto text-[#6F6078]" />
@@ -332,104 +411,95 @@ export const IngestServerView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* 4. Stream History Table */}
-      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
-        <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Stream History</h2>
-            <p className="text-[11px] text-[#6F6078]">Log of previous ingest sessions</p>
-          </div>
-
-          <div className="relative">
-            <input
-              type="text"
-              value={historySearch}
-              onChange={e => setHistorySearch(e.target.value)}
-              placeholder="Search history..."
-              className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
-            />
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          {paginatedHistory.length > 0 ? (
-            <table className="w-full text-left text-[12px]">
-              <thead>
-                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
-                  <th className="px-4 py-3">Stream Key</th>
-                  <th className="px-4 py-3">Protocol</th>
-                  <th className="px-4 py-3">Started</th>
-                  <th className="px-4 py-3">Ended</th>
-                  <th className="px-4 py-3">Duration</th>
-                  <th className="px-4 py-3">Peak Bitrate</th>
-                  <th className="px-4 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E8DFF0]">
-                {paginatedHistory.map((item: any, idx: number) => (
-                  <tr key={item.id || idx} className="transition-colors hover:bg-[#F4EEFF]/50">
-                    <td className="px-4 py-3 font-semibold text-[#1B1024]">{item.app}/{item.stream}</td>
-                    <td className="px-4 py-3">
-                      <ProtocolBadge protocol={item.protocol || 'RTMP'} />
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078]">
-                      {item.startTime ? new Date(item.startTime).toLocaleString() : '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078]">
-                      {item.endTime ? new Date(item.endTime).toLocaleString() : 'Active'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[#6F6078]">
-                      {formatDuration(item.startTime, item.endTime)}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[#6F6078]">
-                      {formatBitrate(item.peakBitrate || item.bitrate || 0)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        item.endTime ? 'bg-[#F8F7FA] text-[#6F6078]' : 'bg-[#F0FDF4] text-[#16A36A]'
-                      }`}>
-                        {item.endTime ? 'Finished' : 'Live'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="py-8 text-center text-[#6F6078] text-[12px]">
-              No previous stream sessions logged.
-            </div>
-          )}
-        </div>
-
-        {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-[#E8DFF0] bg-[#F8F7FA] px-4 py-2 text-[11px]">
-            <span className="text-[#6F6078]">
-              Page {historyPage} of {totalPages}
+      {/* Active Processes Table */}
+      {processes.length > 0 && (
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
+          <div className="border-b border-[#E8DFF0] px-4 py-2.5 bg-[#F8F7FA]">
+            <span className="font-display text-[13px] font-bold text-[#1B1024]">
+              Active Background Ingest Processes ({processes.length})
             </span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                disabled={historyPage <= 1}
-                onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                className="rounded border border-[#E8DFF0] bg-white p-1 text-[#6F6078] disabled:opacity-40"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <button
-                type="button"
-                disabled={historyPage >= totalPages}
-                onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
-                className="rounded border border-[#E8DFF0] bg-white p-1 text-[#6F6078] disabled:opacity-40"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
           </div>
-        )}
-      </div>
+          <table className="w-full text-left text-[12px]">
+            <thead>
+              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase text-[#6F6078]">
+                <th className="px-4 py-2">ID</th>
+                <th className="px-4 py-2">Type</th>
+                <th className="px-4 py-2">URL / Target</th>
+                <th className="px-4 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E8DFF0]">
+              {processes.map(proc => (
+                <tr key={proc.id}>
+                  <td className="px-4 py-2 font-mono font-bold text-[#4A1B7A]">{proc.id}</td>
+                  <td className="px-4 py-2 uppercase font-semibold text-[#6F6078]">{proc.type}</td>
+                  <td className="px-4 py-2 font-mono text-[#1B1024]">{proc.url || proc.streamPath}</td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      onClick={() => stopProcess(proc.id)}
+                      className="rounded border border-[#FECACA] bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold text-[#DC3545]"
+                    >
+                      Terminate
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* SRT Modal */}
+      <DetailDrawer
+        open={srtModalOpen}
+        onClose={() => setSrtModalOpen(false)}
+        title="Add SRT Listener Input"
+        subtitle="Listen on a local UDP port for incoming SRT streams"
+        width="max-w-[420px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setSrtModalOpen(false)} className="h-8 rounded-md border px-3 text-[12px] font-semibold text-[#6F6078]">Cancel</button>
+            <button onClick={startSrtListener} className="h-8 rounded-md bg-[#351147] px-4 text-[12px] font-semibold text-white">Start Listener</button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Target Stream Name</label>
+            <input className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 text-[12px]" value={srtStreamName} onChange={e => setSrtStreamName(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">SRT Listener Port</label>
+            <input type="number" className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 text-[12px]" value={srtPort} onChange={e => setSrtPort(e.target.value)} />
+          </div>
+        </div>
+      </DetailDrawer>
+
+      {/* Relay Modal */}
+      <DetailDrawer
+        open={relayModalOpen}
+        onClose={() => setRelayModalOpen(false)}
+        title="Add RTMP Relay Output"
+        subtitle="Forward an active ingest stream to a remote RTMP destination"
+        width="max-w-[440px]"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setRelayModalOpen(false)} className="h-8 rounded-md border px-3 text-[12px] font-semibold text-[#6F6078]">Cancel</button>
+            <button onClick={startRtmpRelay} className="h-8 rounded-md bg-[#351147] px-4 text-[12px] font-semibold text-white">Start Relay</button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Source Ingest Stream Path</label>
+            <input className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px]" value={relayStreamPath} onChange={e => setRelayStreamPath(e.target.value)} placeholder="/live/main-feed" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Destination RTMP URL</label>
+            <input className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px]" value={relayDestinationUrl} onChange={e => setRelayDestinationUrl(e.target.value)} placeholder="rtmp://remote-server/live/streamkey" />
+          </div>
+        </div>
+      </DetailDrawer>
 
       {/* Stream Inspector Drawer */}
       <DetailDrawer

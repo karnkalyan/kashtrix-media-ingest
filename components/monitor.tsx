@@ -257,7 +257,7 @@ const useSystemStats = () => {
       },
       isConnected => {
         if (isConnected) {
-          // Send request over WS to ensure immediate telemetry stream
+          // Request instant telemetry update over WebSocket stream
           sendRealtime({ type: 'systeminfo' });
         } else {
           setStats(prev => ({
@@ -269,15 +269,8 @@ const useSystemStats = () => {
       }
     );
 
-    // 3. Fallback polling timer (every 4 seconds) to ensure telemetry never freezes
-    const intervalId = window.setInterval(() => {
-      sendRealtime({ type: 'systeminfo' });
-      fetchRestStats();
-    }, 4000);
-
     return () => {
       unsubscribe();
-      window.clearInterval(intervalId);
     };
   }, []);
 
