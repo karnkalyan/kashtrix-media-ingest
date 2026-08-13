@@ -19,7 +19,7 @@ const DetailDrawer: React.FC<DetailDrawerProps> = ({
   return (
     <>
       <div className="drawer-overlay" onClick={onClose} />
-      <div className={`fixed right-0 top-0 z-50 flex h-full w-full ${width} flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-xl)] animate-[slide-in-right_0.3s_ease-out]`}>
+      <div className={`fixed right-0 top-0 z-50 flex h-full w-full ${width} flex-col border-l border-[#E8DFF0] bg-white dark:bg-[#160C24] dark:border-[#311B4E] shadow-2xl animate-[slide-in-right_0.3s_ease-out]`}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4 shrink-0">
           <div className="min-w-0">

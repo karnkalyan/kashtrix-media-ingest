@@ -2,8 +2,8 @@ const { spawn } = require('child_process');
 
 const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const children = [
-  spawn(command, ['run', 'dev:api'], { stdio: 'inherit', windowsHide: true }),
-  spawn(command, ['run', 'dev:web'], { stdio: 'inherit', windowsHide: true }),
+  spawn(command, ['run', 'dev:api'], { stdio: 'inherit', shell: true }),
+  spawn(command, ['run', 'dev:web'], { stdio: 'inherit', shell: true }),
 ];
 
 let stopping = false;

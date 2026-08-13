@@ -51,25 +51,26 @@ const inputClass = 'h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 
 /* ═══════════════════════════════════════════
    OFFICIAL KASHTRIX STREAMOPS LOGO
    ═══════════════════════════════════════════ */
-const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ size = 180, variant = 'wordmark' }) => {
+const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ variant = 'wordmark' }) => {
   if (variant === 'icon') {
     return (
-      <img
-        src="/logo.png"
-        alt="KASHTRIX Icon"
-        className="h-8 w-8 object-contain shrink-0"
-        draggable={false}
-      />
+      <div className="flex items-center justify-center w-full">
+        <img
+          src="/logo.png"
+          alt="KASHTRIX Icon"
+          className="h-8 w-8 object-contain shrink-0 sidebar-logo"
+          draggable={false}
+        />
+      </div>
     );
   }
 
   return (
-    <div className="flex items-center select-none py-1 w-full overflow-hidden pr-2">
+    <div className="flex items-center select-none py-1 w-full overflow-hidden">
       <img
         src="/sidebar-full-logo.png"
-        alt="KASHTRIX Media Ingest"
-        style={{ height: '38px', maxWidth: `${size}px` }}
-        className="h-9 w-auto object-contain object-left shrink-0"
+        alt="KASHTRIX StreamOps"
+        className="h-9 max-w-full object-contain shrink-0 sidebar-logo"
         draggable={false}
         onError={(e) => {
           (e.currentTarget as HTMLImageElement).src = '/logo-full-with text.png';
@@ -102,34 +103,64 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
   };
 
   return (
-    <div className="relative flex min-h-screen font-sans text-[#1B1024]">
+    <div className="relative flex min-h-screen font-sans text-[#1B1024] dark:bg-[#0F0817] dark:text-[#F1EAFA]">
       <Toaster position="top-right" />
-      <div className="hidden lg:flex lg:w-1/2 xl:w-[55%] items-center justify-center bg-[#2B0D3A] p-12 relative overflow-hidden">
-        <div className="relative z-10 max-w-md text-white">
-          <KashtrixLogo size={380} variant="full" />
-          <p className="mt-8 text-lg font-medium leading-relaxed opacity-90">
-            Live Streaming • Transcoding • Ingest
-          </p>
-          <p className="mt-4 text-sm leading-relaxed opacity-70">
-            Enterprise-grade IPTV management, OTT content delivery, and media infrastructure control plane.
-          </p>
+      {/* Rich Promo Panel with Gradient background & Light Logo Container */}
+      <div className="hidden lg:flex lg:w-1/2 xl:w-[55%] items-center justify-center bg-gradient-to-br from-[#160822] via-[#2A0D38] to-[#451874] p-12 relative overflow-hidden">
+        {/* Glow Effects */}
+        <div className="absolute -left-20 -top-20 h-96 w-96 rounded-full bg-[#7C3AED]/25 blur-3xl pointer-events-none" />
+        <div className="absolute -right-20 -bottom-20 h-96 w-96 rounded-full bg-[#E11D48]/20 blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 max-w-md text-white space-y-6">
+          <div className="inline-flex rounded-2xl bg-white p-4 shadow-2xl backdrop-blur-md border border-white/20">
+            <img
+              src="/sidebar-full-logo.png"
+              alt="KASHTRIX StreamOps"
+              className="h-11 w-auto object-contain"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/logo-full-with text.png';
+              }}
+            />
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white font-display">
+              Live Streaming • Transcoding • Ingest
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-[#E2D1F9]">
+              Enterprise-grade IPTV management, OTT content delivery, and media infrastructure control plane.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Ultra-Low Latency</span>
+              <p className="text-xs font-semibold text-white mt-0.5">HLS, DASH, RTMP & SRT</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Hardware Transcode</span>
+              <p className="text-xs font-semibold text-white mt-0.5">NVENC, QSV & CPU Copy</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex w-full lg:w-1/2 xl:w-[45%] items-center justify-center bg-[#F8F7FA] p-6">
+      <div className="flex w-full lg:w-1/2 xl:w-[45%] items-center justify-center bg-[#F8F7FA] p-6 dark:bg-[#0F0817]">
         <div className="w-full max-w-[400px]">
-          <div className="flex items-center gap-3 mb-10 lg:hidden">
-            <KashtrixLogo size={200} />
+          <div className="flex items-center gap-3 mb-8 lg:hidden">
+            <div className="inline-flex rounded-xl bg-white p-3 shadow-md border border-slate-200 dark:bg-[#1E1130] dark:border-[#371F59]">
+              <img src="/sidebar-full-logo.png" alt="KASHTRIX" className="h-8 w-auto object-contain dark:brightness-0 dark:invert" />
+            </div>
           </div>
 
-          <div className="hidden lg:block mb-8">
-            <h2 className="text-2xl font-bold font-display text-[#1B1024]">Welcome back</h2>
-            <p className="mt-1 text-xs text-[#6F6078]">Sign in to KASHTRIX StreamOps operations console</p>
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold font-display text-[#1B1024] dark:text-white">Welcome back</h2>
+            <p className="mt-1 text-xs text-[#6F6078] dark:text-[#B9A5CD]">Sign in to KASHTRIX StreamOps operations console</p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024]">Username</label>
+              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Username</label>
               <input
                 className={inputClass}
                 value={username}
@@ -139,7 +170,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024]">Password</label>
+              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Password</label>
               <div className="relative">
                 <input
                   className={inputClass}
@@ -152,7 +183,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#6F6078] hover:text-[#351147]"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#6F6078] hover:text-[#351147] dark:text-[#B9A5CD] dark:hover:text-white"
                 >
                   {showPassword ? 'Hide' : 'Show'}
                 </button>
@@ -161,7 +192,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
             <button
               type="submit"
               disabled={loading}
-              className="mt-2 flex h-9 w-full items-center justify-center rounded-md bg-[#351147] text-xs font-semibold text-white transition-colors hover:bg-[#2B0D3A]"
+              className="mt-2 flex h-9 w-full items-center justify-center rounded-md bg-[#351147] text-xs font-semibold text-white transition-colors hover:bg-[#2B0D3A] dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
             >
               {loading ? 'Authenticating...' : 'Sign In'}
             </button>
@@ -195,26 +226,26 @@ const SettingsView: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
 
   return (
     <div className="settings-workspace page-stack space-y-4">
-      <div className="flex items-center justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+      <div className="flex items-center justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
         <div>
-          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">System Settings</h1>
-          <p className="mt-0.5 text-[12px] text-[#6F6078]">Server ports, hardware acceleration defaults and network options</p>
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">System Settings</h1>
+          <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">Server ports, hardware acceleration defaults and network options</p>
         </div>
         <button
           type="button"
           onClick={save}
           disabled={saving}
-          className="flex h-8 items-center gap-1.5 rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A]"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
         >
           {saving ? 'Saving...' : 'Save Configuration'}
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs">
-          <h2 className="font-display text-[14px] font-bold text-[#1B1024]">Network Ports & Protocols</h2>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <h2 className="font-display text-[14px] font-bold text-[#1B1024] dark:text-white">Network Ports & Protocols</h2>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">RTMP Ingest Port</label>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">RTMP Ingest Port</label>
             <input
               type="number"
               className={inputClass}
@@ -223,7 +254,7 @@ const SettingsView: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
             />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">HTTP Media Distribution Port</label>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">HTTP Media Distribution Port</label>
             <input
               type="number"
               className={inputClass}
@@ -233,14 +264,14 @@ const SettingsView: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs">
-          <h2 className="font-display text-[14px] font-bold text-[#1B1024]">Transcoder Hardware Defaults</h2>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <h2 className="font-display text-[14px] font-bold text-[#1B1024] dark:text-white">Transcoder Hardware Defaults</h2>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Default Video Preset</label>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Default Video Preset</label>
             <input
               className={inputClass}
-              value={form.defaultPreset || 'medium'}
-              onChange={e => setForm(p => ({ ...p, defaultPreset: e.target.value }))}
+              value={(form as any).defaultPreset || 'medium'}
+              onChange={e => setForm(p => ({ ...p, defaultPreset: e.target.value } as any))}
             />
           </div>
         </div>
@@ -274,43 +305,43 @@ const AccountView: React.FC<{ username?: string; onSave: (payload: { username: s
 
   return (
     <div className="account-workspace page-stack space-y-4 max-w-4xl">
-      <div className="border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
-        <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Account Settings</h1>
-        <p className="mt-0.5 text-[12px] text-[#6F6078]">Administrator profile and authentication credentials</p>
+      <div className="border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+        <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">Account Settings</h1>
+        <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">Administrator profile and authentication credentials</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-[#F4EEFF] font-display font-bold text-[#4A1B7A]">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-[#F4EEFF] font-display font-bold text-[#4A1B7A] dark:bg-[#371F59] dark:text-[#C4B5FD]">
               {username.charAt(0).toUpperCase()}
             </span>
             <div>
-              <p className="font-semibold text-[#1B1024]">{username}</p>
-              <p className="text-[10px] text-[#6F6078] uppercase font-bold">StreamOps Administrator</p>
+              <p className="font-semibold text-[#1B1024] dark:text-white">{username}</p>
+              <p className="text-[10px] text-[#6F6078] uppercase font-bold dark:text-[#B9A5CD]">StreamOps Administrator</p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs lg:col-span-2">
-          <h2 className="font-display text-[14px] font-bold text-[#1B1024]">Login Credentials</h2>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs lg:col-span-2 dark:bg-[#190E28] dark:border-[#311B4E]">
+          <h2 className="font-display text-[14px] font-bold text-[#1B1024] dark:text-white">Login Credentials</h2>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Username</label>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Username</label>
             <input className={inputClass} value={nextUsername} onChange={e => setNextUsername(e.target.value)} />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Current Password</label>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Current Password</label>
             <input className={inputClass} type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">New Password</label>
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">New Password</label>
             <input className={inputClass} type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Leave blank to keep unchanged" />
           </div>
           <button
             type="button"
             onClick={save}
             disabled={saving || !currentPassword}
-            className="flex h-8 items-center justify-center rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] disabled:opacity-50"
+            className="flex h-8 items-center justify-center rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] disabled:opacity-50 dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
           >
             {saving ? 'Updating...' : 'Update Credentials'}
           </button>
@@ -334,7 +365,7 @@ const LicenseView: React.FC<{
   resumeLicense: (id: number) => Promise<any>;
   resetLicense: () => Promise<any>;
 }> = ({ status, license, username, onActivate, onGenerate, fetchLicenses, suspendLicense, resumeLicense }) => {
-  const inputClass = 'w-full rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 py-1.5 text-[12px] text-[#1B1024] outline-none focus:border-[#6D32D9]';
+  const inputClass = 'w-full rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 py-1.5 text-[12px] text-[#1B1024] outline-none focus:border-[#6D32D9] dark:bg-[#211335] dark:border-[#371F59] dark:text-white';
   const [key, setKey] = useState('');
   const [generated, setGenerated] = useState('');
   const [generator, setGenerator] = useState({
@@ -405,55 +436,55 @@ const LicenseView: React.FC<{
   return (
     <div className="license-workspace page-stack space-y-4">
       {/* Header */}
-      <div className="border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
-        <h1 className="font-display text-[18px] font-bold text-[#1B1024]">License Administration</h1>
-        <p className="mt-0.5 text-[12px] text-[#6F6078]">HWID hardware binding, JWT token status and module entitlements</p>
+      <div className="border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+        <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">License Administration</h1>
+        <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">HWID hardware binding, JWT token status and module entitlements</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {/* Current License Status Card */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs">
-          <h2 className="font-display text-[15px] font-bold text-[#1B1024]">Current Server License Status</h2>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">Current Server License Status</h2>
 
-          <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 text-[12px]">
+          <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 text-[12px] dark:bg-[#211335] dark:border-[#371F59]">
             <div>
-              <span className="text-[10px] font-bold uppercase text-[#6F6078]">Status</span>
-              <p className="font-bold text-[#1B1024] flex items-center gap-1.5">
-                <span className={`inline-block h-2 w-2 rounded-full ${license.status === 'activated' ? 'bg-[#16A36A]' : 'bg-[#DC3545]'}`} />
+              <span className="text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Status</span>
+              <p className="font-bold text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                <span className={`inline-block h-2 w-2 rounded-full ${license.status === 'activated' ? 'bg-[#16A36A] dark:bg-[#34D399]' : 'bg-[#DC3545]'}`} />
                 {license.status}
               </p>
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase text-[#6F6078]">Customer</span>
-              <p className="font-bold text-[#1B1024] truncate">{license.customerName || '—'}</p>
+              <span className="text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Customer</span>
+              <p className="font-bold text-[#1B1024] dark:text-white truncate">{license.customerName || '—'}</p>
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase text-[#6F6078]">Expires</span>
-              <p className="font-mono text-[#6F6078]">
+              <span className="text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Expires</span>
+              <p className="font-mono text-[#6F6078] dark:text-[#B9A5CD]">
                 {license.expiresAt ? new Date(license.expiresAt).toLocaleDateString() : '—'}
               </p>
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase text-[#6F6078]">Binding</span>
-              <p className="font-bold text-[#16A36A]">{license.hardwareBound ? 'HWID Bound' : 'Global'}</p>
+              <span className="text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Binding</span>
+              <p className="font-bold text-[#16A36A] dark:text-[#34D399]">{license.hardwareBound ? 'HWID Bound' : 'Global'}</p>
             </div>
           </div>
 
           <CodeField value={license.systemHwid || ''} label="System HWID (Hardware Identifier)" />
 
           <div>
-            <span className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Enabled Server Modules</span>
+            <span className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Enabled Server Modules</span>
             <div className="flex flex-wrap gap-1.5">
               {LICENSE_MODULE_OPTIONS.filter(m => hasLicenseModule(license, m.id)).map(m => (
-                <span key={m.id} className="rounded border border-[#D8C6E8] bg-[#F4EEFF] px-2 py-0.5 font-mono text-[10px] font-bold text-[#4A1B7A]">
+                <span key={m.id} className="rounded border border-[#D8C6E8] bg-[#F4EEFF] px-2 py-0.5 font-mono text-[10px] font-bold text-[#4A1B7A] dark:bg-[#2D1845] dark:border-[#45266E] dark:text-[#C4B5FD]">
                   {m.label}
                 </span>
               ))}
             </div>
           </div>
 
-          <div className="pt-2 border-t border-[#E8DFF0]">
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Activate JWT License Token</label>
+          <div className="pt-2 border-t border-[#E8DFF0] dark:border-[#311B4E]">
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Activate JWT License Token</label>
             <textarea
               className={`${inputClass} h-20 resize-none font-mono text-[11px]`}
               value={key}
@@ -464,7 +495,7 @@ const LicenseView: React.FC<{
               type="button"
               onClick={activate}
               disabled={loading || !key.trim()}
-              className="mt-2 flex h-8 items-center justify-center rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] disabled:opacity-50"
+              className="mt-2 flex h-8 items-center justify-center rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] disabled:opacity-50 dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
             >
               {loading ? 'Activating...' : 'Activate License'}
             </button>
@@ -473,17 +504,17 @@ const LicenseView: React.FC<{
 
         {/* License Generator Card */}
         {canShowGenerator && (
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs">
-            <h2 className="font-display text-[15px] font-bold text-[#1B1024]">License Generator & Module Entitlements</h2>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">License Generator & Module Entitlements</h2>
 
             {/* Admin Generator Credentials */}
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Generator Admin Email</label>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Generator Admin Email</label>
                 <input className={inputClass} value={generator.adminEmail} onChange={e => setGenerator(p => ({ ...p, adminEmail: e.target.value }))} placeholder="karnkalyan@gmail.com" />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Generator Admin Password</label>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Generator Admin Password</label>
                 <input className={inputClass} type="password" value={generator.adminPassword} onChange={e => setGenerator(p => ({ ...p, adminPassword: e.target.value }))} placeholder="kalyan_vickey" />
               </div>
             </div>
@@ -491,11 +522,11 @@ const LicenseView: React.FC<{
             {/* Customer Details */}
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Customer Name</label>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Customer Name</label>
                 <input className={inputClass} value={generator.customerName} onChange={e => setGenerator(p => ({ ...p, customerName: e.target.value }))} placeholder="Customer Name" />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Customer Email</label>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Customer Email</label>
                 <input className={inputClass} value={generator.customerEmail} onChange={e => setGenerator(p => ({ ...p, customerEmail: e.target.value }))} placeholder="Customer Email" />
               </div>
             </div>
@@ -503,16 +534,16 @@ const LicenseView: React.FC<{
             {/* Validity & HWID */}
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Validity Days</label>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Validity Days</label>
                 <input className={inputClass} type="number" value={generator.days} onChange={e => setGenerator(p => ({ ...p, days: Number(e.target.value) || 365 }))} placeholder="Valid Days" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] font-bold uppercase text-[#6F6078]">Target HWID</label>
+                  <label className="text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Target HWID</label>
                   <button
                     type="button"
                     onClick={() => setGenerator(p => ({ ...p, hardwareId: license.systemHwid || '' }))}
-                    className="text-[9px] font-bold text-[#6D32D9] hover:underline"
+                    className="text-[9px] font-bold text-[#6D32D9] hover:underline dark:text-[#A78BFA]"
                   >
                     Current HWID
                   </button>
@@ -524,27 +555,27 @@ const LicenseView: React.FC<{
             {/* Module Entitlement Checkboxes */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold text-[#1B1024]">Module Entitlements</span>
+                <span className="text-[11px] font-bold text-[#1B1024] dark:text-white">Module Entitlements</span>
                 <div className="flex gap-2 text-[10px]">
                   <button
                     type="button"
                     onClick={() => setGenerator(p => ({ ...p, features: LICENSE_MODULE_OPTIONS.map(m => m.id) }))}
-                    className="text-[#6D32D9] hover:underline font-semibold"
+                    className="text-[#6D32D9] hover:underline font-semibold dark:text-[#A78BFA]"
                   >
                     Select All
                   </button>
-                  <span className="text-[#E8DFF0]">|</span>
+                  <span className="text-[#E8DFF0] dark:text-[#311B4E]">|</span>
                   <button
                     type="button"
                     onClick={() => setGenerator(p => ({ ...p, features: [] }))}
-                    className="text-[#6F6078] hover:underline font-semibold"
+                    className="text-[#6F6078] hover:underline font-semibold dark:text-[#B9A5CD]"
                   >
                     Clear All
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
+              <div className="space-y-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
                 {LICENSE_MODULE_OPTIONS.map(m => {
                   const isChecked = generator.features.includes(m.id);
                   return (
@@ -562,8 +593,8 @@ const LicenseView: React.FC<{
                         className="mt-0.5 rounded border-[#E8DFF0] text-[#6D32D9] focus:ring-[#6D32D9]"
                       />
                       <div>
-                        <span className="font-semibold text-[#1B1024]">{m.label}</span>
-                        <p className="text-[10px] text-[#6F6078]">{m.description}</p>
+                        <span className="font-semibold text-[#1B1024] dark:text-white">{m.label}</span>
+                        <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">{m.description}</p>
                       </div>
                     </label>
                   );
@@ -581,9 +612,9 @@ const LicenseView: React.FC<{
             </button>
 
             {generated && (
-              <div className="space-y-2 rounded-lg border border-[#16A36A]/30 bg-[#F0FDF4] p-3">
+              <div className="space-y-2 rounded-lg border border-[#16A36A]/30 bg-[#F0FDF4] p-3 dark:bg-[#064E3B]/60 dark:border-[#059669]">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-[#16A36A]">Generated License Key</span>
+                  <span className="text-[11px] font-bold text-[#16A36A] dark:text-[#34D399]">Generated License Key</span>
                   <button
                     type="button"
                     onClick={async () => {
@@ -604,11 +635,11 @@ const LicenseView: React.FC<{
 
       {/* Issued Licenses Registry Table */}
       {licensesList.length > 0 && (
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs space-y-3">
-          <h2 className="font-display text-[15px] font-bold text-[#1B1024]">Issued License Registry</h2>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs space-y-3 dark:bg-[#190E28] dark:border-[#311B4E]">
+          <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">Issued License Registry</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px]">
-              <thead className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-bold uppercase text-[#6F6078]">
+              <thead className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-bold uppercase text-[#6F6078] dark:bg-[#211335] dark:border-[#311B4E] dark:text-[#B9A5CD]">
                 <tr>
                   <th className="px-3 py-2">Customer</th>
                   <th className="px-3 py-2">Target HWID</th>
@@ -617,14 +648,14 @@ const LicenseView: React.FC<{
                   <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFF0]">
+              <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
                 {licensesList.map((lic: any) => (
-                  <tr key={lic.id} className="hover:bg-[#F8F7FA]">
-                    <td className="px-3 py-2 font-semibold text-[#1B1024]">{lic.customer_name}</td>
-                    <td className="px-3 py-2 font-mono text-[11px] text-[#6F6078]">{lic.hardware_id || '—'}</td>
-                    <td className="px-3 py-2 text-[#6F6078]">{new Date(lic.expires_at).toLocaleDateString()}</td>
+                  <tr key={lic.id} className="hover:bg-[#F8F7FA] dark:hover:bg-[#2B1745]">
+                    <td className="px-3 py-2 font-semibold text-[#1B1024] dark:text-white">{lic.customer_name}</td>
+                    <td className="px-3 py-2 font-mono text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">{lic.hardware_id || '—'}</td>
+                    <td className="px-3 py-2 text-[#6F6078] dark:text-[#B9A5CD]">{new Date(lic.expires_at).toLocaleDateString()}</td>
                     <td className="px-3 py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${lic.status === 'suspended' ? 'bg-[#FEE2E2] text-[#DC3545]' : 'bg-[#D1FAE5] text-[#16A36A]'}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${lic.status === 'suspended' ? 'bg-[#FEE2E2] text-[#DC3545] dark:bg-[#450A0A] dark:text-[#FCA5A5]' : 'bg-[#D1FAE5] text-[#16A36A] dark:bg-[#064E3B] dark:text-[#34D399]'}`}>
                         {lic.status}
                       </span>
                     </td>
@@ -632,7 +663,7 @@ const LicenseView: React.FC<{
                       <button
                         type="button"
                         onClick={() => toggleSuspend(lic)}
-                        className="rounded border border-[#E8DFF0] bg-white px-2 py-1 text-[10px] font-semibold text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#4A1B7A]"
+                        className="rounded border border-[#E8DFF0] bg-white px-2 py-1 text-[10px] font-semibold text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]"
                       >
                         {lic.status === 'suspended' ? 'Resume' : 'Suspend'}
                       </button>
@@ -652,12 +683,12 @@ const LicenseView: React.FC<{
    EXPIRED SCREEN
    ═══════════════════════════════════════════ */
 const ExpiredScreen: React.FC<{ license: LicenseInfo; username?: string; onActivate: (key: string) => Promise<any>; onGenerate: any; onLogout: () => void }> = ({ license, onLogout }) => (
-  <div className="flex min-h-screen items-center justify-center bg-[#F8F7FA] p-4 text-[#1B1024]">
-    <div className="w-full max-w-md rounded-xl border border-[#E8DFF0] bg-white p-6 shadow-lg text-center space-y-3">
+  <div className="flex min-h-screen items-center justify-center bg-[#F8F7FA] p-4 text-[#1B1024] dark:bg-[#0F0817] dark:text-white">
+    <div className="w-full max-w-md rounded-xl border border-[#E8DFF0] bg-white p-6 shadow-lg text-center space-y-3 dark:bg-[#190E28] dark:border-[#311B4E]">
       <h1 className="font-display text-[18px] font-bold text-[#DC3545]">License Expired or Invalid</h1>
-      <p className="text-[12px] text-[#6F6078]">The operations console requires an active license token.</p>
+      <p className="text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">The operations console requires an active license token.</p>
       <CodeField value={license.systemHwid || ''} label="System HWID" />
-      <button onClick={onLogout} className="text-[12px] font-semibold text-[#6D32D9] hover:underline">
+      <button onClick={onLogout} className="text-[12px] font-semibold text-[#6D32D9] hover:underline dark:text-[#A78BFA]">
         Sign Out
       </button>
     </div>
@@ -729,66 +760,65 @@ const Sidebar: React.FC<{
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8EDF5] bg-white transition-all duration-200 shadow-xs dark:bg-[#130B1C] dark:border-[#27153B] ${mobileOpen ? 'w-[288px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8EDF5] bg-white transition-all duration-200 shadow-xs dark:bg-[#1E293B] dark:border-[#334155] ${mobileOpen ? 'w-[288px] translate-x-0' : '-translate-x-full lg:translate-x-0'
           } ${collapsed && !mobileOpen ? 'lg:w-[72px]' : 'lg:w-[288px]'}`}
       >
         {/* Brand Header */}
-        <div className="flex h-16 items-center justify-between border-b border-[#E8EDF5] px-4 dark:border-[#27153B]">
-          <div className="flex-1 flex items-center overflow-hidden">
-            <KashtrixLogo size={collapsed && !mobileOpen ? 34 : 200} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
+        <div className="flex h-16 items-center justify-center border-b border-[#E8EDF5] px-3 dark:border-[#334155]">
+          <div className="flex items-center justify-center w-full overflow-hidden">
+            <KashtrixLogo variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
           </div>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="hidden lg:grid h-8 w-8 place-items-center rounded-xl border border-[#E8EDF5] bg-[#F3EEFF] text-[#7C3AED] transition-colors hover:bg-[#EDE9FE] dark:bg-[#1E112B] dark:border-[#371F52] dark:text-[#A494B5] dark:hover:bg-[#6D32D9] dark:hover:text-white shrink-0"
-            title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          >
-            {collapsed ? <FiChevronRight size={15} /> : <FiChevronLeft size={15} />}
-          </button>
         </div>
 
         {/* Navigation Items Grouped */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4 scrollbar-hide font-sans">
+        <nav className={`flex-1 overflow-y-auto py-4 space-y-4 scrollbar-hide font-sans ${collapsed && !mobileOpen ? 'px-2' : 'px-3'}`}>
           {groups.map(group => (
             <div key={group.name} className="space-y-1.5">
               {(!collapsed || mobileOpen) && (
-                <div className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#64748B] dark:text-[#94A3B8] select-none">
+                <div className="px-3 pt-3 pb-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#64748B] dark:text-[#94A3B8] select-none">
                   {group.name}
                 </div>
               )}
               {group.items.map(item => {
                 const Icon = item.icon;
                 const isActive = activeView === item.id;
+                const isCollapsed = collapsed && !mobileOpen;
 
                 return (
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-11 w-full items-center justify-between rounded-xl px-3 text-left text-[15px] font-semibold transition-all duration-150 ${isActive
-                        ? 'bg-[#F3EEFF] text-[#1E1B4B] font-semibold border-l-4 border-[#7C3AED] dark:bg-[#2B1542] dark:text-white shadow-2xs'
-                        : 'text-[#1E293B] hover:bg-[#F8FAFC] hover:text-[#0F172A] dark:text-[#CBD5E1] dark:hover:bg-[#1E112B] dark:hover:text-white'
-                      } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
-                    title={collapsed && !mobileOpen ? item.label : undefined}
+                    className={`group relative flex h-11 w-full items-center rounded-xl text-left transition-all duration-150 ${
+                      isActive
+                        ? 'bg-[#F3EEFF] text-[#1E1B4B] font-semibold border-l-4 border-[#7C3AED] dark:bg-[#7C3AED] dark:text-white dark:border-[#A78BFA] shadow-2xs'
+                        : 'hover:bg-[#F8FAFC] dark:hover:bg-[#334155]'
+                    } ${isCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}
+                    title={isCollapsed ? item.label : undefined}
                   >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      {/* 50% Radius Circular Icon Badge with NO Background Box & Soft Drop Shadow */}
-                      <div className="flex h-8.5 w-8.5 items-center justify-center rounded-full bg-transparent shrink-0 transition-transform duration-150 group-hover:scale-110">
-                        <Icon size={18} className={`${item.iconColor} filter ${item.iconShadow}`} />
+                    <div className={`flex items-center ${isCollapsed ? 'justify-center w-full' : 'gap-3 overflow-hidden'}`}>
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-transparent shrink-0 transition-transform duration-150 group-hover:scale-110">
+                        <Icon size={19} className={`${item.iconColor} filter ${item.iconShadow}`} />
                       </div>
 
-                      {(!collapsed || mobileOpen) && (
-                        <span className="truncate">{item.label}</span>
+                      {!isCollapsed && (
+                        <span className={`truncate text-[14px] font-semibold transition-colors ${
+                          isActive
+                            ? 'text-[#1E1B4B] dark:text-white font-bold'
+                            : 'text-[#475569] dark:text-[#F8FAFC] group-hover:text-[#0F172A] group-hover:dark:text-white'
+                        }`}>
+                          {item.label}
+                        </span>
                       )}
                     </div>
 
-                    {(!collapsed || mobileOpen) && (
+                    {!isCollapsed && (
                       <div className="flex items-center gap-1.5 shrink-0">
                         {item.badge ? (
                           <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold text-white shadow-xs ${item.badgeColor || 'bg-[#7C3AED]'}`}>
                             {item.badge}
                           </span>
                         ) : (
-                          <FiChevronRight size={14} className="text-[#94A3B8] group-hover:text-[#64748B] transition-transform duration-150 group-hover:translate-x-0.5" />
+                          <FiChevronRight size={14} className="text-[#94A3B8] group-hover:text-[#64748B] dark:text-[#8E78A6] dark:group-hover:text-white transition-transform duration-150 group-hover:translate-x-0.5" />
                         )}
                       </div>
                     )}
@@ -838,6 +868,8 @@ const Sidebar: React.FC<{
 const TopHeader: React.FC<{
   activeView: ActiveView;
   username?: string;
+  customerName?: string;
+  licenseStatus?: string;
   saveStatus: string;
   onLogout: () => void;
   onMobileMenuOpen: () => void;
@@ -845,7 +877,7 @@ const TopHeader: React.FC<{
   onToggleSidebar: () => void;
   themeMode: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-}> = ({ activeView, username, saveStatus, onLogout, onMobileMenuOpen, sidebarCollapsed, onToggleSidebar, themeMode, onThemeChange }) => {
+}> = ({ activeView, username, customerName, licenseStatus, saveStatus, onLogout, onMobileMenuOpen, sidebarCollapsed, onToggleSidebar, themeMode, onThemeChange }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const viewLabels: Record<string, string> = {
@@ -862,23 +894,32 @@ const TopHeader: React.FC<{
     account: 'Account',
   };
 
+  const displayTitle = useMemo(() => {
+    const baseLabel = viewLabels[activeView] || activeView;
+    const isLicenseActive = licenseStatus === 'activated';
+    if (isLicenseActive && customerName && customerName.trim()) {
+      return `${baseLabel} — ${customerName.trim()}`;
+    }
+    return baseLabel;
+  }, [activeView, customerName, licenseStatus]);
+
   return (
-    <header className="sticky top-0 z-30 flex h-[56px] items-center justify-between border-b border-[#E8DFF0] bg-white px-4">
+    <header className="sticky top-0 z-30 flex h-[56px] items-center justify-between border-b border-[#E8DFF0] bg-white px-4 dark:bg-[#1E293B] dark:border-[#334155]">
       <div className="flex items-center gap-3">
         <button
           onClick={onMobileMenuOpen}
-          className="flex h-8 w-8 items-center justify-center rounded text-[#6F6078] hover:bg-[#F8F7FA] lg:hidden"
+          className="flex h-8 w-8 items-center justify-center rounded text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#94A3B8] dark:hover:bg-[#334155] lg:hidden"
         >
           <FiMenu size={18} />
         </button>
         <button
           onClick={onToggleSidebar}
-          className="hidden lg:flex h-8 w-8 items-center justify-center rounded text-[#6F6078] hover:bg-[#F8F7FA]"
+          className="hidden lg:flex h-8 w-8 items-center justify-center rounded text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#94A3B8] dark:hover:bg-[#334155]"
         >
           <FiMenu size={18} />
         </button>
         <div>
-          <h2 className="font-display text-[15px] font-bold text-[#1B1024]">{viewLabels[activeView] || activeView}</h2>
+          <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">{displayTitle}</h2>
         </div>
       </div>
 
@@ -887,9 +928,9 @@ const TopHeader: React.FC<{
           <input
             type="text"
             placeholder="Search operations..."
-            className="h-8 w-52 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[11px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+            className="h-8 w-52 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[11px] text-[#1B1024] outline-none focus:border-[#7C3AED] dark:bg-[#0F172A] dark:border-[#334155] dark:text-white dark:placeholder-[#94A3B8]"
           />
-          <FiSearch size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
+          <FiSearch size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#94A3B8]" />
         </div>
 
         {/* Theme Mode Toggle */}
@@ -899,7 +940,7 @@ const TopHeader: React.FC<{
             const nextMode = themeMode === 'dark' ? 'light' : 'dark';
             onThemeChange(nextMode);
           }}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#4A1B7A]"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#D97706] dark:hover:bg-[#2D1A45]"
           title={`Switch to ${themeMode === 'dark' ? 'Light' : 'Dark'} Mode`}
         >
           {themeMode === 'dark' ? <FiSun size={15} className="text-[#D97706]" /> : <FiMoon size={15} className="text-[#4A1B7A]" />}
@@ -908,21 +949,21 @@ const TopHeader: React.FC<{
         <div className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex items-center gap-2 rounded-lg p-1 hover:bg-[#F8F7FA]"
+            className="flex items-center gap-2 rounded-lg p-1 hover:bg-[#F8F7FA] dark:hover:bg-[#211335]"
           >
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-[#F4EEFF] text-[12px] font-bold text-[#4A1B7A]">
+            <span className="grid h-7 w-7 place-items-center rounded-full bg-[#F4EEFF] text-[12px] font-bold text-[#4A1B7A] dark:bg-[#371F59] dark:text-[#A78BFA]">
               {username?.charAt(0).toUpperCase() || 'U'}
             </span>
-            <span className="hidden text-[12px] font-semibold text-[#1B1024] sm:block">{username || 'Admin'}</span>
+            <span className="hidden text-[12px] font-semibold text-[#1B1024] dark:text-white sm:block">{username || 'Admin'}</span>
           </button>
 
           {userMenuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1.5 z-50 w-44 rounded-lg border border-[#E8DFF0] bg-white p-1 shadow-lg">
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-44 rounded-lg border border-[#E8DFF0] bg-white p-1 shadow-lg dark:bg-[#190E28] dark:border-[#311B4E]">
                 <button
                   onClick={() => { onLogout(); setUserMenuOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-[12px] font-semibold text-[#DC3545] hover:bg-[#FEF2F2]"
+                  className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-[12px] font-semibold text-[#DC3545] hover:bg-[#FEF2F2] dark:hover:bg-[#3A1420]"
                 >
                   <FiLogOut size={14} /> Sign Out
                 </button>
@@ -950,12 +991,8 @@ const App: React.FC = () => {
     const root = document.documentElement;
     if (themeMode === 'dark') {
       root.classList.add('dark');
-    } else if (themeMode === 'light') {
-      root.classList.remove('dark');
     } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (prefersDark) root.classList.add('dark');
-      else root.classList.remove('dark');
+      root.classList.remove('dark');
     }
   }, [themeMode]);
 
@@ -972,7 +1009,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="kashtrix-app flex min-h-screen bg-[#F8F7FA] font-sans text-[#1B1024]">
+    <div className={`kashtrix-app flex min-h-screen font-sans transition-colors duration-200 ${themeMode === 'dark' ? 'dark bg-[#0F0817] text-[#F1EAFA]' : 'bg-[#F8F7FA] text-[#1B1024]'}`}>
       <Toaster position="top-right" />
 
       <Sidebar
@@ -992,6 +1029,8 @@ const App: React.FC = () => {
         <TopHeader
           activeView={activeView}
           username={engine.auth.user?.username}
+          customerName={engine.auth.license.customerName}
+          licenseStatus={engine.auth.license.status}
           saveStatus={engine.saveStatus}
           onLogout={engine.logout}
           onMobileMenuOpen={() => setMobileMenuOpen(true)}

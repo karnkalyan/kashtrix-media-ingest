@@ -37,6 +37,20 @@ import MediaPreview from './ui/MediaPreview';
 import StatusBadge from './ui/StatusBadge';
 import { sendRealtime, subscribeRealtime } from '../services/realtime';
 
+const getRecordingFormat = (item: any): string => {
+  if (item?.file_name && item.file_name.includes('.')) {
+    const parts = item.file_name.split('.');
+    const ext = parts.pop()?.toLowerCase();
+    if (ext && ext !== item.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
+      return ext;
+    }
+  }
+  if (item?.format && String(item.format).toLowerCase() !== 'file') {
+    return String(item.format).toLowerCase();
+  }
+  return 'mp4';
+};
+
 interface Props {
   fetchIngestStreams: () => Promise<any>;
   fetchIngestHistory: () => Promise<any>;
@@ -55,6 +69,19 @@ interface Props {
 const formatBitrate = (kbps: number) => {
   if (kbps >= 1000) return `${(kbps / 1000).toFixed(2)} Mbps`;
   return `${kbps || 0} Kbps`;
+};
+
+const formatRecordingTime = (startTimeStr?: string) => {
+  if (!startTimeStr) return '';
+  const start = new Date(startTimeStr).getTime();
+  if (isNaN(start)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const h = Math.floor(diffSec / 3600);
+  const m = Math.floor((diffSec % 3600) / 60);
+  const s = diffSec % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
 const formatBytes = (bytes = 0) => {
@@ -95,6 +122,12 @@ export const IngestServerView: React.FC<Props> = ({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectedStream, setInspectedStream] = useState<any>(null);
   const [recordingStatuses, setRecordingStatuses] = useState<Record<string, boolean>>({});
+  const [, setTicker] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTicker(t => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Recording control state
   const [sourceType, setSourceType] = useState<'ingest' | 'device'>('device');
@@ -260,7 +293,7 @@ export const IngestServerView: React.FC<Props> = ({
   const localStreams = ingestStreams || {};
   const history = ingestHistory || [];
   const activeStreamKeys = Object.keys(localStreams);
-  const totalBitrateKbps = Object.values(localStreams).reduce((sum: number, s: any) => sum + (s.bitrate || 0), 0);
+  const totalBitrateKbps = Object.values(localStreams).reduce((sum: number, s: any) => sum + Number(s.bitrate || s.incoming_kbps || s.incomingBitrate || 0), 0);
 
   const activeRecordingKeys = useMemo(() => {
     const keys: Record<string, boolean> = {};
@@ -519,7 +552,7 @@ export const IngestServerView: React.FC<Props> = ({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <ProtocolBadge protocol={(rec.format || 'mp4').toUpperCase()} />
+                      <ProtocolBadge protocol={getRecordingFormat(rec).toUpperCase()} />
                     </td>
                     <td className="px-4 py-3 font-mono text-[#6F6078] uppercase">
                       {rec.encoder || 'CPU'}
@@ -629,7 +662,7 @@ export const IngestServerView: React.FC<Props> = ({
                 </div>
                 <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
                   <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Format</span>
-                  <p className="font-mono font-bold text-[#2563EB]">{(recPreview.format || 'MP4').toUpperCase()}</p>
+                  <p className="font-mono font-bold text-[#2563EB]">{getRecordingFormat(recPreview).toUpperCase()}</p>
                 </div>
               </div>
               <CodeField value={`/media/recordings/${recPreview.file_name}`} label="Recording Storage Path" />
@@ -646,15 +679,15 @@ export const IngestServerView: React.FC<Props> = ({
   return (
     <div className="ingest-workspace page-stack space-y-4">
       {/* Live Server Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Live Server & Relay Controls</h1>
-            <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2.5 py-0.5 text-[11px] font-semibold text-[#16A36A]">
+            <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">Live Server & Relay Controls</h1>
+            <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2.5 py-0.5 text-[11px] font-semibold text-[#16A36A] dark:bg-[#064E3B] dark:border-[#047857] dark:text-[#34D399]">
               {activeStreamKeys.length} Live Stream{activeStreamKeys.length !== 1 ? 's' : ''}
             </span>
           </div>
-          <p className="mt-0.5 text-[12px] text-[#6F6078]">
+          <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
             Incoming RTMP, SRT streams, background relays, and live monitoring
           </p>
         </div>
@@ -663,21 +696,21 @@ export const IngestServerView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setSrtModalOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF]"
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2F1A4B]"
           >
-            <Activity size={13} className="text-[#16A36A]" /> Add SRT Listener
+            <Activity size={13} className="text-[#16A36A] dark:text-[#34D399]" /> Add SRT Listener
           </button>
           <button
             type="button"
             onClick={() => setRelayModalOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF]"
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2F1A4B]"
           >
-            <ArrowUpRight size={13} className="text-[#2563EB]" /> Add RTMP Relay
+            <ArrowUpRight size={13} className="text-[#2563EB] dark:text-[#60A5FA]" /> Add RTMP Relay
           </button>
           <button
             type="button"
             onClick={fetchData}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2F1A4B]"
           >
             <RefreshCw size={14} /> Refresh
           </button>
@@ -686,30 +719,30 @@ export const IngestServerView: React.FC<Props> = ({
 
       {/* Live Server Summary KPI Row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Ingests</span>
-          <p className="font-mono text-[20px] font-bold text-[#1B1024]">{activeStreamKeys.length}</p>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Ingests</span>
+          <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{activeStreamKeys.length}</p>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Incoming Bitrate</span>
-          <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBitrate(Number(totalBitrateKbps) || 0)}</p>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Incoming Bitrate</span>
+          <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatBitrate(Number(totalBitrateKbps) || 0)}</p>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Recordings</span>
-          <p className="font-mono text-[20px] font-bold text-[#E11D72]">{Object.keys(activeRecordingKeys).length}</p>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Recordings</span>
+          <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{Object.keys(activeRecordingKeys).length}</p>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Relays & Listeners</span>
-          <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{processes.length}</p>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Relays & Listeners</span>
+          <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{processes.length}</p>
         </div>
       </div>
 
       {/* Active Ingest Streams Table */}
-      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
-        <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#311B4E]">
           <div>
-            <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Active Ingest Streams</h2>
-            <p className="text-[11px] text-[#6F6078]">Currently publishing RTMP and SRT live streams</p>
+            <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Active Ingest Streams</h2>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Currently publishing RTMP and SRT live streams</p>
           </div>
 
           <CodeField value={rtmpEndpointUrl} label="" className="max-w-xs" />
@@ -732,10 +765,13 @@ export const IngestServerView: React.FC<Props> = ({
               <tbody className="divide-y divide-[#E8DFF0]">
                 {Object.entries(localStreams).map(([key, stream]: [string, any]) => {
                   const isRec = !!(recordingStatuses[key] || activeRecordingKeys[key]);
+                  const bitrateKbps = Number(stream.bitrate || stream.incoming_kbps || stream.incomingBitrate || stream.publisher?.video?.bitrate || 0);
+                  const recItem = stream.recording || recordings.find((r: any) => r.is_active && (`${r.app}/${r.stream}` === key || r.stream === stream.name || (r.file_name && r.file_name.includes(stream.name))));
+                  const recStartTime = recItem?.start_time || recItem?.created_at;
 
                   return (
-                    <tr key={key} className="transition-colors hover:bg-[#F4EEFF]/50">
-                      <td className="px-4 py-3 font-semibold text-[#1B1024]">
+                    <tr key={key} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2B1745]">
+                      <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">
                         <div className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-[#16A36A] animate-pulse" />
                           <span>{stream.name || key}</span>
@@ -744,22 +780,29 @@ export const IngestServerView: React.FC<Props> = ({
                       <td className="px-4 py-3">
                         <ProtocolBadge protocol={stream.protocol || 'RTMP'} />
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#6F6078]">
+                      <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
                         {stream.resolution || '1920x1080'} @ {stream.fps || 30}fps
                       </td>
-                      <td className="px-4 py-3 font-mono font-semibold text-[#2563EB]">
-                        {formatBitrate(stream.bitrate || 0)}
+                      <td className="px-4 py-3 font-mono font-semibold text-[#2563EB] dark:text-[#60A5FA]">
+                        {formatBitrate(bitrateKbps)}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#6F6078]">
+                      <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
                         {stream.audioCodec || 'AAC'} ({stream.audioBitrate || 128}k)
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          isRec ? 'bg-[#FCE7F3] text-[#E11D72]' : 'bg-[#F8F7FA] text-[#6F6078]'
-                        }`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${isRec ? 'bg-[#E11D72] animate-pulse' : 'bg-[#8E8895]'}`} />
-                          {isRec ? 'RECORDING' : 'Idle'}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            isRec ? 'bg-[#FCE7F3] text-[#E11D72] dark:bg-[#831843] dark:text-[#F472B6]' : 'bg-[#F8F7FA] text-[#6F6078] dark:bg-[#211335] dark:text-[#B9A5CD]'
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${isRec ? 'bg-[#E11D72] animate-pulse dark:bg-[#F472B6]' : 'bg-[#8E8895]'}`} />
+                            {isRec ? 'RECORDING' : 'Idle'}
+                          </span>
+                          {isRec && recStartTime && (
+                            <span className="font-mono text-[10px] font-bold text-[#E11D72] dark:text-[#F472B6] flex items-center gap-1">
+                              ⏱ {formatRecordingTime(recStartTime)}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right space-x-1">
                         <button
@@ -893,45 +936,52 @@ export const IngestServerView: React.FC<Props> = ({
       </DetailDrawer>
 
       {/* Stream Inspector Drawer */}
-      <DetailDrawer
-        open={inspectorOpen}
-        onClose={() => setInspectorOpen(false)}
-        title={`Stream Inspector — ${selectedStreamKey}`}
-        subtitle="Real-time live video player, telemetry and output parameters"
-        width="max-w-[560px]"
-      >
-        <div className="space-y-4">
-          <MediaPreview
-            url={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
-            title={selectedStreamKey}
-            maxHeight={320}
-          />
+      {(() => {
+        const liveInspected = localStreams[selectedStreamKey] || inspectedStream;
+        const inspectorBitrate = Number(liveInspected?.bitrate || liveInspected?.incoming_kbps || liveInspected?.incomingBitrate || liveInspected?.publisher?.video?.bitrate || 0);
 
-          <div className="grid grid-cols-2 gap-2 text-[12px]">
-            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-              <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Resolution</span>
-              <p className="font-mono font-bold text-[#1B1024]">{inspectedStream?.resolution || '1920x1080'}</p>
-            </div>
-            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-              <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Bitrate</span>
-              <p className="font-mono font-bold text-[#2563EB]">{formatBitrate(inspectedStream?.bitrate || 0)}</p>
-            </div>
-            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-              <span className="text-[10px] font-semibold uppercase text-[#6F6078]">FPS</span>
-              <p className="font-mono font-bold text-[#1B1024]">{inspectedStream?.fps || 30}</p>
-            </div>
-            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-              <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Audio Codec</span>
-              <p className="font-mono font-bold text-[#1B1024]">{inspectedStream?.audioCodec || 'AAC'}</p>
-            </div>
-          </div>
+        return (
+          <DetailDrawer
+            open={inspectorOpen}
+            onClose={() => setInspectorOpen(false)}
+            title={`Stream Inspector — ${selectedStreamKey}`}
+            subtitle="Real-time live video player, telemetry and output parameters"
+            width="max-w-[560px]"
+          >
+            <div className="space-y-4">
+              <MediaPreview
+                url={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
+                title={selectedStreamKey}
+                maxHeight={320}
+              />
 
-          <CodeField
-            value={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
-            label="HLS Output Playback URL"
-          />
-        </div>
-      </DetailDrawer>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Resolution</span>
+                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.resolution || '1920x1080'}</p>
+                </div>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Bitrate</span>
+                  <p className="font-mono font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatBitrate(inspectorBitrate)}</p>
+                </div>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">FPS</span>
+                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.fps || 30}</p>
+                </div>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Audio Codec</span>
+                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.audioCodec || 'AAC'}</p>
+                </div>
+              </div>
+
+              <CodeField
+                value={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
+                label="HLS Output Playback URL"
+              />
+            </div>
+          </DetailDrawer>
+        );
+      })()}
     </div>
   );
 };

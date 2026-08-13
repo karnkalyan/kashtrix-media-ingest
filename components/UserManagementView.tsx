@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DetailDrawer from './ui/DetailDrawer';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export interface UserItem {
   id: number;
@@ -131,13 +132,20 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
     }
   };
 
-  const deleteUser = async (user: UserItem) => {
-    if (user.username === currentUser) return toast.error('You cannot delete your own logged-in account');
-    if (!window.confirm(`Delete user ${user.username}? This cannot be undone.`)) return;
+  const [deletingUser, setDeletingUser] = useState<UserItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const handleDeleteUserClick = (user: UserItem) => {
+    if (user.username === currentUser) return toast.error('You cannot delete your own logged-in account');
+    setDeletingUser(user);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!deletingUser) return;
+    setDeleteLoading(true);
     try {
       const token = localStorage.getItem('kte-auth-token');
-      const res = await fetch(`/api/users/${user.id}`, {
+      const res = await fetch(`/api/users/${deletingUser.id}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -149,6 +157,9 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
       fetchUsers();
     } catch (e: any) {
       toast.error(e.message || 'Failed to delete user');
+    } finally {
+      setDeleteLoading(false);
+      setDeletingUser(null);
     }
   };
 
@@ -157,10 +168,10 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
   return (
     <div className="users-workspace page-stack space-y-4">
       {/* Page Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
         <div>
-          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">User Management</h1>
-          <p className="mt-0.5 text-[12px] text-[#6F6078]">
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">User Management</h1>
+          <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
             Create, update and manage system operators and administrator credentials
           </p>
         </div>
@@ -169,14 +180,14 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
           <button
             type="button"
             onClick={fetchUsers}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2F1A4B]"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
           <button
             type="button"
             onClick={openCreateModal}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#351147] px-3.5 text-[12px] font-semibold text-white hover:bg-[#2B0D3A]"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-[#351147] px-3.5 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
           >
             <UserPlus size={14} /> Create User
           </button>
@@ -184,9 +195,9 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
       </div>
 
       {/* Users Table */}
-      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-2.5">
-          <span className="text-[12px] font-semibold text-[#1B1024]">
+      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-2.5 dark:border-[#311B4E]">
+          <span className="text-[12px] font-semibold text-[#1B1024] dark:text-white">
             System Accounts ({filtered.length})
           </span>
           <div className="relative">
@@ -195,36 +206,36 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search users..."
-              className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+              className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:placeholder-[#8E78A6]"
             />
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#8E78A6]" />
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-[12px]">
             <thead>
-              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#211335] dark:border-[#311B4E] dark:text-[#B9A5CD]">
                 <th className="px-4 py-3">Username</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Created Date</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8DFF0]">
+            <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
               {filtered.map(user => {
                 const isCurrent = user.username === currentUser;
 
                 return (
-                  <tr key={user.id} className="transition-colors hover:bg-[#F4EEFF]/50">
-                    <td className="px-4 py-3 font-semibold text-[#1B1024]">
+                  <tr key={user.id} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2B1745]">
+                    <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">
                       <div className="flex items-center gap-2">
-                        <span className="grid h-7 w-7 place-items-center rounded-full bg-[#F4EEFF] text-[11px] font-bold text-[#4A1B7A]">
+                        <span className="grid h-7 w-7 place-items-center rounded-full bg-[#F4EEFF] text-[11px] font-bold text-[#4A1B7A] dark:bg-[#371F59] dark:text-[#C4B5FD]">
                           {user.username.charAt(0).toUpperCase()}
                         </span>
                         <span>{user.username}</span>
                         {isCurrent && (
-                          <span className="rounded bg-[#F0FDF4] border border-[#BBF7D0] px-1.5 py-0.2 text-[9px] font-bold text-[#16A36A]">
+                          <span className="rounded bg-[#F0FDF4] border border-[#BBF7D0] px-1.5 py-0.2 text-[9px] font-bold text-[#16A36A] dark:bg-[#064E3B] dark:border-[#047857] dark:text-[#34D399]">
                             YOU
                           </span>
                         )}
@@ -233,29 +244,29 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold ${
                         user.role === 'superadmin' || user.role === 'admin'
-                          ? 'border-[#D8C6E8] bg-[#F4EEFF] text-[#4A1B7A]'
-                          : 'border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078]'
+                          ? 'border-[#D8C6E8] bg-[#F4EEFF] text-[#4A1B7A] dark:border-[#3B225E] dark:bg-[#281542] dark:text-[#E2D1F9]'
+                          : 'border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] dark:border-[#371F59] dark:bg-[#211335] dark:text-[#B9A5CD]'
                       }`}>
                         <Shield size={12} />
                         {(user.role || 'ADMIN').toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078]">
+                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
                       {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'System Default'}
                     </td>
                     <td className="px-4 py-3 text-right space-x-1">
                       <button
                         type="button"
                         onClick={() => openEditModal(user)}
-                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
                       >
                         <Edit3 size={12} /> Edit
                       </button>
                       <button
                         type="button"
                         disabled={isCurrent}
-                        onClick={() => deleteUser(user)}
-                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] disabled:opacity-40"
+                        onClick={() => handleDeleteUserClick(user)}
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] disabled:opacity-40 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#450A0A] dark:hover:text-[#FCA5A5]"
                         title={isCurrent ? 'Cannot delete current account' : 'Delete user'}
                       >
                         <Trash2 size={13} />
@@ -267,7 +278,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-[#6F6078]">
+                  <td colSpan={4} className="py-8 text-center text-[#6F6078] dark:text-[#8E78A6]">
                     No user accounts found.
                   </td>
                 </tr>
@@ -289,7 +300,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
             <button
               type="button"
               onClick={() => setDrawerOpen(false)}
-              className="h-8 rounded-md border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#6F6078]"
+              className="h-8 rounded-md border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]"
             >
               Cancel
             </button>
@@ -297,7 +308,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               type="button"
               onClick={saveUser}
               disabled={submitting}
-              className="flex h-8 items-center gap-1.5 rounded-md bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A]"
+              className="flex h-8 items-center gap-1.5 rounded-md bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
             >
               <Check size={14} />
               {submitting ? 'Saving...' : editingUser ? 'Update User' : 'Create User'}
@@ -307,7 +318,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
       >
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024]">
+            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024] dark:text-white">
               Username <span className="text-[#E11D72]">*</span>
             </label>
             <input
@@ -315,12 +326,12 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               value={formUsername}
               onChange={e => setFormUsername(e.target.value)}
               placeholder="e.g. operator"
-              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-sans text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-sans text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024]">
+            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024] dark:text-white">
               Password {editingUser ? '(leave blank to keep unchanged)' : '*'}
             </label>
             <input
@@ -328,18 +339,18 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               value={formPassword}
               onChange={e => setFormPassword(e.target.value)}
               placeholder={editingUser ? '••••••••' : 'Enter account password'}
-              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-sans text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-sans text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024]">
+            <label className="mb-1 block text-[12px] font-semibold text-[#1B1024] dark:text-white">
               Role / Permission Level
             </label>
             <select
               value={formRole}
               onChange={e => setFormRole(e.target.value)}
-              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#1B1024] outline-none"
+              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#1B1024] outline-none dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             >
               <option value="admin">Administrator (Full Access)</option>
               <option value="user">Operator (Standard Access)</option>
@@ -347,6 +358,17 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
           </div>
         </div>
       </DetailDrawer>
+
+      <ConfirmDialog
+        open={!!deletingUser}
+        title="Delete User Account"
+        message={`Are you sure you want to delete user "${deletingUser?.username}"? This action cannot be undone.`}
+        confirmLabel="Delete User"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteUser}
+        onCancel={() => setDeletingUser(null)}
+      />
     </div>
   );
 };

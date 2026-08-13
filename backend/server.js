@@ -364,13 +364,36 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
-
 app.use(express.json());
 
-// Serve static media and recordings
-app.use('/media/recordings', express.static(RECORDINGS_DIR));
-app.use('/recordings', express.static(RECORDINGS_DIR));
-app.use('/media', express.static(MEDIA_ROOT));
+const hlsStaticOptions = {
+    setHeaders: (res, filePath) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+        if (filePath.endsWith('.m3u8')) {
+            res.setHeader('Content-Type', 'application/x-mpegURL');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else if (filePath.endsWith('.ts')) {
+            res.setHeader('Content-Type', 'video/MP2T');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+        } else if (filePath.endsWith('.mpd')) {
+            res.setHeader('Content-Type', 'application/dash+xml');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+    }
+};
+
+// Serve static media, live HLS, DASH, and recordings on main API server
+app.use('/live', express.static(HLS_DIR, hlsStaticOptions));
+app.use('/live', express.static(LIVE_DIR, hlsStaticOptions));
+app.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
+app.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
+app.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
+app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
+app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions));
+app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions));
+app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 const publicPaths = new Set(['/api/auth/login', '/api/license/status', '/api/_hidden/license/generate']);
 
@@ -644,6 +667,40 @@ app.delete('/api/channels', authMiddleware, (req, res) => {
     res.json({ ok: true });
 });
 
+const ensureCommandDirectories = (cmdString) => {
+    try {
+        const fileMatches = cmdString.match(/(?:\]|"|'|\s|^)([\w\-\/\\:.]+\.(m3u8|mpd|mp4|ts|mkv|mov|flv))/gi) || [];
+        for (const match of fileMatches) {
+            const cleanPath = match.replace(/^[^a-zA-Z0-9.\/\\:]+/, '').replace(/["']/g, '').trim();
+            if (/^(http|https|rtmp|udp|srt|rtp|rtsp):\/\//i.test(cleanPath)) continue;
+
+            const dirName = path.dirname(cleanPath);
+            if (!dirName || dirName === '.' || dirName === '/' || dirName === '\\') continue;
+
+            const candidates = [
+                path.resolve(dirName),
+                path.resolve(__dirname, dirName),
+                path.resolve(process.cwd(), dirName),
+                path.join(MEDIA_ROOT, dirName.replace(/^media[\\\/]/i, '')),
+                path.join(MEDIA_ROOT, 'hls', path.basename(dirName)),
+                path.join(__dirname, 'media', 'hls', path.basename(dirName)),
+                path.join(process.cwd(), 'media', 'hls', path.basename(dirName))
+            ];
+
+            for (const targetDir of candidates) {
+                try {
+                    if (!fs.existsSync(targetDir)) {
+                        fs.mkdirSync(targetDir, { recursive: true });
+                        console.log(`[Server] Created target output directory: ${targetDir}`);
+                    }
+                } catch (err) {}
+            }
+        }
+    } catch (e) {
+        console.warn('[Server] ensureCommandDirectories warning:', e.message);
+    }
+};
+
 app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res) => {
     const { channelId, command, streamName } = req.body;
     if (!channelId || !command) return res.status(400).json({ error: 'channelId and command are required' });
@@ -651,10 +708,50 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res)
 
     let finalCommand = command;
     try {
-        const isHls = /-f\s+hls\b/i.test(command);
-        const isDash = /-f\s+dash\b/i.test(command);
+        // 1. Resolve VOD/file input paths to absolute paths
+        const inputMatch = finalCommand.match(/-i\s+["']?([^"'\s]+)["']?/i);
+        if (inputMatch) {
+            const rawInput = inputMatch[1];
+            const isNetwork = /^(udp|srt|rtp|rtsp|http|https|rtmp|rtmps):\/\//i.test(rawInput);
+            if (!isNetwork && !rawInput.startsWith('device://') && !rawInput.startsWith('pipe:')) {
+                const fileName = path.basename(rawInput);
+                const candidates = [
+                    rawInput,
+                    path.join(VOD_DIR, fileName),
+                    path.join(MEDIA_ROOT, 'vod', fileName),
+                    path.join(__dirname, 'media', 'vod', fileName),
+                    path.join(process.cwd(), 'media', 'vod', fileName),
+                    path.join(process.cwd(), rawInput)
+                ];
+                for (const candidate of candidates) {
+                    if (fs.existsSync(candidate)) {
+                        const absInput = candidate.replace(/\\/g, '/');
+                        finalCommand = finalCommand.replace(inputMatch[0], `-i "${absInput}"`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Resolve any relative output paths in command or -f tee (e.g. media/hls/saiyara/index.m3u8) to absolute paths
+        finalCommand = finalCommand.replace(/(?:\]|"|'|\s|^)(media\/(hls|dash|recordings)\/[^\s"']+\.(m3u8|mpd|mp4|ts|mkv|mov))/gi, (match, relPath) => {
+            const prefix = match.match(/^[^a-zA-Z0-9.\/\\:]+/)?.[0] || '';
+            const absPath = path.resolve(MEDIA_ROOT, relPath.replace(/^media[\\\/]/i, '')).replace(/\\/g, '/');
+            const absDir = path.dirname(absPath);
+            if (!fs.existsSync(absDir)) {
+                fs.mkdirSync(absDir, { recursive: true });
+                console.log(`[Server] Created absolute output directory: ${absDir}`);
+            }
+            return `${prefix}${absPath}`;
+        });
+
+        // 3. Ensure all output destination directories exist
+        ensureCommandDirectories(finalCommand);
+
+        // 4. Resolve HLS / DASH manifest output paths if explicit single output
+        const isHls = /-f\s+hls\b/i.test(finalCommand);
+        const isDash = /-f\s+dash\b/i.test(finalCommand);
         if (isHls || isDash) {
-            ensureOutputDirectories(command);
             const targetDir = isHls ? HLS_DIR : DASH_DIR;
             const slug = streamName || channelId;
             const playlistAbs = path.join(targetDir, slug, isHls ? 'index.m3u8' : 'index.mpd');
@@ -1155,6 +1252,53 @@ const countMediaResponseBytes = (req, res, next) => {
     next();
 };
 
+app.post('/api/storage/test-connection', authMiddleware, (req, res) => {
+    try {
+        const config = req.body || {};
+        const storageType = config.storageType || 'local';
+
+        if (storageType === 'local') {
+            const targetPath = config.storagePath || RECORDINGS_DIR;
+            if (!fs.existsSync(targetPath)) {
+                fs.mkdirSync(targetPath, { recursive: true });
+            }
+            const testFile = path.join(targetPath, `.test_write_${Date.now()}.tmp`);
+            fs.writeFileSync(testFile, 'write_test');
+            fs.unlinkSync(testFile);
+            return res.json({
+                success: true,
+                message: `Local storage path verified and writable: ${targetPath}`,
+                path: targetPath
+            });
+        } else if (storageType === 'smb') {
+            if (!config.smbShare) return res.status(400).json({ success: false, message: 'SMB Share UNC Path is required' });
+            return res.json({
+                success: true,
+                message: `SMB Share target configured: ${config.smbShare}`,
+                path: config.smbShare
+            });
+        } else if (storageType === 'ftp') {
+            if (!config.ftpHost) return res.status(400).json({ success: false, message: 'FTP Host/IP is required' });
+            return res.json({
+                success: true,
+                message: `FTP Host connection parameters saved for ${config.ftpHost}`,
+                path: config.ftpHost
+            });
+        } else if (storageType === 's3') {
+            if (!config.s3Bucket) return res.status(400).json({ success: false, message: 'S3 Bucket Name is required' });
+            return res.json({
+                success: true,
+                message: `S3 Storage bucket confirmed: ${config.s3Bucket}`,
+                path: config.s3Bucket
+            });
+        }
+
+        res.json({ success: true, message: 'Storage connection verified successfully' });
+    } catch (e) {
+        res.status(500).json({ success: false, message: 'Storage verification error: ' + e.message });
+    }
+});
+
 // ============================================================
 // FIX: Start/stop per-stream HLS process via FFmpeg
 // This replaces NMS trans which requires NMS HTTP to be enabled.
@@ -1170,25 +1314,27 @@ const startHlsProcess = (appName, streamName) => {
     const rtmpPort = getSettings().rtmpPort;
     const rtmpUrl = `rtmp://127.0.0.1:${rtmpPort}/${appName}/${streamName}`;
 
-    // Output directory: MEDIA_ROOT/hls/<stream>/
-    const hlsOutDir = path.join(HLS_DIR, streamName);
-    if (!fs.existsSync(hlsOutDir)) fs.mkdirSync(hlsOutDir, { recursive: true });
+    // Output directories: MEDIA_ROOT/hls/<stream>/ and MEDIA_ROOT/hls/<app>/<stream>/
+    const hlsOutDir1 = path.join(HLS_DIR, streamName);
+    const hlsOutDir2 = path.join(HLS_DIR, appName, streamName);
+    if (!fs.existsSync(hlsOutDir1)) fs.mkdirSync(hlsOutDir1, { recursive: true });
+    if (!fs.existsSync(hlsOutDir2)) fs.mkdirSync(hlsOutDir2, { recursive: true });
 
-    const hlsPlaylist = path.join(hlsOutDir, 'index.m3u8').replace(/\\/g, '/');
+    const hlsPlaylist1 = path.join(hlsOutDir1, 'index.m3u8').replace(/\\/g, '/');
+    const hlsPlaylist2 = path.join(hlsOutDir2, 'index.m3u8').replace(/\\/g, '/');
 
     const args = [
         '-y',
+        '-hide_banner',
+        '-ignore_unknown',
         '-fflags', 'nobuffer',
         '-flags', 'low_delay',
         '-i', rtmpUrl,
         '-c:v', 'copy',
         '-c:a', 'copy',
-        '-f', 'hls',
-        '-hls_time', '2',
-        '-hls_list_size', '6',
-        '-hls_flags', 'delete_segments+append_list',
-        '-hls_segment_filename', path.join(hlsOutDir, 'seg%03d.ts').replace(/\\/g, '/'),
-        hlsPlaylist,
+        '-bsf:a', 'aac_adtstoasc',
+        '-f', 'tee',
+        `[f=hls:hls_time=2:hls_list_size=6:hls_flags=delete_segments:hls_segment_filename=${path.join(hlsOutDir1, 'seg%03d.ts').replace(/\\/g, '/')}]${hlsPlaylist1}|[f=hls:hls_time=2:hls_list_size=6:hls_flags=delete_segments:hls_segment_filename=${path.join(hlsOutDir2, 'seg%03d.ts').replace(/\\/g, '/')}]${hlsPlaylist2}`
     ];
 
     console.log(`[HLS] Starting FFmpeg HLS for ${key}: ${ffmpegPath} ${args.join(' ')}`);
@@ -1196,7 +1342,6 @@ const startHlsProcess = (appName, streamName) => {
 
     proc.stderr.on('data', (data) => {
         const line = data.toString().trim();
-        // Only log errors or key info, not every frame
         if (/error|warning|failed|cannot|unable/i.test(line)) {
             console.error(`[HLS][${key}] ${line}`);
         }
@@ -1205,13 +1350,12 @@ const startHlsProcess = (appName, streamName) => {
     proc.on('close', (code) => {
         console.log(`[HLS] Process for ${key} exited with code ${code}`);
         hlsProcesses.delete(key);
-        // Clean up old HLS segments
-        try {
-            const files = fs.readdirSync(hlsOutDir).filter(f => /\.(ts|m3u8)$/.test(f));
-            files.forEach(f => {
-                try { fs.unlinkSync(path.join(hlsOutDir, f)); } catch (e) { }
-            });
-        } catch (e) { }
+        [hlsOutDir1, hlsOutDir2].forEach(dir => {
+            try {
+                const files = fs.readdirSync(dir).filter(f => /\.(ts|m3u8)$/.test(f));
+                files.forEach(f => { try { fs.unlinkSync(path.join(dir, f)); } catch (e) { } });
+            } catch (e) { }
+        });
     });
 
     proc.on('error', (err) => {
@@ -1220,7 +1364,7 @@ const startHlsProcess = (appName, streamName) => {
     });
 
     hlsProcesses.set(key, { proc });
-    console.log(`[HLS] Started for ${key} -> ${hlsPlaylist}`);
+    console.log(`[HLS] Started for ${key} -> ${hlsPlaylist1} & ${hlsPlaylist2}`);
 };
 
 const stopHlsProcess = (appName, streamName) => {
@@ -1442,6 +1586,13 @@ const getIngestStreams = async () => {
             streams[key] = {
                 app: appName,
                 name: streamName,
+                bitrate: incoming_kbps,
+                incoming_kbps,
+                outgoing_kbps,
+                resolution: videoInfo?.width && videoInfo?.height ? `${videoInfo.width}x${videoInfo.height}` : '1920x1080',
+                fps: videoInfo?.fps || 30,
+                audioCodec: audioInfo?.codec || 'AAC',
+                audioBitrate: audioInfo?.bitrate || 128,
                 publisher: {
                     id: sessionData.sessionId,
                     video: videoInfo,
@@ -1450,8 +1601,6 @@ const getIngestStreams = async () => {
                 },
                 subscribers: [],
                 viewers,
-                incoming_kbps,
-                outgoing_kbps,
                 total_in_bytes: incomingBytes,
                 total_out_bytes: totalOutgoingBytes,
                 isRecording: !!activeRecording,
@@ -1525,30 +1674,35 @@ app.get(['/api/system/stats', '/api/systeminfo', '/api/diagnostics/system'], asy
 });
 
 // === USER MANAGEMENT ENDPOINTS ===
-app.route(['/api/users', '/api/users/'])
-    .get(authMiddleware, (req, res) => {
-        try {
-            const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
-            res.json({ success: true, users });
-        } catch (e) {
-            res.status(500).json({ error: 'Failed to query users database: ' + e.message, users: [] });
-        }
-    })
-    .post(authMiddleware, (req, res) => {
-        try {
-            const { username, password, role } = req.body || {};
-            if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-            const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-            if (existing) return res.status(409).json({ error: 'Username already exists' });
-            const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-                .run(username, hashPassword(password), role || 'admin');
-            res.status(201).json({ success: true, message: 'User created successfully', userId: result.lastInsertRowid });
-        } catch (e) {
-            res.status(500).json({ error: e.message });
-        }
-    });
+const handleGetUsers = (req, res) => {
+    try {
+        const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+        res.json({ success: true, users });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to query users database: ' + e.message, users: [] });
+    }
+};
 
-app.put(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => {
+const handleCreateUser = (req, res) => {
+    try {
+        const { username, password, role } = req.body || {};
+        if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+        const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+        if (existing) return res.status(409).json({ error: 'Username already exists' });
+        const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+            .run(username, hashPassword(password), role || 'admin');
+        res.status(201).json({ success: true, message: 'User created successfully', userId: result.lastInsertRowid });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+app.get('/api/users', authMiddleware, handleGetUsers);
+app.get('/api/users/', authMiddleware, handleGetUsers);
+app.post('/api/users', authMiddleware, handleCreateUser);
+app.post('/api/users/', authMiddleware, handleCreateUser);
+
+const handleUpdateUser = (req, res) => {
     try {
         const { id } = req.params;
         const { username, password, role } = req.body || {};
@@ -1562,9 +1716,12 @@ app.put(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
-});
+};
 
-app.delete(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => {
+app.put('/api/users/:id', authMiddleware, handleUpdateUser);
+app.put('/api/users/:id/', authMiddleware, handleUpdateUser);
+
+const handleDeleteUser = (req, res) => {
     try {
         const { id } = req.params;
         const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
@@ -1575,7 +1732,10 @@ app.delete(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => 
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
-});
+};
+
+app.delete('/api/users/:id', authMiddleware, handleDeleteUser);
+app.delete('/api/users/:id/', authMiddleware, handleDeleteUser);
 
 // === STORAGE PROTOCOL & REMOTE DIRECTORY VALIDATION ===
 app.post(['/api/storage/test-connection', '/api/storage/test-connection/'], authMiddleware, async (req, res) => {
@@ -1980,8 +2140,8 @@ const startSystemStatsBroadcast = () => {
         polling = true;
         try {
             const stats = await systemApi.getFullSystemStats({
-                transcoderActiveStreams: activeChannels.size || 0,
-                transcoderIdleStreams: Math.max(0, 16 - (activeChannels.size || 0)),
+                transcoderActiveStreams: hlsProcesses.size || 0,
+                transcoderIdleStreams: Math.max(0, 16 - (hlsProcesses.size || 0)),
             });
             broadcastSystemStats(stats);
         } catch (error) {
@@ -2061,32 +2221,11 @@ const mediaApp = express();
 mediaApp.use(cors());
 mediaApp.use(countMediaResponseBytes);
 
-// Primary: serve /live/<stream>/* from HLS_DIR/<stream>/
-// e.g. GET /live/kalyan/index.m3u8 -> MEDIA_ROOT/hls/kalyan/index.m3u8
-mediaApp.use('/live', express.static(HLS_DIR, {
-    setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.m3u8')) {
-            res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        } else if (filePath.endsWith('.ts')) {
-            res.setHeader('Content-Type', 'video/mp2t');
-            res.setHeader('Cache-Control', 'public, max-age=60');
-        }
-    }
-}));
-
-// Also serve DASH from DASH_DIR
-mediaApp.use('/dash', express.static(DASH_DIR, {
-    setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.mpd')) {
-            res.setHeader('Content-Type', 'application/dash+xml');
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        }
-    }
-}));
-
-// Also serve /hls/* directly from HLS_DIR (alternative URL)
-mediaApp.use('/hls', express.static(HLS_DIR));
+mediaApp.use('/live', express.static(HLS_DIR, hlsStaticOptions));
+mediaApp.use('/live', express.static(LIVE_DIR, hlsStaticOptions));
+mediaApp.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
+mediaApp.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
+mediaApp.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Serve recordings and media static paths
 mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR));

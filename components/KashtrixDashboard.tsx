@@ -184,10 +184,10 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
   return (
     <div className="dashboard-workspace page-stack space-y-4">
       {/* Header Strip */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
         <div>
-          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">StreamOps Overview</h1>
-          <p className="mt-0.5 text-[12px] text-[#6F6078]">
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">StreamOps Overview</h1>
+          <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
             Live API telemetry from this ingest and transcoding node
           </p>
         </div>
@@ -195,93 +195,93 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
         <button
           type="button"
           onClick={() => fetchOverview(true)}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2F1A4B]"
         >
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-3 text-[12px] font-semibold text-[#DC3545]">
+        <div className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-3 text-[12px] font-semibold text-[#DC3545] dark:bg-[#450A0A] dark:border-[#7F1D1D] dark:text-[#FCA5A5]">
           {error}
         </div>
       )}
 
       {/* KPI Cards Strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Channels</span>
-          <p className="font-mono text-[20px] font-bold text-[#1B1024]">{overview.totals.channels}</p>
-          <span className="text-[10px] text-[#16A36A] font-medium">{overview.totals.runningChannels} active</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Channels</span>
+          <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{overview.totals.channels}</p>
+          <span className="text-[10px] text-[#16A36A] font-medium dark:text-[#34D399]">{overview.totals.runningChannels} active</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Live Ingests</span>
-          <p className="font-mono text-[20px] font-bold text-[#16A36A]">{overview.totals.activeIngests}</p>
-          <span className="text-[10px] text-[#6F6078]">RTMP / SRT feeds</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Live Ingests</span>
+          <p className="font-mono text-[20px] font-bold text-[#16A36A] dark:text-[#34D399]">{overview.totals.activeIngests}</p>
+          <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">RTMP / SRT feeds</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Recs</span>
-          <p className="font-mono text-[20px] font-bold text-[#E11D72]">{overview.totals.activeRecordings}</p>
-          <span className="text-[10px] text-[#6F6078]">{overview.totals.recordings} archived</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Recs</span>
+          <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{overview.totals.activeRecordings}</p>
+          <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">{overview.totals.recordings} archived</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Storage</span>
-          <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBytes(overview.totals.recordingBytes)}</p>
-          <span className="text-[10px] text-[#6F6078]">On disk</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Storage</span>
+          <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatBytes(overview.totals.recordingBytes)}</p>
+          <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">On disk</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs col-span-2 sm:col-span-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Viewers</span>
-          <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{overview.totals.viewers}</p>
-          <span className="text-[10px] text-[#6F6078]">{overview.totals.sessions} sessions</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs col-span-2 sm:col-span-1 dark:bg-[#190E28] dark:border-[#311B4E]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Viewers</span>
+          <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{overview.totals.viewers}</p>
+          <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">{overview.totals.sessions} sessions</span>
         </div>
       </div>
 
       {/* Main 2-Column Desktop Grid */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Left Column: Live Streams */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden lg:col-span-2 dark:bg-[#190E28] dark:border-[#311B4E]">
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
             <div>
-              <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Live Television Ingests</h2>
-              <p className="text-[11px] text-[#6F6078]">Active streams published to server</p>
+              <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Live Television Ingests</h2>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Active streams published to server</p>
             </div>
             <button
               onClick={() => onNavigate?.('ingest')}
-              className="flex items-center gap-1 text-[11px] font-semibold text-[#6D32D9] hover:underline"
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#6D32D9] hover:underline dark:text-[#A78BFA]"
             >
               Open Ingest Control <ChevronRight size={13} />
             </button>
           </div>
 
           {Object.keys(overview.streams).length === 0 ? (
-            <div className="grid min-h-[140px] place-items-center p-6 text-center text-[#6F6078] text-[12px]">
+            <div className="grid min-h-[140px] place-items-center p-6 text-center text-[#6F6078] text-[12px] dark:text-[#8E78A6]">
               <div>
-                <Zap size={22} className="mx-auto text-[#6F6078]" />
-                <p className="mt-1 font-semibold text-[#1B1024]">No television inputs active</p>
+                <Zap size={22} className="mx-auto text-[#6F6078] dark:text-[#8E78A6]" />
+                <p className="mt-1 font-semibold text-[#1B1024] dark:text-white">No television inputs active</p>
               </div>
             </div>
           ) : (
             <div className="p-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Object.entries(overview.streams).map(([key, stream]: [string, any]) => (
-                <div key={key} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2">
+                <div key={key} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2 dark:bg-[#211335] dark:border-[#371F59]">
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#1B1024] text-[13px] truncate">{stream.name || key}</span>
-                    <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.2 text-[9px] font-bold text-[#16A36A]">
+                    <span className="font-semibold text-[#1B1024] text-[13px] truncate dark:text-white">{stream.name || key}</span>
+                    <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.2 text-[9px] font-bold text-[#16A36A] dark:bg-[#064E3B] dark:border-[#047857] dark:text-[#34D399]">
                       LIVE
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 text-center font-mono text-[11px]">
                     <div>
-                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078]">Bitrate</span>
-                      <b className="text-[#2563EB]">{stream.incoming_kbps || 0}k</b>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#8E78A6]">Bitrate</span>
+                      <b className="text-[#2563EB] dark:text-[#60A5FA]">{stream.incoming_kbps || 0}k</b>
                     </div>
                     <div>
-                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078]">Viewers</span>
-                      <b className="text-[#1B1024]">{stream.viewers || 0}</b>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#8E78A6]">Viewers</span>
+                      <b className="text-[#1B1024] dark:text-white">{stream.viewers || 0}</b>
                     </div>
                     <div>
-                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078]">Recording</span>
-                      <b className={stream.isRecording ? 'text-[#E11D72]' : 'text-[#6F6078]'}>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#8E78A6]">Recording</span>
+                      <b className={stream.isRecording ? 'text-[#E11D72] dark:text-[#F472B6]' : 'text-[#6F6078] dark:text-[#8E78A6]'}>
                         {stream.isRecording ? 'REC' : 'OFF'}
                       </b>
                     </div>
@@ -293,35 +293,35 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
         </div>
 
         {/* Right Column: Latest Recordings */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
-          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
-            <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Latest Recordings</h2>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
+            <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Latest Recordings</h2>
             <button
               onClick={() => onNavigate?.('recordings')}
-              className="text-[11px] font-semibold text-[#6D32D9] hover:underline"
+              className="text-[11px] font-semibold text-[#6D32D9] hover:underline dark:text-[#A78BFA]"
             >
               View All
             </button>
           </div>
 
-          <div className="divide-y divide-[#E8DFF0]">
+          <div className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
             {overview.recentRecordings.length === 0 ? (
-              <div className="p-6 text-center text-[#6F6078] text-[12px]">No recordings archived.</div>
+              <div className="p-6 text-center text-[#6F6078] text-[12px] dark:text-[#8E78A6]">No recordings archived.</div>
             ) : (
               overview.recentRecordings.slice(0, 5).map(recording => (
-                <div key={recording.id} className="flex items-center justify-between p-3 transition-colors hover:bg-[#F4EEFF]/40">
+                <div key={recording.id} className="flex items-center justify-between p-3 transition-colors hover:bg-[#F4EEFF]/40 dark:hover:bg-[#2B1745]">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#1B1024] text-[12px]" title={recording.file_name}>
+                    <p className="truncate font-semibold text-[#1B1024] text-[12px] dark:text-white" title={recording.file_name}>
                       {recording.file_name}
                     </p>
-                    <p className="text-[10px] text-[#6F6078]">
+                    <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
                       {recording.app}/{recording.stream} • {formatBytes(Number(recording.size || 0))}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setPreviewRecording(recording)}
-                    className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E8DFF0] text-[#4A1B7A] hover:bg-[#F4EEFF]"
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E8DFF0] text-[#4A1B7A] hover:bg-[#F4EEFF] dark:border-[#371F59] dark:text-[#C4B5FD] dark:hover:bg-[#2D1A45]"
                   >
                     <Play size={13} />
                   </button>
@@ -333,10 +333,10 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
       </div>
 
       {/* Telemetry Footer Strip */}
-      <div className="flex items-center justify-between rounded-xl border border-[#E8DFF0] bg-white px-4 py-2.5 text-[11px] text-[#6F6078] shadow-xs">
+      <div className="flex items-center justify-between rounded-xl border border-[#E8DFF0] bg-white px-4 py-2.5 text-[11px] text-[#6F6078] shadow-xs dark:bg-[#190E28] dark:border-[#311B4E] dark:text-[#B9A5CD]">
         <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${realtimeConnected ? 'bg-[#16A36A]' : 'bg-[#D97706]'}`} />
-          <span className="font-semibold text-[#1B1024]">
+          <span className={`h-2 w-2 rounded-full ${realtimeConnected ? 'bg-[#16A36A] dark:bg-[#34D399]' : 'bg-[#D97706]'}`} />
+          <span className="font-semibold text-[#1B1024] dark:text-white">
             {realtimeConnected ? 'Telemetry Feed Active' : 'Connecting to Telemetry Daemon...'}
           </span>
         </div>
@@ -351,15 +351,15 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
           onClick={e => { if (e.target === e.currentTarget) setPreviewRecording(null); }}
         >
-          <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E8DFF0] bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3">
-              <h3 className="truncate font-display text-[15px] font-semibold text-[#1B1024]">
+          <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E8DFF0] bg-white shadow-xl dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
+              <h3 className="truncate font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">
                 {previewRecording.file_name}
               </h3>
               <button
                 type="button"
                 onClick={() => setPreviewRecording(null)}
-                className="rounded p-1 text-[#6F6078] hover:bg-[#F8F7FA]"
+                className="rounded p-1 text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#B9A5CD] dark:hover:bg-[#211335]"
               >
                 <X size={16} />
               </button>

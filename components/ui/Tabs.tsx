@@ -20,7 +20,7 @@ export function Tabs<T extends string = string>({
   className = '',
 }: TabsProps<T>) {
   return (
-    <div className={`flex border-b border-[#E8DFF0] ${className}`}>
+    <div className={`flex border-b border-[#E8DFF0] dark:border-[#311B4E] ${className}`}>
       {tabs.map(tab => {
         const isActive = tab.id === activeTab;
         return (
@@ -30,14 +30,16 @@ export function Tabs<T extends string = string>({
             onClick={() => onChange(tab.id)}
             className={`relative flex h-[38px] items-center gap-2 border-b-2 px-4 text-[13px] font-medium transition-colors ${
               isActive
-                ? 'border-[#6D32D9] text-[#351147] font-semibold'
-                : 'border-transparent text-[#6F6078] hover:text-[#1B1024]'
+                ? 'border-[#6D32D9] text-[#351147] font-semibold dark:text-[#A78BFA] dark:border-[#A78BFA]'
+                : 'border-transparent text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
             }`}
           >
             <span>{tab.label}</span>
             {tab.count !== undefined && (
               <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold ${
-                isActive ? 'bg-[#F4EEFF] text-[#4A1B7A]' : 'bg-[#F8F7FA] text-[#6F6078]'
+                isActive
+                  ? 'bg-[#F4EEFF] text-[#4A1B7A] dark:bg-[#371F59] dark:text-[#A78BFA]'
+                  : 'bg-[#F8F7FA] text-[#6F6078] dark:bg-[#211335] dark:text-[#B9A5CD]'
               }`}>
                 {tab.count}
               </span>

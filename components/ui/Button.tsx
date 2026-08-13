@@ -14,11 +14,11 @@ const Button: React.FC<ButtonProps> = ({
   const base = 'inline-flex items-center justify-center gap-1.5 font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
 
   const variants: Record<string, string> = {
-    primary: 'border border-[var(--primary-light)] bg-[var(--primary-light)] text-white hover:bg-[var(--primary)] hover:border-[var(--primary)] focus-visible:ring-[var(--primary)]',
-    secondary: 'bg-[var(--surface)] border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--surface-muted)] hover:border-[var(--border-strong)] focus-visible:ring-[var(--primary)]',
-    ghost: 'text-[var(--primary)] hover:bg-[var(--primary-50)] focus-visible:ring-[var(--primary)]',
-    danger: 'bg-[var(--danger)] text-white shadow-sm shadow-red-200 hover:bg-red-700 focus-visible:ring-[var(--danger)]',
-    success: 'bg-[var(--success)] text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700 focus-visible:ring-[var(--success)]',
+    primary: 'border border-[#7C3AED] bg-[#7C3AED] text-white hover:bg-[#6D32D9] hover:border-[#6D32D9] dark:bg-[#6D32D9] dark:border-[#8B5CF6]/50 dark:hover:bg-[#7C3AED] focus-visible:ring-[#7C3AED]',
+    secondary: 'bg-white border border-[#E8DFF0] text-[#1B1024] hover:bg-[#F8F7FA] hover:border-[#D8CBE4] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45] focus-visible:ring-[#7C3AED]',
+    ghost: 'text-[#7C3AED] hover:bg-[#F4EEFF] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45] focus-visible:ring-[#7C3AED]',
+    danger: 'bg-[#DC3545] border border-[#DC3545] text-white hover:bg-red-700 dark:bg-[#7F1D1D] dark:border-[#DC3545]/60 dark:text-[#FCA5A5] dark:hover:bg-[#991B1B] focus-visible:ring-red-500',
+    success: 'bg-[#16A36A] border border-[#16A36A] text-white hover:bg-emerald-700 dark:bg-[#064E3B] dark:border-[#059669]/60 dark:text-[#34D399] dark:hover:bg-[#047857] focus-visible:ring-emerald-500',
   };
 
   const sizes: Record<string, string> = {

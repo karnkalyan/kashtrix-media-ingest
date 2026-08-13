@@ -50,10 +50,10 @@ export const EventsAndAlerts: React.FC = () => {
   return (
     <div className="events-workspace page-stack space-y-4">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
         <div>
-          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Events & Alerts</h1>
-          <p className="mt-0.5 text-[12px] text-[#6F6078]">
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">Events & Alerts</h1>
+          <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
             Central operations event log, alerts, and infrastructure audit trail
           </p>
         </div>
@@ -65,19 +65,19 @@ export const EventsAndAlerts: React.FC = () => {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search event log..."
-              className="h-8 w-52 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+              className="h-8 w-52 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:placeholder-[#8E78A6]"
             />
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#8E78A6]" />
           </div>
 
-          <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#351147]">
+          <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#351147] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#2D1A45] dark:hover:text-white">
             <RefreshCw size={14} />
           </button>
         </div>
       </div>
 
       {/* Filter Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8DFF0] bg-white px-4 py-2.5 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8DFF0] bg-white px-4 py-2.5 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
         <SegmentedControl
           size="sm"
           value={severityFilter}
@@ -91,17 +91,17 @@ export const EventsAndAlerts: React.FC = () => {
           ]}
         />
 
-        <span className="text-[11px] font-medium text-[#6F6078]">
+        <span className="text-[11px] font-medium text-[#6F6078] dark:text-[#B9A5CD]">
           Showing {filteredEvents.length} logged events
         </span>
       </div>
 
       {/* Event Table */}
-      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
+      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-[12px]">
             <thead>
-              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#211335] dark:border-[#311B4E] dark:text-[#B9A5CD]">
                 <th className="px-4 py-3">Severity</th>
                 <th className="px-4 py-3">Event Title</th>
                 <th className="px-4 py-3">Category</th>
@@ -110,38 +110,38 @@ export const EventsAndAlerts: React.FC = () => {
                 <th className="px-4 py-3 text-right">Timestamp</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8DFF0]">
+            <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
               {filteredEvents.map(ev => {
                 const isWarn = ev.severity === 'warning';
                 const isCrit = ev.severity === 'critical';
                 const isSucc = ev.severity === 'success';
 
                 return (
-                  <tr key={ev.id} className="transition-colors hover:bg-[#F4EEFF]/50">
+                  <tr key={ev.id} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2B1745]">
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                        isCrit ? 'bg-[#FEF2F2] text-[#DC3545]' : isWarn ? 'bg-[#FFFBEB] text-[#D97706]' : isSucc ? 'bg-[#F0FDF4] text-[#16A36A]' : 'bg-blue-50 text-blue-700'
+                        isCrit ? 'bg-[#FEF2F2] text-[#DC3545] dark:bg-[#450A0A] dark:text-[#FCA5A5]' : isWarn ? 'bg-[#FFFBEB] text-[#D97706] dark:bg-[#451A03] dark:text-[#FCD34D]' : isSucc ? 'bg-[#F0FDF4] text-[#16A36A] dark:bg-[#064E3B] dark:text-[#34D399]' : 'bg-blue-50 text-blue-700 dark:bg-[#0C4A6E] dark:text-[#38BDF8]'
                       }`}>
                         {isCrit ? <XCircle size={13} /> : isWarn ? <AlertTriangle size={13} /> : isSucc ? <CheckCircle2 size={13} /> : <Info size={13} />}
                         {ev.severity.toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-[#1B1024]">{ev.title}</td>
+                    <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">{ev.title}</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-md border border-[#E8DFF0] bg-[#F8F7FA] px-2 py-0.5 font-mono text-[10px] font-bold text-[#4A1B7A]">
+                      <span className="rounded-md border border-[#E8DFF0] bg-[#F8F7FA] px-2 py-0.5 font-mono text-[10px] font-bold text-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#C4B5FD]">
                         {ev.category}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[#6F6078]">{ev.source}</td>
-                    <td className="px-4 py-3 text-[#6F6078] max-w-xs truncate" title={ev.details}>{ev.details}</td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-right text-[#6F6078]">{ev.timestamp}</td>
+                    <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{ev.source}</td>
+                    <td className="px-4 py-3 text-[#6F6078] dark:text-[#B9A5CD] max-w-xs truncate" title={ev.details}>{ev.details}</td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-right text-[#6F6078] dark:text-[#8E78A6]">{ev.timestamp}</td>
                   </tr>
                 );
               })}
 
               {filteredEvents.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-[#6F6078]">
+                  <td colSpan={6} className="py-12 text-center text-[#6F6078] dark:text-[#8E78A6]">
                     No events matched the selected filter criteria.
                   </td>
                 </tr>

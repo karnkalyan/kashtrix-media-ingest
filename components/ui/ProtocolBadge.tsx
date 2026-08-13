@@ -14,7 +14,22 @@ export const ProtocolBadge: React.FC<ProtocolBadgeProps> = ({ protocol, classNam
   let label = String(protocol || '').toUpperCase();
   let styleClass = 'bg-[#F4EEFF] text-[#4A1B7A] border-[#D8C6E8]';
 
-  if (norm.includes('hls')) {
+  if (norm.includes('mp4') || norm === 'file' || norm === 'recording') {
+    label = 'MP4';
+    styleClass = 'bg-violet-50 text-violet-700 border-violet-200';
+  } else if (norm.includes('mkv')) {
+    label = 'MKV';
+    styleClass = 'bg-pink-50 text-pink-700 border-pink-200';
+  } else if (norm.includes('mov')) {
+    label = 'MOV';
+    styleClass = 'bg-cyan-50 text-cyan-700 border-cyan-200';
+  } else if (norm.includes('ts')) {
+    label = 'TS';
+    styleClass = 'bg-amber-50 text-amber-700 border-amber-200';
+  } else if (norm.includes('flv')) {
+    label = 'FLV';
+    styleClass = 'bg-orange-50 text-orange-700 border-orange-200';
+  } else if (norm.includes('hls')) {
     label = 'HLS';
     styleClass = 'bg-blue-50 text-blue-700 border-blue-200';
   } else if (norm.includes('dash')) {
@@ -35,9 +50,6 @@ export const ProtocolBadge: React.FC<ProtocolBadgeProps> = ({ protocol, classNam
   } else if (norm.includes('facebook')) {
     label = 'Facebook';
     styleClass = 'bg-blue-50 text-blue-800 border-blue-300';
-  } else if (norm.includes('recording') || norm.includes('file') || norm.includes('mp4')) {
-    label = 'FILE';
-    styleClass = 'bg-slate-100 text-slate-700 border-slate-200';
   }
 
   return (

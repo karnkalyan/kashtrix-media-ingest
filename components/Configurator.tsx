@@ -56,6 +56,8 @@ interface Props {
   settings: AppSettings;
   licenseStatus: string;
   addChannel: (channelData: Omit<Channel, 'id' | 'command' | 'status' | 'uptime' | 'speed' | 'speedHistory' | 'outputLog'>) => Promise<void>;
+  updateChannel?: (channelData: Partial<Channel> & { id: string }) => Promise<void>;
+  editingChannel?: Channel | null;
   getTsPrograms: (input: string) => Promise<Program[]>;
   fetchIngestStreams: () => Promise<any>;
   profileId: string;
@@ -116,6 +118,36 @@ const playbackUrl = (protocol: Protocol, name: string, settings: AppSettings, ur
   return url;
 };
 
+const resolveInputType = (type?: string, url: string = ''): InputType => {
+  const rawType = (type || '').toLowerCase().trim();
+  const rawUrl = url.toLowerCase().trim();
+
+  if (rawType.includes('vod') || rawType === 'file') return InputType.VOD;
+  if (rawType.includes('srt')) return InputType.SRT;
+  if (rawType.includes('device')) return InputType.DEVICE;
+  if (rawType.includes('live') || rawType.includes('incoming')) return InputType.LIVE;
+  if (rawType.includes('youtube')) return InputType.YOUTUBE;
+  if (rawType.includes('url') || rawType.includes('http')) return InputType.URL;
+
+  if (rawUrl.startsWith('srt://')) return InputType.SRT;
+  if (rawUrl.startsWith('device://')) return InputType.DEVICE;
+  if (rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be')) return InputType.YOUTUBE;
+  if (rawUrl.startsWith('rtmp://') || rawUrl.startsWith('/live/') || rawUrl.startsWith('live/')) return InputType.LIVE;
+
+  if (
+    rawUrl.endsWith('.mp4') ||
+    rawUrl.endsWith('.mkv') ||
+    rawUrl.endsWith('.ts') ||
+    rawUrl.endsWith('.mov') ||
+    rawUrl.endsWith('.avi') ||
+    rawUrl.includes('media/vod/')
+  ) {
+    return InputType.VOD;
+  }
+
+  return InputType.URL;
+};
+
 export const Configurator: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -123,6 +155,8 @@ export const Configurator: React.FC<Props> = ({
   settings,
   licenseStatus,
   addChannel,
+  updateChannel,
+  editingChannel,
   getTsPrograms,
   fetchIngestStreams,
   profileId,
@@ -151,6 +185,53 @@ export const Configurator: React.FC<Props> = ({
       playbackUrl: playbackUrl(Protocol.HLS, 'Main Feed', settings, defaultUrl(Protocol.HLS, 'Main Feed', settings)),
     },
   ]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingChannel) {
+      const resolvedType = resolveInputType(editingChannel.inputType, editingChannel.inputUrl);
+      setInputType(resolvedType);
+      setChannelName(editingChannel.name || '');
+
+      let cleanInputUrl = editingChannel.inputUrl || '';
+      if (resolvedType === InputType.VOD && cleanInputUrl.startsWith('media/vod/')) {
+        cleanInputUrl = cleanInputUrl.replace(/^media\/vod\//, '');
+      }
+      setInputUrl(cleanInputUrl);
+
+      if (editingChannel.profileId) setProfileId(editingChannel.profileId);
+      if (editingChannel.destinations?.length) {
+        setDestinations(editingChannel.destinations);
+      } else if (editingChannel.outputUrl) {
+        setDestinations([{
+          id: uniqueId(),
+          name: editingChannel.outputProtocol?.toUpperCase() || 'HLS',
+          protocol: editingChannel.outputProtocol || Protocol.HLS,
+          url: editingChannel.outputUrl,
+          playbackUrl: editingChannel.outputUrl
+        }]);
+      }
+      setSelectedVideoStream(editingChannel.selectedVideoStream);
+      setSelectedAudioStream(editingChannel.selectedAudioStream);
+      setProgramId(editingChannel.programId);
+    } else {
+      setInputType(InputType.SRT);
+      setChannelName('Main Feed');
+      setInputUrl('srt://0.0.0.0:8890?mode=listener');
+      setDestinations([
+        {
+          id: uniqueId(),
+          name: 'HLS Preview',
+          protocol: Protocol.HLS,
+          url: defaultUrl(Protocol.HLS, 'Main Feed', settings),
+          playbackUrl: playbackUrl(Protocol.HLS, 'Main Feed', settings, defaultUrl(Protocol.HLS, 'Main Feed', settings)),
+        },
+      ]);
+      setSelectedVideoStream(undefined);
+      setSelectedAudioStream(undefined);
+      setProgramId(undefined);
+    }
+  }, [isOpen, editingChannel, settings, setProfileId]);
 
   const currentProgram = useMemo(() => programs.find(p => p.id === programId), [programId, programs]);
 
@@ -218,60 +299,81 @@ export const Configurator: React.FC<Props> = ({
     }));
   }, [channelName, settings]);
 
+  const addDestination = () => {
+    const defaultProtocol = Protocol.HLS;
+    const name = `Destination ${destinations.length + 1}`;
+    const url = defaultUrl(defaultProtocol, channelName, settings);
+
+    setDestinations(prev => [
+      ...prev,
+      {
+        id: uniqueId(),
+        name,
+        protocol: defaultProtocol,
+        url,
+        playbackUrl: playbackUrl(defaultProtocol, channelName, settings, url),
+      },
+    ]);
+  };
+
+  const setDestination = (id: string, next: Partial<ChannelDestination>) => {
+    setDestinations(prev => prev.map(item => {
+      if (item.id !== id) return item;
+
+      const protocol = next.protocol || item.protocol;
+      const streamKey = next.streamKey !== undefined ? next.streamKey : item.streamKey;
+      let url = next.url !== undefined ? next.url : item.url;
+
+      if (next.protocol && next.protocol !== item.protocol) {
+        url = defaultUrl(next.protocol, channelName, settings, streamKey);
+      }
+
+      if (protocol === Protocol.RECORDING) {
+        const recording = { ...item.recording, ...next.recording };
+        const fileName = recording.fileName?.trim() ? safeName(recording.fileName) : safeName(channelName);
+        const format = recording.format || 'mp4';
+        url = `media/recordings/${fileName}.${format}`;
+        return { ...item, ...next, protocol, url, playbackUrl: '', recording };
+      }
+
+      return {
+        ...item,
+        ...next,
+        protocol,
+        streamKey,
+        url,
+        playbackUrl: playbackUrl(protocol, channelName, settings, url),
+      };
+    }));
+  };
+
   const probeInput = async () => {
-    let targetInput = inputUrl;
-    if (inputType === InputType.LIVE) {
-      const stream = Object.values(liveStreams).find((s: any) => s.streamName === inputUrl || s.appName === inputUrl || `${s.app}/${s.name}` === inputUrl);
-      if (stream) targetInput = `rtmp://127.0.0.1:${settings.rtmpPort}/${(stream as any).app}/${(stream as any).name}`;
-    }
-
-    if (!targetInput) return toast.error('Enter or select an input first.');
-    if (inputType === InputType.YOUTUBE) return toast.error('Probing is not available for YouTube URLs.');
-
+    if (!inputUrl) return toast.error('Enter input URL before probing.');
     setLoading(true);
     try {
-      const found = await getTsPrograms(targetInput);
-      setPrograms(found);
-      const first = found[0];
-      setProgramId(first?.id);
-      setSelectedVideoStream(first?.streams.find(s => s.type === 'video')?.index);
-      setSelectedAudioStream(first?.streams.find(s => s.type === 'audio')?.index);
-      toast.success(found.length ? `Found ${found.length} program(s).` : 'No programs found.');
-    } catch (e: any) {
-      toast.error(e.message);
+      const data = await getTsPrograms(inputUrl);
+      setPrograms(data || []);
+      if (data && data.length) {
+        setProgramId(data[0].id);
+        toast.success(`Found ${data.length} program(s).`);
+      } else {
+        toast.error('No TS programs detected.');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Probe failed.');
     } finally {
       setLoading(false);
     }
   };
 
-  const setDestination = (destinationId: string, patch: Partial<ChannelDestination>) => {
-    setDestinations(prev => prev.map(dest => {
-      if (dest.id !== destinationId) return dest;
-      const next = { ...dest, ...patch };
-      if (patch.protocol) next.url = defaultUrl(patch.protocol, channelName, settings, next.streamKey);
-      if (next.protocol === Protocol.RECORDING) next.url = recordingOutputUrl(next);
-      next.playbackUrl = playbackUrl(next.protocol, channelName, settings, next.url);
-      return next;
-    }));
-  };
-
-  const addDestination = () => {
-    const url = defaultUrl(Protocol.RTMP, channelName, settings);
-    setDestinations(prev => [...prev, { id: uniqueId(), name: 'RTMP Output', protocol: Protocol.RTMP, url, playbackUrl: playbackUrl(Protocol.RTMP, channelName, settings, url) }]);
-  };
-
   const createChannel = async () => {
-    if (!channelName || !profileId) return toast.error('Channel name and profile are required.');
-    if (destinations.length === 0) return toast.error('Add at least one destination.');
-
-    let finalInput = inputUrl;
+    let finalInput = inputUrl.trim();
     if (inputType === InputType.DEVICE) {
-      if (!videoDevice && !audioDevice) return toast.error('Select at least one capture device.');
       if (videoDevice && audioDevice) {
         finalInput = `device://${videoDevice}+${audioDevice}`;
       } else if (videoDevice) {
         finalInput = `device://video=${videoDevice}`;
-      } else {
+      } else if (audioDevice) {
         finalInput = `device://audio=${audioDevice}`;
       }
     } else if (inputType === InputType.LIVE) {
@@ -281,8 +383,9 @@ export const Configurator: React.FC<Props> = ({
 
     if (!finalInput) return toast.error('Input is required.');
 
-    const firstDest = destinations[0];
-    await addChannel({
+    const firstDest = destinations[0] || { protocol: Protocol.HLS, url: defaultUrl(Protocol.HLS, channelName, settings) };
+
+    const payload = {
       name: channelName,
       inputType,
       inputUrl: finalInput,
@@ -293,8 +396,15 @@ export const Configurator: React.FC<Props> = ({
       programId,
       selectedVideoStream,
       selectedAudioStream,
-    });
-    toast.success('Channel saved successfully.');
+    };
+
+    if (editingChannel && updateChannel) {
+      await updateChannel({ id: editingChannel.id, ...payload });
+      toast.success('Channel updated successfully.');
+    } else {
+      await addChannel(payload);
+      toast.success('Channel created successfully.');
+    }
     onClose();
   };
 
@@ -303,7 +413,7 @@ export const Configurator: React.FC<Props> = ({
       return (
         <div className="relative">
           <input
-            className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+            className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             placeholder="srt://0.0.0.0:8890?mode=listener"
             value={inputUrl}
             onChange={e => setInputUrl(e.target.value)}
@@ -312,9 +422,13 @@ export const Configurator: React.FC<Props> = ({
       );
     }
     if (inputType === InputType.VOD) {
+      const vodOptions = vodFiles.map(f => ({ value: f.name, label: f.originalName || f.name }));
+      if (inputUrl && !vodOptions.some(o => o.value === inputUrl)) {
+        vodOptions.unshift({ value: inputUrl, label: inputUrl });
+      }
       return (
         <div className="space-y-2">
-          <Select label="Server VOD File" value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="Select VOD file" options={vodFiles.map(f => ({ value: f.name, label: f.originalName }))} />
+          <Select label="Server VOD File" value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="Select VOD file" options={vodOptions} />
           <FileUpload onFileUploaded={(file, original) => { setInputUrl(file); if (!channelName) setChannelName(original.replace(/\.[^.]+$/, '')); refreshVod(); }} selectedFileName={null} uploadButtonText="Upload VOD File" />
         </div>
       );
@@ -329,16 +443,19 @@ export const Configurator: React.FC<Props> = ({
     }
     if (inputType === InputType.LIVE) {
       return (
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <Select
-            label="Active Ingest Stream"
+            label="Live Publisher Feed"
             value={inputUrl}
             onChange={e => setInputUrl(e.target.value)}
-            placeholder="Select stream"
-            options={Object.values(liveStreams).map((s: any) => ({ value: `${s.app}/${s.name}`, label: `${s.app}/${s.name}` }))}
+            placeholder="Select live publisher stream"
+            options={Object.entries(liveStreams).map(([k, s]: [string, any]) => ({
+              value: s.appName ? `${s.appName}/${s.streamName}` : k,
+              label: `${s.appName || 'live'}/${s.streamName || k} (${s.incoming_kbps || 0}k)`,
+            }))}
             className="flex-1"
           />
-          <button type="button" onClick={refreshLive} className="mt-6 flex h-9 w-9 items-center justify-center rounded-md border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] hover:bg-[#F4EEFF]">
+          <button type="button" onClick={refreshLive} className="mt-6 flex h-9 w-9 items-center justify-center rounded-md border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9]">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
@@ -355,7 +472,7 @@ export const Configurator: React.FC<Props> = ({
       <button
         type="button"
         onClick={onClose}
-        className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[12px] font-semibold text-[#6F6078] hover:bg-[#F8F7FA]"
+        className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[12px] font-semibold text-[#6F6078] hover:bg-[#F8F7FA] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]"
       >
         Cancel
       </button>
@@ -363,9 +480,9 @@ export const Configurator: React.FC<Props> = ({
         type="button"
         onClick={createChannel}
         disabled={loading}
-        className="flex h-9 items-center gap-1.5 rounded-md bg-[#351147] px-5 text-[12px] font-semibold text-white hover:bg-[#2B0D3A]"
+        className="flex h-9 items-center gap-1.5 rounded-md bg-[#351147] px-5 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
       >
-        <Play size={14} /> Save Live Channel
+        <Play size={14} /> {editingChannel ? 'Update Live Channel' : 'Save Live Channel'}
       </button>
     </div>
   );
@@ -374,8 +491,8 @@ export const Configurator: React.FC<Props> = ({
     <DetailDrawer
       open={isOpen}
       onClose={onClose}
-      title="Create Channel"
-      subtitle="Configure live TV channel input, transcoding profile and outputs"
+      title={editingChannel ? `Edit Channel — ${editingChannel.name}` : 'Create Channel'}
+      subtitle={editingChannel ? 'Update live TV channel input, transcoding profile and outputs' : 'Configure live TV channel input, transcoding profile and outputs'}
       width="max-w-[500px]"
       footer={footerActions}
     >
