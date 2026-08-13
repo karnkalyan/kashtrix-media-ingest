@@ -51,7 +51,7 @@ const inputClass = 'h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 
 /* ═══════════════════════════════════════════
    OFFICIAL KASHTRIX STREAMOPS LOGO
    ═══════════════════════════════════════════ */
-const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ variant = 'wordmark' }) => {
+const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ size = 154, variant = 'wordmark' }) => {
   if (variant === 'icon') {
     return (
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-[#6D32D9] to-[#9D4EDD] shadow-md shadow-[#6D32D9]/30 text-white font-black text-[16px] shrink-0">
@@ -61,16 +61,14 @@ const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'i
   }
 
   return (
-    <div className="flex items-center gap-2.5 shrink-0 select-none py-1 overflow-hidden">
-      <img src="/logo.png" alt="KASHTRIX" className="h-7 w-auto object-contain max-h-7 shrink-0" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
-      <div className="flex flex-col leading-none">
-        <span className="font-display text-[15px] font-black tracking-tight text-[#1B1024] dark:text-white">
-          KASHTRIX
-        </span>
-        <span className="text-[9px] font-bold uppercase tracking-wider text-[#6D32D9] mt-0.5">
-          StreamOps Console
-        </span>
-      </div>
+    <div className="flex items-center shrink-0 select-none py-1 overflow-hidden">
+      <img
+        src="/logo.png"
+        alt="KASHTRIX StreamOps"
+        style={{ height: variant === 'full' ? 'auto' : '34px', maxWidth: `${size}px` }}
+        className="w-auto object-contain max-h-8"
+        draggable={false}
+      />
     </div>
   );
 };
@@ -668,6 +666,7 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   group: string;
+  iconBg: string;
   iconColor: string;
   badge?: string;
   badgeColor?: string;
@@ -675,21 +674,21 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Operations', iconColor: 'text-[#6366F1]' },
-  { id: 'channels', label: 'Channels', icon: FiTv, group: 'Operations', iconColor: 'text-[#8B5CF6]', licenseModule: 'live-tv' },
-  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', iconColor: 'text-[#EC4899]', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
-  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', iconColor: 'text-[#10B981]', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
-  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media', iconColor: 'text-[#F59E0B]', licenseModule: 'recording-library' },
-  { id: 'monitor', label: 'System Monitor', icon: FiActivity, group: 'Observability', iconColor: 'text-[#06B6D4]', licenseModule: 'system-monitor' },
-  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability', iconColor: 'text-[#F97316]' },
-  { id: 'users', label: 'User Management', icon: FiUsers, group: 'System', iconColor: 'text-[#7C3AED]' },
-  { id: 'settings', label: 'Settings', icon: FiSettings, group: 'System', iconColor: 'text-[#64748B]' },
-  { id: 'license', label: 'License', icon: FiKey, group: 'System', iconColor: 'text-[#E11D48]' },
-  { id: 'account', label: 'Account', icon: FiUser, group: 'System', iconColor: 'text-[#14B8A6]' },
+  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'MAIN', iconBg: 'bg-[#EEF2FF] dark:bg-[#1E1B4B]', iconColor: 'text-[#4F46E5]' },
+  { id: 'channels', label: 'Channels Playout', icon: FiTv, group: 'OPERATIONS', iconBg: 'bg-[#F3E8FF] dark:bg-[#2E1065]', iconColor: 'text-[#9333EA]', licenseModule: 'live-tv' },
+  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'OPERATIONS', iconBg: 'bg-[#FCE7F3] dark:bg-[#500724]', iconColor: 'text-[#DB2777]', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
+  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'OPERATIONS', iconBg: 'bg-[#D1FAE5] dark:bg-[#064E3B]', iconColor: 'text-[#059669]', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
+  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'MEDIA & ARCHIVE', iconBg: 'bg-[#FEF3C7] dark:bg-[#451A03]', iconColor: 'text-[#D97706]', licenseModule: 'recording-library' },
+  { id: 'monitor', label: 'System Telemetry', icon: FiActivity, group: 'OBSERVABILITY', iconBg: 'bg-[#E0F2FE] dark:bg-[#0C4A6E]', iconColor: 'text-[#0284C7]', licenseModule: 'system-monitor' },
+  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'OBSERVABILITY', iconBg: 'bg-[#FFEDD5] dark:bg-[#431407]', iconColor: 'text-[#EA580C]' },
+  { id: 'users', label: 'User Management', icon: FiUsers, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#EDE9FE] dark:bg-[#2E1065]', iconColor: 'text-[#7C3AED]' },
+  { id: 'settings', label: 'Engine Settings', icon: FiSettings, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#F1F5F9] dark:bg-[#1E293B]', iconColor: 'text-[#475569]' },
+  { id: 'license', label: 'License Admin', icon: FiKey, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#FFE4E6] dark:bg-[#4C0519]', iconColor: 'text-[#E11D48]' },
+  { id: 'account', label: 'Account Profile', icon: FiUser, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#CCFBF1] dark:bg-[#042F2E]', iconColor: 'text-[#0D9488]' },
 ];
 
 /* ═══════════════════════════════════════════
-   SIDEBAR COMPONENT (REBUILT FROM SCRATCH)
+   SIDEBAR COMPONENT (REBUILT FROM REFERENCE DESIGN)
    ═══════════════════════════════════════════ */
 const Sidebar: React.FC<{
   activeView: ActiveView;
@@ -724,8 +723,8 @@ const Sidebar: React.FC<{
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs dark:bg-[#130B1C] dark:border-[#27153B] ${mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
-          } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs dark:bg-[#130B1C] dark:border-[#27153B] ${mobileOpen ? 'w-[236px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+          } ${collapsed && !mobileOpen ? 'lg:w-[68px]' : 'lg:w-[236px]'}`}
       >
         {/* Brand Header */}
         <div className="flex h-14 items-center justify-between border-b border-[#E8DFF0] px-3.5 dark:border-[#27153B]">
@@ -743,11 +742,11 @@ const Sidebar: React.FC<{
         </div>
 
         {/* Navigation Items Grouped */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-2.5 scrollbar-hide">
+        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-3 scrollbar-hide">
           {groups.map(group => (
-            <div key={group.name} className="space-y-0.5">
+            <div key={group.name} className="space-y-1">
               {(!collapsed || mobileOpen) && (
-                <div className="px-2.5 pb-1 pt-1 text-[9px] font-bold uppercase tracking-wider text-[#6F6078] dark:text-[#A494B5]">
+                <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">
                   {group.name}
                 </div>
               )}
@@ -759,21 +758,31 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-8.5 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium tracking-tight transition-all duration-150 ${isActive
-                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold border-l-[3px] border-[#6D32D9] dark:bg-[#2B1542] dark:text-white'
-                        : 'text-[#6F6078] hover:bg-[#F8F7FA] hover:text-[#1B1024] dark:text-[#A494B5] dark:hover:bg-[#1E112B] dark:hover:text-white'
+                    className={`group relative flex h-10 w-full items-center justify-between rounded-xl px-2 text-left text-[12px] font-semibold tracking-tight transition-all duration-150 ${isActive
+                        ? 'bg-[#F4EEFF] text-[#2B0D3A] shadow-xs dark:bg-[#2B1542] dark:text-white'
+                        : 'text-[#475569] hover:bg-[#F8F7FA] hover:text-[#0F172A] dark:text-[#CBD5E1] dark:hover:bg-[#1E112B] dark:hover:text-white'
                       } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
-                    <Icon size={16} className={`shrink-0 transition-transform duration-150 group-hover:scale-110 ${item.iconColor || 'text-[#6D32D9]'}`} />
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      {/* Circular Icon Badge (Matching Reference UI) */}
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-transform duration-150 group-hover:scale-105 ${item.iconBg}`}>
+                        <Icon size={14} className={item.iconColor} />
+                      </div>
+
+                      {(!collapsed || mobileOpen) && (
+                        <span className="truncate">{item.label}</span>
+                      )}
+                    </div>
 
                     {(!collapsed || mobileOpen) && (
-                      <div className="flex flex-1 items-center justify-between overflow-hidden">
-                        <span className="truncate">{item.label}</span>
-                        {item.badge && (
-                          <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white ${item.badgeColor || 'bg-[#6D32D9]'}`}>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.badge ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold text-white ${item.badgeColor || 'bg-[#6D32D9]'}`}>
                             {item.badge}
                           </span>
+                        ) : (
+                          <FiChevronRight size={13} className="text-[#94A3B8] group-hover:text-[#64748B] transition-transform duration-150 group-hover:translate-x-0.5" />
                         )}
                       </div>
                     )}
@@ -968,7 +977,7 @@ const App: React.FC = () => {
         onMobileClose={() => setMobileMenuOpen(false)}
       />
 
-      <div className={`flex min-h-screen flex-1 flex-col transition-all duration-200 ${sidebarCollapsed ? 'lg:ml-[64px]' : 'lg:ml-[224px]'}`}>
+      <div className={`flex min-h-screen flex-1 flex-col transition-all duration-200 ${sidebarCollapsed ? 'lg:ml-[68px]' : 'lg:ml-[236px]'}`}>
         <TopHeader
           activeView={activeView}
           username={engine.auth.user?.username}
