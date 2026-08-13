@@ -255,7 +255,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         <div className="relative aspect-video min-h-[180px] w-full bg-[#090d17]">
           <video ref={videoRef} playsInline muted onTimeUpdate={event => setPreviewTime(event.currentTarget.currentTime)} className={`h-full w-full object-contain ${previewing ? 'block' : 'hidden'}`} />
           {!previewing && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-violet-200/50"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.05]"><FiEye size={23} /></span><span className="text-xs font-medium">Select a source and start preview</span></div>}
-          {previewing && <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-md bg-rose-600 px-2.5 py-1.5 text-[9px] font-bold text-white shadow-lg"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />REC {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}</div>}
+          {previewing && <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-md bg-indigo-600 px-2.5 py-1.5 text-[9px] font-bold text-white shadow-lg"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />LIVE PREVIEW {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}</div>}
           <div className="pointer-events-none absolute bottom-4 left-4 flex max-w-[calc(100%-2rem)] items-center divide-x divide-white/15 rounded-xl border border-white/10 bg-slate-950/75 px-1 py-2 text-white backdrop-blur-md">
             <span className="px-3"><b className="block text-[11px]">{activeConfig.resolution === 'source' ? 'Source' : activeConfig.resolution}</b><small className="text-[8px] text-slate-400">Resolution</small></span>
             <span className="px-3"><b className="block text-[11px]">{activeConfig.framerate || 'Source'}{activeConfig.framerate ? ' fps' : ''}</b><small className="text-[8px] text-slate-400">Frame rate</small></span>
@@ -268,13 +268,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
     <div className="recording-settings-grid mt-3 grid grid-cols-1 gap-3 xl:grid-cols-4"><section className="app-panel p-4 xl:col-span-2">
       <h3 className="panel-kicker mb-4">Video encoding</h3>
-      <div className="mb-4 rounded-lg border border-violet-100 bg-violet-50/50 p-3">
-        <div className="grid grid-cols-1 gap-3">
-          <Label>Live TV Transcoding Profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
-        </div>
-        <p className="mt-2 text-[10px] text-indigo-600">{selectedProfile ? `${selectedProfile.name} controls the encoding hardware, codec, resolution, FPS, bitrate, audio and GOP settings.` : 'Custom mode allows manual encoding hardware and recording settings.'}</p>
-      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Label>Transcoding profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
         <Label>Video codec<select disabled={encodingDisabled} value={activeConfig.videoCodec} onChange={event => patch({ videoCodec: event.target.value as any })} className={selectClass}><option value="h264">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option></select></Label>
         <Label>Rate control<select disabled={encodingDisabled} value={activeConfig.rateControl} onChange={event => patch({ rateControl: event.target.value as any })} className={selectClass}><option value="cbr">CBR broadcast</option><option value="vbr">VBR quality</option><option value="crf">Constant quality</option></select></Label>
         <Label>Resolution<select disabled={encodingDisabled} value={activeConfig.resolution} onChange={event => patch({ resolution: event.target.value })} className={selectClass}><option value="source">Source / original</option><option value="7680x4320">8K UHD</option><option value="3840x2160">4K UHD 2160p</option><option value="2560x1440">QHD 1440p</option><option value="1920x1080">Full HD 1080p</option><option value="1280x720">HD 720p</option><option value="720x576">PAL 576p</option><option value="720x480">NTSC 480p</option></select></Label>
