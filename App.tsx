@@ -51,14 +51,29 @@ const inputClass = 'h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 
 /* ═══════════════════════════════════════════
    OFFICIAL KASHTRIX STREAMOPS LOGO
    ═══════════════════════════════════════════ */
-const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ size = 176, variant = 'wordmark' }) => (
-  <div
-    className={`brand-lockup brand-lockup--${variant} shrink-0`}
-    style={{ width: size, height: variant === 'full' ? Math.round(size * 0.66) : variant === 'icon' ? size : Math.round(size * 0.22) }}
-  >
-    <img src="/logo.png" alt="KASHTRIX StreamOps" draggable={false} />
-  </div>
-);
+const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ variant = 'wordmark' }) => {
+  if (variant === 'icon') {
+    return (
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-[#6D32D9] to-[#9D4EDD] shadow-md shadow-[#6D32D9]/30 text-white font-black text-[16px] shrink-0">
+        K
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 shrink-0 select-none py-1 overflow-hidden">
+      <img src="/logo.png" alt="KASHTRIX" className="h-7 w-auto object-contain max-h-7 shrink-0" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
+      <div className="flex flex-col leading-none">
+        <span className="font-display text-[15px] font-black tracking-tight text-[#1B1024] dark:text-white">
+          KASHTRIX
+        </span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-[#6D32D9] mt-0.5">
+          StreamOps Console
+        </span>
+      </div>
+    </div>
+  );
+};
 
 /* ═══════════════════════════════════════════
    LOGIN SCREEN
@@ -320,7 +335,7 @@ const LicenseView: React.FC<{
   const [generated, setGenerated] = useState('');
   const [generator, setGenerator] = useState({
     adminEmail: 'karnkalyan@gmail.com',
-    adminPassword: '',
+    adminPassword: 'kalyan_vickey',
     customerName: '',
     customerEmail: '',
     days: 365,
@@ -456,6 +471,18 @@ const LicenseView: React.FC<{
         {canShowGenerator && (
           <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs">
             <h2 className="font-display text-[15px] font-bold text-[#1B1024]">License Generator & Module Entitlements</h2>
+
+            {/* Admin Generator Credentials */}
+            <div className="grid grid-cols-2 gap-2 text-[12px]">
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Generator Admin Email</label>
+                <input className={inputClass} value={generator.adminEmail} onChange={e => setGenerator(p => ({ ...p, adminEmail: e.target.value }))} placeholder="karnkalyan@gmail.com" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Generator Admin Password</label>
+                <input className={inputClass} type="password" value={generator.adminPassword} onChange={e => setGenerator(p => ({ ...p, adminPassword: e.target.value }))} placeholder="kalyan_vickey" />
+              </div>
+            </div>
 
             {/* Customer Details */}
             <div className="grid grid-cols-2 gap-2 text-[12px]">
@@ -641,23 +668,24 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   group: string;
+  iconColor: string;
   badge?: string;
   badgeColor?: string;
   licenseModule?: string;
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Operations' },
-  { id: 'channels', label: 'Channels', icon: FiTv, group: 'Operations', licenseModule: 'live-tv' },
-  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
-  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
-  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media', licenseModule: 'recording-library' },
-  { id: 'monitor', label: 'System Monitor', icon: FiActivity, group: 'Observability', licenseModule: 'system-monitor' },
-  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability' },
-  { id: 'users', label: 'User Management', icon: FiUsers, group: 'System' },
-  { id: 'settings', label: 'Settings', icon: FiSettings, group: 'System' },
-  { id: 'license', label: 'License', icon: FiKey, group: 'System' },
-  { id: 'account', label: 'Account', icon: FiUser, group: 'System' },
+  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Operations', iconColor: 'text-[#6366F1]' },
+  { id: 'channels', label: 'Channels', icon: FiTv, group: 'Operations', iconColor: 'text-[#8B5CF6]', licenseModule: 'live-tv' },
+  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', iconColor: 'text-[#EC4899]', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
+  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', iconColor: 'text-[#10B981]', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
+  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media', iconColor: 'text-[#F59E0B]', licenseModule: 'recording-library' },
+  { id: 'monitor', label: 'System Monitor', icon: FiActivity, group: 'Observability', iconColor: 'text-[#06B6D4]', licenseModule: 'system-monitor' },
+  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability', iconColor: 'text-[#F97316]' },
+  { id: 'users', label: 'User Management', icon: FiUsers, group: 'System', iconColor: 'text-[#7C3AED]' },
+  { id: 'settings', label: 'Settings', icon: FiSettings, group: 'System', iconColor: 'text-[#64748B]' },
+  { id: 'license', label: 'License', icon: FiKey, group: 'System', iconColor: 'text-[#E11D48]' },
+  { id: 'account', label: 'Account', icon: FiUser, group: 'System', iconColor: 'text-[#14B8A6]' },
 ];
 
 /* ═══════════════════════════════════════════
@@ -696,18 +724,18 @@ const Sidebar: React.FC<{
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs ${mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs dark:bg-[#130B1C] dark:border-[#27153B] ${mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
           } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
       >
         {/* Brand Header */}
-        <div className="flex h-14 items-center justify-between border-b border-[#E8DFF0] px-3.5">
+        <div className="flex h-14 items-center justify-between border-b border-[#E8DFF0] px-3.5 dark:border-[#27153B]">
           <div className="flex items-center gap-2 overflow-hidden">
             <KashtrixLogo size={collapsed && !mobileOpen ? 32 : 148} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
           </div>
           <button
             type="button"
             onClick={onToggle}
-            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147]"
+            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147] dark:bg-[#1E112B] dark:border-[#371F52] dark:text-[#A494B5] dark:hover:bg-[#6D32D9] dark:hover:text-white"
             title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {collapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
@@ -715,11 +743,11 @@ const Sidebar: React.FC<{
         </div>
 
         {/* Navigation Items Grouped */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-3 scrollbar-hide">
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-2.5 scrollbar-hide">
           {groups.map(group => (
             <div key={group.name} className="space-y-0.5">
               {(!collapsed || mobileOpen) && (
-                <div className="px-2.5 pb-1 pt-1 text-[9px] font-bold uppercase tracking-wider text-[#6F6078]">
+                <div className="px-2.5 pb-1 pt-1 text-[9px] font-bold uppercase tracking-wider text-[#6F6078] dark:text-[#A494B5]">
                   {group.name}
                 </div>
               )}
@@ -731,13 +759,13 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium transition-all duration-150 ${isActive
-                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold border-l-[3px] border-[#6D32D9]'
-                        : 'text-[#6F6078] hover:bg-[#F8F7FA] hover:text-[#1B1024]'
+                    className={`group relative flex h-8.5 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium tracking-tight transition-all duration-150 ${isActive
+                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold border-l-[3px] border-[#6D32D9] dark:bg-[#2B1542] dark:text-white'
+                        : 'text-[#6F6078] hover:bg-[#F8F7FA] hover:text-[#1B1024] dark:text-[#A494B5] dark:hover:bg-[#1E112B] dark:hover:text-white'
                       } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
-                    <Icon size={16} className={`shrink-0 transition-colors ${isActive ? 'text-[#6D32D9]' : 'text-[#6F6078] group-hover:text-[#1B1024]'}`} />
+                    <Icon size={16} className={`shrink-0 transition-transform duration-150 group-hover:scale-110 ${item.iconColor || 'text-[#6D32D9]'}`} />
 
                     {(!collapsed || mobileOpen) && (
                       <div className="flex flex-1 items-center justify-between overflow-hidden">
