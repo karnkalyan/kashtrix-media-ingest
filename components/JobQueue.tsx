@@ -187,6 +187,7 @@ export const ChannelDashboard: React.FC<Props> = ({
                     <th className="px-4 py-3">Input Source</th>
                     <th className="px-4 py-3">Profile</th>
                     <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Output Stream URL</th>
                     <th className="px-4 py-3">Bitrate</th>
                     <th className="px-4 py-3">Uptime</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -196,6 +197,7 @@ export const ChannelDashboard: React.FC<Props> = ({
                   {filteredChannels.map(channel => {
                     const isRunning = channel.status === ChannelStatus.Running;
                     const profile = profiles.find(p => p.id === channel.profileId);
+                    const outputUrl = `http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8080/hls/${channel.name}/index.m3u8`;
 
                     return (
                       <tr key={channel.id} className="transition-colors hover:bg-[#F4EEFF]/50">
@@ -207,7 +209,7 @@ export const ChannelDashboard: React.FC<Props> = ({
                             <span>{channel.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078] max-w-[220px] truncate" title={channel.inputUrl}>
+                        <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078] max-w-[180px] truncate" title={channel.inputUrl}>
                           {channel.inputUrl}
                         </td>
                         <td className="px-4 py-3">
@@ -217,6 +219,23 @@ export const ChannelDashboard: React.FC<Props> = ({
                         </td>
                         <td className="px-4 py-3">
                           <StatusBadge status={isRunning ? 'Running' : 'Stopped'} />
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[11px] max-w-[200px]">
+                          {isRunning ? (
+                            <div className="flex items-center gap-1">
+                              <span className="truncate text-[#6D32D9] font-semibold" title={outputUrl}>{outputUrl}</span>
+                              <button
+                                type="button"
+                                onClick={() => { navigator.clipboard.writeText(outputUrl); import('react-hot-toast').then(m => m.default.success('Output URL copied!')); }}
+                                className="rounded border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#6D32D9]"
+                                title="Copy Output Stream URL"
+                              >
+                                <Radio size={11} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[#94A3B8] italic">Stream offline</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 font-mono text-[#6F6078]">
                           {profile?.videoBitrate ? `${profile.videoBitrate} Kbps` : 'Passthrough'}
@@ -242,6 +261,14 @@ export const ChannelDashboard: React.FC<Props> = ({
                               <Play size={12} /> Start
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => { setProfileId(channel.profileId || ''); setCreateDrawerOpen(true); }}
+                            className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#6D32D9]"
+                            title="Edit Channel"
+                          >
+                            <Edit3 size={13} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => removeChannel(channel.id)}

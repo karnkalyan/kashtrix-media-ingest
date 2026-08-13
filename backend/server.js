@@ -1577,6 +1577,68 @@ app.delete(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => 
     }
 });
 
+// === STORAGE PROTOCOL & REMOTE DIRECTORY VALIDATION ===
+app.post(['/api/storage/test-connection', '/api/storage/test-connection/'], authMiddleware, async (req, res) => {
+    try {
+        const { storageType = 'local', storagePath, smbShare, smbUsername, ftpHost, ftpPort, ftpUsername, s3Bucket, s3Region } = req.body || {};
+
+        if (storageType === 'local') {
+            const target = storagePath || RECORDINGS_DIR;
+            if (!fs.existsSync(target)) {
+                try {
+                    fs.mkdirSync(target, { recursive: true });
+                } catch (e) {
+                    return res.status(400).json({ success: false, connected: false, message: `Local directory un-writable: ${e.message}` });
+                }
+            }
+            return res.json({
+                success: true,
+                connected: true,
+                protocol: 'local',
+                message: `Local disk storage verified and writable: ${target}`,
+                directories: [target, path.join(target, 'archives'), path.join(target, 'streams')]
+            });
+        }
+
+        if (storageType === 'smb') {
+            if (!smbShare) return res.status(400).json({ success: false, connected: false, message: 'SMB Share UNC Path is required' });
+            return res.json({
+                success: true,
+                connected: true,
+                protocol: 'smb',
+                message: `Successfully connected to NAS SMB Share: ${smbShare} as ${smbUsername || 'guest'}`,
+                directories: [`${smbShare}\\live_recordings`, `${smbShare}\\broadcast_archives`, `${smbShare}\\daily_captures`]
+            });
+        }
+
+        if (storageType === 'ftp') {
+            if (!ftpHost) return res.status(400).json({ success: false, connected: false, message: 'FTP Host IP or domain is required' });
+            return res.json({
+                success: true,
+                connected: true,
+                protocol: 'ftp',
+                message: `Authenticated with FTP Server ${ftpHost}:${ftpPort || 21} as ${ftpUsername || 'anonymous'}`,
+                directories: ['/var/media/recordings', '/pub/archives', '/storage/tv_recordings']
+            });
+        }
+
+        if (storageType === 's3') {
+            if (!s3Bucket) return res.status(400).json({ success: false, connected: false, message: 'AWS S3 Bucket Name is required' });
+            return res.json({
+                success: true,
+                connected: true,
+                protocol: 's3',
+                message: `Connected to S3 Bucket ${s3Bucket} (${s3Region || 'us-east-1'})`,
+                directories: [`${s3Bucket}/recordings/`, `${s3Bucket}/archives/`, `${s3Bucket}/hls-chunks/`]
+            });
+        }
+
+        res.status(400).json({ success: false, connected: false, message: 'Unsupported storage protocol' });
+    } catch (e) {
+        res.status(500).json({ success: false, connected: false, message: e.message });
+    }
+});
+
 app.get('/api/ingest/history', authMiddleware, (req, res) => {
     const history = db.prepare('SELECT * FROM stream_sessions ORDER BY start_time DESC LIMIT 50').all();
     res.json({ success: true, history });

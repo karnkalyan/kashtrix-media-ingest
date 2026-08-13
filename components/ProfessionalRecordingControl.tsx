@@ -85,11 +85,34 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [previewError, setPreviewError] = useState('');
   const [previewTime, setPreviewTime] = useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const deviceStreamRef = useRef<MediaStream | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
 
   const activeConfig = config || defaultConfig;
+
+  const handleTestStorageConnection = async () => {
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/storage/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(activeConfig),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Storage connection test failed');
+      setTestResult(data);
+    } catch (e: any) {
+      setTestResult({ success: false, message: e.message || 'Connection failed' });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   const patch = (values: Partial<IngestRecordingOptions>) => {
     if (typeof setConfig === 'function') {
@@ -280,7 +303,42 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     </div></div>
 
     <section className="app-panel mt-3 p-4">
-      <h3 className="panel-kicker mb-3">5. Storage Destination & Network Target</h3>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h3 className="panel-kicker">5. Storage Destination & Network Target</h3>
+        <button
+          type="button"
+          onClick={handleTestStorageConnection}
+          disabled={testingConnection}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50 transition-colors"
+        >
+          {testingConnection ? <FiRefreshCw className="animate-spin" /> : <FiDisc />}
+          {testingConnection ? 'Testing Connection…' : 'Test Connection & Access'}
+        </button>
+      </div>
+
+      {testResult && (
+        <div className={`mb-3 rounded-lg border p-3 text-[11px] ${testResult.success ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+          <p className="font-semibold">{testResult.message}</p>
+          {testResult.directories && testResult.directories.length > 0 && (
+            <div className="mt-2">
+              <span className="font-bold text-[10px] uppercase">Available Remote Directories:</span>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {testResult.directories.map(dir => (
+                  <button
+                    key={dir}
+                    type="button"
+                    onClick={() => patch({ storagePath: dir })}
+                    className="rounded bg-white border border-emerald-300 px-2 py-0.5 font-mono text-[10px] hover:bg-emerald-100 text-emerald-900"
+                  >
+                    Select {dir}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Label>Storage Protocol
           <select
