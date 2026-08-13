@@ -224,26 +224,26 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{overview.totals.activeRecordings}</p>
           <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">{overview.totals.recordings} archived</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Storage</span>
-          <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatBytes(overview.totals.recordingBytes)}</p>
-          <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">On disk</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Storage</span>
+          <p className="font-mono text-[20px] font-bold text-[#7C3AED] dark:text-[#A78BFA]">{formatBytes(overview.totals.recordingBytes)}</p>
+          <span className="text-[10px] text-[#6F6078] dark:text-[#94A3B8]">On disk</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs col-span-2 sm:col-span-1 dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Viewers</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs col-span-2 sm:col-span-1 dark:bg-[#1E293B] dark:border-[#334155]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Viewers</span>
           <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{overview.totals.viewers}</p>
-          <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">{overview.totals.sessions} sessions</span>
+          <span className="text-[10px] text-[#6F6078] dark:text-[#94A3B8]">{overview.totals.sessions} sessions</span>
         </div>
       </div>
 
       {/* Main 2-Column Desktop Grid */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Left Column: Live Streams */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden lg:col-span-2 dark:bg-[#190E28] dark:border-[#311B4E]">
-          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden lg:col-span-2 dark:bg-[#1E293B] dark:border-[#334155]">
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#334155]">
             <div>
               <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Live Television Ingests</h2>
-              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Active streams published to server</p>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#94A3B8]">Active streams published to server</p>
             </div>
             <button
               onClick={() => onNavigate?.('ingest')}
@@ -254,16 +254,16 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           </div>
 
           {Object.keys(overview.streams).length === 0 ? (
-            <div className="grid min-h-[140px] place-items-center p-6 text-center text-[#6F6078] text-[12px] dark:text-[#8E78A6]">
+            <div className="grid min-h-[140px] place-items-center p-6 text-center text-[#6F6078] text-[12px] dark:text-[#94A3B8]">
               <div>
-                <Zap size={22} className="mx-auto text-[#6F6078] dark:text-[#8E78A6]" />
+                <Zap size={22} className="mx-auto text-[#6F6078] dark:text-[#94A3B8]" />
                 <p className="mt-1 font-semibold text-[#1B1024] dark:text-white">No television inputs active</p>
               </div>
             </div>
           ) : (
             <div className="p-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Object.entries(overview.streams).map(([key, stream]: [string, any]) => (
-                <div key={key} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2 dark:bg-[#211335] dark:border-[#371F59]">
+                <div key={key} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2 dark:bg-[#0F172A] dark:border-[#334155]">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-[#1B1024] text-[13px] truncate dark:text-white">{stream.name || key}</span>
                     <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.2 text-[9px] font-bold text-[#16A36A] dark:bg-[#064E3B] dark:border-[#047857] dark:text-[#34D399]">
@@ -272,8 +272,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
                   </div>
                   <div className="grid grid-cols-3 gap-1 text-center font-mono text-[11px]">
                     <div>
-                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#8E78A6]">Bitrate</span>
-                      <b className="text-[#2563EB] dark:text-[#60A5FA]">{stream.incoming_kbps || 0}k</b>
+                      <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#94A3B8]">Bitrate</span>
+                      <b className="text-[#7C3AED] dark:text-[#34D399]">{stream.incoming_kbps || 0}k</b>
                     </div>
                     <div>
                       <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#8E78A6]">Viewers</span>

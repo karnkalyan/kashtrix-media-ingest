@@ -703,14 +703,14 @@ export const IngestServerView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setRelayModalOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2F1A4B]"
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#0F172A] dark:border-[#334155] dark:text-white dark:hover:bg-[#334155]"
           >
-            <ArrowUpRight size={13} className="text-[#2563EB] dark:text-[#60A5FA]" /> Add RTMP Relay
+            <ArrowUpRight size={13} className="text-[#6D32D9] dark:text-[#A78BFA]" /> Add RTMP Relay
           </button>
           <button
             type="button"
             onClick={fetchData}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2F1A4B]"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#0F172A] dark:border-[#334155] dark:text-[#F8FAFC] dark:hover:bg-[#334155]"
           >
             <RefreshCw size={14} /> Refresh
           </button>
@@ -719,30 +719,30 @@ export const IngestServerView: React.FC<Props> = ({
 
       {/* Live Server Summary KPI Row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Ingests</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Active Ingests</span>
           <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{activeStreamKeys.length}</p>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Incoming Bitrate</span>
-          <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatBitrate(Number(totalBitrateKbps) || 0)}</p>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Incoming Bitrate</span>
+          <p className="font-mono text-[20px] font-bold text-[#7C3AED] dark:text-[#34D399]">{formatBitrate(Number(totalBitrateKbps) || 0)}</p>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Recordings</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Active Recordings</span>
           <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{Object.keys(activeRecordingKeys).length}</p>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Relays & Listeners</span>
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Relays & Listeners</span>
           <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{processes.length}</p>
         </div>
       </div>
 
       {/* Active Ingest Streams Table */}
-      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
-        <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#311B4E]">
+      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#1E293B] dark:border-[#334155]">
+        <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#334155]">
           <div>
             <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Active Ingest Streams</h2>
-            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Currently publishing RTMP and SRT live streams</p>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#94A3B8]">Currently publishing RTMP and SRT live streams</p>
           </div>
 
           <CodeField value={rtmpEndpointUrl} label="" className="max-w-xs" />
@@ -752,7 +752,7 @@ export const IngestServerView: React.FC<Props> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px]">
               <thead>
-                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#0F172A] dark:border-[#334155] dark:text-[#94A3B8]">
                   <th className="px-4 py-3">Stream Name</th>
                   <th className="px-4 py-3">Protocol</th>
                   <th className="px-4 py-3">Resolution / FPS</th>
@@ -762,7 +762,7 @@ export const IngestServerView: React.FC<Props> = ({
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFF0]">
+              <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#334155]">
                 {Object.entries(localStreams).map(([key, stream]: [string, any]) => {
                   const isRec = !!(recordingStatuses[key] || activeRecordingKeys[key]);
                   const bitrateKbps = Number(stream.bitrate || stream.incoming_kbps || stream.incomingBitrate || stream.publisher?.video?.bitrate || 0);
@@ -770,7 +770,7 @@ export const IngestServerView: React.FC<Props> = ({
                   const recStartTime = recItem?.start_time || recItem?.created_at;
 
                   return (
-                    <tr key={key} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2B1745]">
+                    <tr key={key} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#334155]/50">
                       <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">
                         <div className="flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-[#16A36A] animate-pulse" />
@@ -780,10 +780,10 @@ export const IngestServerView: React.FC<Props> = ({
                       <td className="px-4 py-3">
                         <ProtocolBadge protocol={stream.protocol || 'RTMP'} />
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
+                      <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#94A3B8]">
                         {stream.resolution || '1920x1080'} @ {stream.fps || 30}fps
                       </td>
-                      <td className="px-4 py-3 font-mono font-semibold text-[#2563EB] dark:text-[#60A5FA]">
+                      <td className="px-4 py-3 font-mono font-semibold text-[#7C3AED] dark:text-[#34D399]">
                         {formatBitrate(bitrateKbps)}
                       </td>
                       <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
@@ -960,9 +960,9 @@ export const IngestServerView: React.FC<Props> = ({
                   <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Resolution</span>
                   <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.resolution || '1920x1080'}</p>
                 </div>
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Bitrate</span>
-                  <p className="font-mono font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatBitrate(inspectorBitrate)}</p>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#0F172A] dark:border-[#334155]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#94A3B8]">Bitrate</span>
+                  <p className="font-mono font-bold text-[#7C3AED] dark:text-[#34D399]">{formatBitrate(inspectorBitrate)}</p>
                 </div>
                 <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
                   <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">FPS</span>
