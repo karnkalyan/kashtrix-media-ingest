@@ -801,10 +801,10 @@ const Sidebar: React.FC<{
                       </div>
 
                       {!isCollapsed && (
-                        <span className={`truncate text-[14px] font-semibold transition-colors ${
+                        <span className={`truncate text-[14px] transition-colors ${
                           isActive
                             ? 'text-[#1E1B4B] dark:text-white font-bold'
-                            : 'text-[#475569] dark:text-[#F1EAFA] group-hover:text-[#0F172A] group-hover:dark:text-white'
+                            : 'text-[#334155] dark:text-white font-semibold group-hover:text-[#0F172A] group-hover:dark:text-white'
                         }`}>
                           {item.label}
                         </span>

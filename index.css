@@ -233,6 +233,29 @@ html.dark img.sidebar-logo {
   filter: brightness(0) invert(1) !important;
 }
 
+/* Force Sidebar Inactive Navigation Menu Text to 100% Bright White */
+.dark aside nav button span,
+html.dark aside nav button span,
+.dark aside nav button div span,
+.dark aside nav button span.truncate {
+  color: #FFFFFF !important;
+  opacity: 0.95 !important;
+}
+
+.dark aside nav button:hover span,
+html.dark aside nav button:hover span {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+.dark aside nav button.bg-\[\#F3EEFF\] span,
+html.dark aside nav button.bg-\[\#F3EEFF\] span,
+.dark aside nav button.dark\:bg-\[\#311754\] span {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
 /* Universal Dark Mode Input, Select, & Textarea Formatting */
 .dark input,
 .dark select,
