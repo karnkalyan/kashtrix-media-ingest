@@ -51,7 +51,7 @@ const inputClass = 'h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 
 /* ═══════════════════════════════════════════
    OFFICIAL KASHTRIX STREAMOPS LOGO
    ═══════════════════════════════════════════ */
-const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ size = 154, variant = 'wordmark' }) => {
+const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'icon' }> = ({ size = 180, variant = 'wordmark' }) => {
   if (variant === 'icon') {
     return (
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-[#6D32D9] to-[#9D4EDD] shadow-md shadow-[#6D32D9]/30 text-white font-black text-[16px] shrink-0">
@@ -61,12 +61,12 @@ const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'i
   }
 
   return (
-    <div className="flex items-center shrink-0 select-none py-1 overflow-hidden">
+    <div className="flex items-center select-none py-1 w-full overflow-hidden pr-2">
       <img
         src="/logo.png"
         alt="KASHTRIX StreamOps"
-        style={{ height: variant === 'full' ? 'auto' : '34px', maxWidth: `${size}px` }}
-        className="w-auto object-contain max-h-8"
+        style={{ height: variant === 'full' ? 'auto' : '38px', maxWidth: `${size}px` }}
+        className="w-full h-9 object-contain object-left shrink-0"
         draggable={false}
       />
     </div>
@@ -668,23 +668,24 @@ interface NavItem {
   group: string;
   iconBg: string;
   iconColor: string;
+  iconShadow: string;
   badge?: string;
   badgeColor?: string;
   licenseModule?: string;
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'MAIN', iconBg: 'bg-[#EEF2FF] dark:bg-[#1E1B4B]', iconColor: 'text-[#4F46E5]' },
-  { id: 'channels', label: 'Channels Playout', icon: FiTv, group: 'OPERATIONS', iconBg: 'bg-[#F3E8FF] dark:bg-[#2E1065]', iconColor: 'text-[#9333EA]', licenseModule: 'live-tv' },
-  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'OPERATIONS', iconBg: 'bg-[#FCE7F3] dark:bg-[#500724]', iconColor: 'text-[#DB2777]', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
-  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'OPERATIONS', iconBg: 'bg-[#D1FAE5] dark:bg-[#064E3B]', iconColor: 'text-[#059669]', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
-  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'MEDIA & ARCHIVE', iconBg: 'bg-[#FEF3C7] dark:bg-[#451A03]', iconColor: 'text-[#D97706]', licenseModule: 'recording-library' },
-  { id: 'monitor', label: 'System Telemetry', icon: FiActivity, group: 'OBSERVABILITY', iconBg: 'bg-[#E0F2FE] dark:bg-[#0C4A6E]', iconColor: 'text-[#0284C7]', licenseModule: 'system-monitor' },
-  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'OBSERVABILITY', iconBg: 'bg-[#FFEDD5] dark:bg-[#431407]', iconColor: 'text-[#EA580C]' },
-  { id: 'users', label: 'User Management', icon: FiUsers, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#EDE9FE] dark:bg-[#2E1065]', iconColor: 'text-[#7C3AED]' },
-  { id: 'settings', label: 'Engine Settings', icon: FiSettings, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#F1F5F9] dark:bg-[#1E293B]', iconColor: 'text-[#475569]' },
-  { id: 'license', label: 'License Admin', icon: FiKey, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#FFE4E6] dark:bg-[#4C0519]', iconColor: 'text-[#E11D48]' },
-  { id: 'account', label: 'Account Profile', icon: FiUser, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#CCFBF1] dark:bg-[#042F2E]', iconColor: 'text-[#0D9488]' },
+  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'MAIN', iconBg: 'bg-[#EEF2FF] dark:bg-[#1E1B4B]', iconColor: 'text-[#4F46E5]', iconShadow: 'shadow-xs shadow-[#4F46E5]/30' },
+  { id: 'channels', label: 'Channels Playout', icon: FiTv, group: 'OPERATIONS', iconBg: 'bg-[#F3E8FF] dark:bg-[#2E1065]', iconColor: 'text-[#9333EA]', iconShadow: 'shadow-xs shadow-[#9333EA]/30', licenseModule: 'live-tv' },
+  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'OPERATIONS', iconBg: 'bg-[#FCE7F3] dark:bg-[#500724]', iconColor: 'text-[#DB2777]', iconShadow: 'shadow-xs shadow-[#DB2777]/30', badge: 'REC', badgeColor: 'bg-[#E11D72]', licenseModule: 'ingest-server' },
+  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'OPERATIONS', iconBg: 'bg-[#D1FAE5] dark:bg-[#064E3B]', iconColor: 'text-[#059669]', iconShadow: 'shadow-xs shadow-[#059669]/30', badge: 'LIVE', badgeColor: 'bg-[#16A36A]', licenseModule: 'live-server' },
+  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'MEDIA & ARCHIVE', iconBg: 'bg-[#FEF3C7] dark:bg-[#451A03]', iconColor: 'text-[#D97706]', iconShadow: 'shadow-xs shadow-[#D97706]/30', licenseModule: 'recording-library' },
+  { id: 'monitor', label: 'System Telemetry', icon: FiActivity, group: 'OBSERVABILITY', iconBg: 'bg-[#E0F2FE] dark:bg-[#0C4A6E]', iconColor: 'text-[#0284C7]', iconShadow: 'shadow-xs shadow-[#0284C7]/30', licenseModule: 'system-monitor' },
+  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'OBSERVABILITY', iconBg: 'bg-[#FFEDD5] dark:bg-[#431407]', iconColor: 'text-[#EA580C]', iconShadow: 'shadow-xs shadow-[#EA580C]/30' },
+  { id: 'users', label: 'User Management', icon: FiUsers, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#EDE9FE] dark:bg-[#2E1065]', iconColor: 'text-[#7C3AED]', iconShadow: 'shadow-xs shadow-[#7C3AED]/30' },
+  { id: 'settings', label: 'Engine Settings', icon: FiSettings, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#F1F5F9] dark:bg-[#1E293B]', iconColor: 'text-[#475569]', iconShadow: 'shadow-xs shadow-[#475569]/20' },
+  { id: 'license', label: 'License Admin', icon: FiKey, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#FFE4E6] dark:bg-[#4C0519]', iconColor: 'text-[#E11D48]', iconShadow: 'shadow-xs shadow-[#E11D48]/30' },
+  { id: 'account', label: 'Account Profile', icon: FiUser, group: 'SYSTEM & ADMIN', iconBg: 'bg-[#CCFBF1] dark:bg-[#042F2E]', iconColor: 'text-[#0D9488]', iconShadow: 'shadow-xs shadow-[#0D9488]/30' },
 ];
 
 /* ═══════════════════════════════════════════
@@ -727,14 +728,14 @@ const Sidebar: React.FC<{
           } ${collapsed && !mobileOpen ? 'lg:w-[68px]' : 'lg:w-[236px]'}`}
       >
         {/* Brand Header */}
-        <div className="flex h-14 items-center justify-between border-b border-[#E8DFF0] px-3.5 dark:border-[#27153B]">
-          <div className="flex items-center gap-2 overflow-hidden">
-            <KashtrixLogo size={collapsed && !mobileOpen ? 32 : 148} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
+        <div className="flex h-15 items-center justify-between border-b border-[#E8DFF0] px-3.5 dark:border-[#27153B]">
+          <div className="flex-1 flex items-center overflow-hidden">
+            <KashtrixLogo size={collapsed && !mobileOpen ? 32 : 180} variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
           </div>
           <button
             type="button"
             onClick={onToggle}
-            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147] dark:bg-[#1E112B] dark:border-[#371F52] dark:text-[#A494B5] dark:hover:bg-[#6D32D9] dark:hover:text-white"
+            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147] dark:bg-[#1E112B] dark:border-[#371F52] dark:text-[#A494B5] dark:hover:bg-[#6D32D9] dark:hover:text-white shrink-0"
             title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           >
             {collapsed ? <FiChevronRight size={14} /> : <FiChevronLeft size={14} />}
@@ -742,11 +743,11 @@ const Sidebar: React.FC<{
         </div>
 
         {/* Navigation Items Grouped */}
-        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-3 scrollbar-hide">
+        <nav className="flex-1 overflow-y-auto px-2 py-2.5 space-y-2 scrollbar-hide">
           {groups.map(group => (
-            <div key={group.name} className="space-y-1">
+            <div key={group.name} className="space-y-0.5">
               {(!collapsed || mobileOpen) && (
-                <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">
+                <div className="px-2 pt-2 pb-0.5 text-[9.5px] font-bold uppercase tracking-wider text-[#94A3B8] dark:text-[#64748B]">
                   {group.name}
                 </div>
               )}
@@ -758,15 +759,15 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-10 w-full items-center justify-between rounded-xl px-2 text-left text-[12px] font-semibold tracking-tight transition-all duration-150 ${isActive
-                        ? 'bg-[#F4EEFF] text-[#2B0D3A] shadow-xs dark:bg-[#2B1542] dark:text-white'
-                        : 'text-[#475569] hover:bg-[#F8F7FA] hover:text-[#0F172A] dark:text-[#CBD5E1] dark:hover:bg-[#1E112B] dark:hover:text-white'
+                    className={`group relative flex h-9 w-full items-center justify-between rounded-xl px-2 text-left text-[11.5px] font-medium tracking-tight transition-all duration-150 ${isActive
+                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold dark:bg-[#2B1542] dark:text-white'
+                        : 'text-[#334155] hover:bg-[#F8F7FA] hover:text-[#0F172A] dark:text-[#CBD5E1] dark:hover:bg-[#1E112B] dark:hover:text-white'
                       } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
                     <div className="flex items-center gap-2.5 overflow-hidden">
-                      {/* Circular Icon Badge (Matching Reference UI) */}
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-transform duration-150 group-hover:scale-105 ${item.iconBg}`}>
+                      {/* Circular Icon Badge with Soft Colored Drop Shadow */}
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-all duration-150 group-hover:scale-105 ${item.iconBg} ${item.iconShadow}`}>
                         <Icon size={14} className={item.iconColor} />
                       </div>
 
@@ -776,13 +777,13 @@ const Sidebar: React.FC<{
                     </div>
 
                     {(!collapsed || mobileOpen) && (
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 pr-0.5">
                         {item.badge ? (
                           <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold text-white ${item.badgeColor || 'bg-[#6D32D9]'}`}>
                             {item.badge}
                           </span>
                         ) : (
-                          <FiChevronRight size={13} className="text-[#94A3B8] group-hover:text-[#64748B] transition-transform duration-150 group-hover:translate-x-0.5" />
+                          <FiChevronRight size={12} className="text-[#CBD5E1] group-hover:text-[#94A3B8] transition-transform duration-150 group-hover:translate-x-0.5" />
                         )}
                       </div>
                     )}
