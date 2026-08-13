@@ -100,7 +100,9 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
             role: formRole,
           }),
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data: any = {};
+        try { data = JSON.parse(text); } catch { }
         if (!res.ok) throw new Error(data.error || 'Failed to update user');
         toast.success('User updated successfully');
       } else {
@@ -113,7 +115,9 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
             role: formRole,
           }),
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data: any = {};
+        try { data = JSON.parse(text); } catch { }
         if (!res.ok) throw new Error(data.error || 'Failed to create user');
         toast.success('User created successfully');
       }
@@ -121,7 +125,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
       setDrawerOpen(false);
       fetchUsers();
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || 'Error processing request');
     } finally {
       setSubmitting(false);
     }
@@ -137,12 +141,14 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try { data = JSON.parse(text); } catch { }
       if (!res.ok) throw new Error(data.error || 'Failed to delete user');
       toast.success('User deleted');
       fetchUsers();
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || 'Failed to delete user');
     }
   };
 

@@ -53,7 +53,26 @@ class PrismaStore {
       const [username,password_hash,role] = args; const id = Math.max(0,...this.data.users.map(r=>r.id))+1; this.data.users.push({id,username,password_hash,role,created_at:new Date()});
       this.persist(() => this.prisma.user.create({data:{id,username,email:`${username}@kashtrix.local`,passwordHash:password_hash,role:role==='user'?'USER':'ADMIN'}})); return {lastInsertRowid:id};
     }
-    if (sql.startsWith('update users set')) { const [username,password_hash,current] = args; const row=this.data.users.find(r=>r.username===current); if(row) Object.assign(row,{username,password_hash}); this.persist(()=>this.prisma.user.update({where:{id:row.id},data:{username,passwordHash:password_hash}})); return {};
+    if (sql.startsWith('update users set')) {
+      const [username, password_hash, role, idValue] = args;
+      const targetId = Number(idValue || args[args.length - 1]);
+      const row = this.data.users.find(r => Number(r.id) === targetId || r.username === username);
+      if (row) {
+        if (username) row.username = username;
+        if (password_hash) row.password_hash = password_hash;
+        if (role) row.role = role;
+        this.persist(() => this.prisma.user.update({
+          where: { id: row.id },
+          data: { username: row.username, passwordHash: row.password_hash, role: String(row.role || 'admin').toUpperCase() }
+        }).catch(e => console.error('[Prisma] update user error:', e.message)));
+      }
+      return {};
+    }
+    if (sql.startsWith('delete from users')) {
+      const targetId = Number(args[0]);
+      this.data.users = this.data.users.filter(r => Number(r.id) !== targetId);
+      this.persist(() => this.prisma.user.delete({ where: { id: targetId } }).catch(e => console.error('[Prisma] delete user error:', e.message)));
+      return {};
     }
     if (sql.startsWith('insert into kv_store')) { const [key,value]=args; const row=this.data.kv.find(r=>r.key===key); row?row.value=value:this.data.kv.push({key,value}); this.persist(()=>this.prisma.kvStore.upsert({where:{key},update:{value},create:{key,value}})); return {};
     }
