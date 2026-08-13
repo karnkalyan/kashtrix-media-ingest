@@ -328,7 +328,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                       <button
                         type="button"
                         onClick={() => setPreview(recording)}
-                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] dark:hover:bg-[#2D1A45]"
                       >
                         <Play size={12} /> Preview
                       </button>
@@ -336,7 +336,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                         href={`${mediaBase}/recordings/${recording.app}/${recording.stream}/${recording.file_name}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F8F7FA]"
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F8F7FA] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#2D1A45]"
                         title="Download"
                       >
                         <Download size={13} />
@@ -344,7 +344,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                       <button
                         type="button"
                         onClick={() => remove(recording)}
-                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545]"
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#450A0A] dark:hover:text-[#FCA5A5]"
                         title="Delete"
                       >
                         <Trash2 size={13} />
@@ -358,7 +358,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
         ) : (
           <div className="grid grid-cols-1 gap-3.5 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visible.map(recording => (
-              <div key={recording.id} className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs">
+              <div key={recording.id} className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
                 <div>
                   <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-slate-950 mb-2.5">
                     <img
@@ -374,15 +374,15 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                     </div>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-[#1B1024] truncate text-[13px]" title={recording.file_name}>
+                    <h3 className="font-semibold text-[#1B1024] truncate text-[13px] dark:text-white" title={recording.file_name}>
                       {recording.file_name}
                     </h3>
                     <ProtocolBadge protocol={getRecordingFormat(recording).toUpperCase()} size="sm" />
                   </div>
-                  <p className="mt-1 text-[11px] text-[#6F6078] truncate">
+                  <p className="mt-1 text-[11px] text-[#6F6078] truncate dark:text-[#B9A5CD]">
                     {recording.app}/{recording.stream} • {recording.resolution || 'source'}
                   </p>
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#6F6078]">
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
                     <span className="font-mono">{formatDuration(durationSeconds(recording))}</span>
                     <span className="font-mono font-semibold">{formatBytes(Number(recording.size || 0))}</span>
                   </div>
@@ -421,8 +421,8 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
 
         {/* Pagination Footer */}
         {pageCount > 1 && (
-          <div className="flex items-center justify-between border-t border-[#E8DFF0] bg-[#F8F7FA] px-4 py-2.5 text-[11px]">
-            <span className="text-[#6F6078]">Page {page} of {pageCount} • {filtered.length} items</span>
+          <div className="flex items-center justify-between border-t border-[#E8DFF0] bg-[#F8F7FA] px-4 py-2.5 text-[11px] dark:bg-[#211335] dark:border-[#311B4E]">
+            <span className="text-[#6F6078] dark:text-[#B9A5CD]">Page {page} of {pageCount} • {filtered.length} items</span>
             <div className="flex gap-1">
               <button
                 type="button"

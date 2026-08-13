@@ -218,10 +218,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   return <>
     <div className="mt-3 grid min-w-0 items-start gap-3 xl:grid-cols-[300px_minmax(0,680px)]">
       <section className="app-panel min-w-0 p-4">
-        <div className="mb-4 flex items-center justify-between gap-3"><h3 className="panel-kicker"><FiVideo /> Source & capture</h3>{sourceType === 'device' && <button type="button" onClick={refreshDevices} className="rounded-lg border border-slate-200 p-2 text-violet-600 transition hover:bg-violet-50" title="Detect devices"><FiRefreshCw className={devicesLoading ? 'animate-spin' : ''} /></button>}</div>
-        <div className="mb-4 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-          <button type="button" onClick={() => { setSourceType('device'); patch({ sourceType: 'device', ...(activeConfig.encoder === 'copy' ? { encoder: 'cpu' as const } : {}) }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'device' ? 'bg-[var(--primary)] text-white' : 'text-slate-500'}`}>Capture device</button>
-          <button type="button" onClick={() => { setSourceType('ingest'); patch({ sourceType: 'ingest' }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'ingest' ? 'bg-[var(--primary)] text-white' : 'text-slate-500'}`}>Live ingest</button>
+        <div className="mb-4 flex items-center justify-between gap-3"><h3 className="panel-kicker"><FiVideo /> Source & capture</h3>{sourceType === 'device' && <button type="button" onClick={refreshDevices} className="rounded-lg border border-[#E8DFF0] p-2 text-[#7C3AED] transition hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45]" title="Detect devices"><FiRefreshCw className={devicesLoading ? 'animate-spin' : ''} /></button>}</div>
+        <div className="mb-4 grid grid-cols-2 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-0.5 dark:bg-[#211335] dark:border-[#371F59]">
+          <button type="button" onClick={() => { setSourceType('device'); patch({ sourceType: 'device', ...(activeConfig.encoder === 'copy' ? { encoder: 'cpu' as const } : {}) }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'device' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Capture device</button>
+          <button type="button" onClick={() => { setSourceType('ingest'); patch({ sourceType: 'ingest' }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'ingest' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Live ingest</button>
         </div>
         <div className="grid grid-cols-1 gap-3">
         {sourceType === 'device' ? <>
@@ -409,9 +409,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       </div>
     </section>
 
-    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md sm:flex-row sm:items-center sm:justify-end">
-      <span className="mr-auto text-[10px] text-slate-500">Save configuration before starting recording sessions.</span>
-      <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-slate-200 px-4 text-[11px] font-semibold text-slate-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
+    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-[#E8DFF0] bg-white/95 p-3 shadow-md dark:bg-[#190E28] dark:border-[#311B4E] sm:flex-row sm:items-center sm:justify-end">
+      <span className="mr-auto text-[10px] text-slate-500 dark:text-[#B9A5CD]">Save configuration before starting recording sessions.</span>
+      <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[11px] font-semibold text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] hover:bg-[#F4EEFF] dark:hover:bg-[#2D1A45] disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
 
       {isRecordingActive ? (
         <button

@@ -42,15 +42,15 @@ export function SegmentedControl<T extends string = string>({
               size === 'sm' ? 'h-7 px-2.5 text-[11px]' : 'h-8 px-3 text-[12px]'
             } ${
               isActive
-                ? 'bg-white text-[#2B0D3A] font-semibold shadow-xs ring-1 ring-[#6D32D9]/20'
-                : 'text-[#6F6078] hover:bg-[#F4EEFF]/60 hover:text-[#1B1024]'
+                ? 'bg-[#7C3AED] text-white font-semibold shadow-xs dark:bg-[#7C3AED] dark:text-white'
+                : 'text-[#6F6078] hover:bg-[#F4EEFF]/60 hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:bg-[#2D1A45] dark:hover:text-white'
             }`}
           >
-            {Icon && <Icon size={size === 'sm' ? 13 : 14} className={isActive ? 'text-[#6D32D9]' : 'text-[#6F6078]'} />}
+            {Icon && <Icon size={size === 'sm' ? 13 : 14} className={isActive ? 'text-white' : 'text-[#6F6078] dark:text-[#B9A5CD]'} />}
             <span>{opt.label}</span>
             {opt.badge !== undefined && (
               <span className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
-                isActive ? 'bg-[#F4EEFF] text-[#4A1B7A]' : 'bg-[#E8DFF0] text-[#6F6078]'
+                isActive ? 'bg-white/20 text-white' : 'bg-[#E8DFF0] text-[#6F6078] dark:bg-[#371F59] dark:text-[#B9A5CD]'
               }`}>
                 {opt.badge}
               </span>
