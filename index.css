@@ -183,31 +183,31 @@
 .dark,
 html.dark {
   color-scheme: dark;
-  --background: #0F172A;
-  --background-secondary: #1E293B;
-  --surface: #1E293B;
-  --surface-secondary: #0F172A;
-  --surface-elevated: #334155;
-  --surface-muted: #0F172A;
-  --surface-hover: #334155;
+  --background: #0F0817;
+  --background-secondary: #190E28;
+  --surface: #190E28;
+  --surface-secondary: #211335;
+  --surface-elevated: #291842;
+  --surface-muted: #211335;
+  --surface-hover: #311B4E;
 
-  --border: #334155;
-  --border-strong: #475569;
-  --border-focus: #7C3AED;
+  --border: #311B4E;
+  --border-strong: #45266E;
+  --border-focus: #8B5CF6;
 
-  --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
-  --text-inverse: #0F172A;
+  --text-primary: #F1EAFA;
+  --text-secondary: #B9A5CD;
+  --text-muted: #8E78A6;
+  --text-inverse: #0F0817;
 
   --primary: #8B5CF6;
   --primary-hover: #7C3AED;
   --primary-dark: #6D32D9;
   --primary-light: #A78BFA;
-  --primary-subtle: #1E293B;
-  --primary-50: #1E293B;
-  --primary-100: #334155;
-  --primary-200: #475569;
+  --primary-subtle: #291842;
+  --primary-50: #291842;
+  --primary-100: #371F59;
+  --primary-200: #482975;
   --operational-purple: #A78BFA;
   --stream-purple: #C4B5FD;
 
@@ -217,12 +217,12 @@ html.dark {
 }
 
 /* ═══════════════════════════════════════════
-   GLOBAL DARK GREY MODE AUTOMATIC ENGINE & OVERRIDES
+   OFFICIAL KASHTRIX BRAND THEME (DEEP PURPLE & PINK)
    ═══════════════════════════════════════════ */
 .dark, html.dark, body.dark {
   color-scheme: dark;
-  background-color: #0F172A !important;
-  color: #F8FAFC !important;
+  background-color: #0F0817 !important;
+  color: #F1EAFA !important;
 }
 
 /* Force Sidebar Logo to 100% Pure White in Dark Mode */
@@ -233,38 +233,50 @@ html.dark img.sidebar-logo {
   filter: brightness(0) invert(1) !important;
 }
 
-/* All Cards, Sidebar, Navbar & Elevation Elements -> Dark Grey #1E293B */
-.dark .bg-white,
-.dark .bg-\[\#190E28\],
-.dark .bg-\[\#1E112B\],
-.dark .bg-\[\#130B1C\],
-.dark .bg-\[\#190B28\],
-.dark .bg-\[\#1A0B2E\],
-.dark .bg-\[\#1E1130\] {
-  background-color: #1E293B !important;
+/* Universal Dark Mode Input, Select, & Textarea Formatting */
+.dark input,
+.dark select,
+.dark textarea,
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #211335 !important;
+  border-color: #371F59 !important;
+  color: #F1EAFA !important;
 }
 
-/* Base App & Input Backgrounds -> Dark Slate #0F172A */
+.dark input::placeholder,
+.dark textarea::placeholder,
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #8E78A6 !important;
+}
+
+.dark select option,
+html.dark select option {
+  background-color: #190E28 !important;
+  color: #F1EAFA !important;
+}
+
+/* All Cards, Sidebar, Navbar & Elevation Elements -> Deep Purple #190E28 */
+.dark .bg-white,
+.dark .bg-\[\#1E293B\] {
+  background-color: #190E28 !important;
+}
+
+/* Base App Canvas & Secondary Backgrounds -> Deep Obsidian #0F0817 / #211335 */
 .dark .bg-\[\#F8F7FA\],
 .dark .bg-\[\#F8FAFC\],
-.dark .bg-\[\#211335\],
-.dark .bg-\[\#0F0817\],
-.dark .bg-\[\#291842\],
-.dark .bg-\[\#190E28\],
-.dark .bg-\[\#27153B\] {
-  background-color: #0F172A !important;
+.dark .bg-\[\#0F172A\] {
+  background-color: #211335 !important;
 }
 
-/* Card Hovers & Selected Sub-Elements -> Slate Grey #334155 */
+/* Card Hovers & Selected Sub-Elements -> Rich Purple #2D1A45 / #311B4E */
 .dark .bg-\[\#F4EEFF\],
 .dark .bg-\[\#F4EEFF\]\/50,
 .dark .bg-\[\#F3EEFF\],
-.dark .bg-\[\#2D1A45\],
-.dark .bg-\[\#311754\],
-.dark .bg-\[\#371F59\],
-.dark .bg-\[\#2B1745\],
-.dark .bg-\[\#281640\] {
-  background-color: #334155 !important;
+.dark .bg-\[\#334155\] {
+  background-color: #2D1A45 !important;
 }
 
 .dark .bg-\[\#F0FDF4\] {
@@ -279,36 +291,29 @@ html.dark img.sidebar-logo {
   background-color: #451A03 !important;
 }
 
-/* Borders -> Slate Grey #334155 */
+/* Borders -> Deep Purple Border #311B4E */
 .dark .border-\[\#E8DFF0\],
 .dark .border-\[\#D8CBE4\],
 .dark .border-\[\#E8EDF5\],
-.dark .border-\[\#27153B\],
-.dark .border-\[\#311B4E\],
-.dark .border-\[\#371F59\],
-.dark .border-\[\#311B4E\],
-.dark .border-\[\#45266E\],
-.dark .border-\[\#371F52\] {
-  border-color: #334155 !important;
+.dark .border-\[\#334155\] {
+  border-color: #311B4E !important;
 }
 
-/* Text Overrides -> Bright White for Titles & Clean Slate for Secondary */
+/* Text Overrides -> Bright Light Lavender for Titles & Text */
 .dark .text-\[\#1B1024\],
 .dark .text-\[\#0F172A\],
 .dark .text-\[\#1E1B4B\] {
-  color: #F8FAFC !important;
+  color: #F1EAFA !important;
 }
 
 .dark .text-\[\#6F6078\],
 .dark .text-\[\#64748B\],
-.dark .text-\[\#8E78A6\],
-.dark .text-\[\#B9A5CD\],
-.dark .text-\[\#A494B5\] {
-  color: #CBD5E1 !important;
+.dark .text-\[\#94A3B8\] {
+  color: #B9A5CD !important;
 }
 
 .dark .text-\[\#351147\] {
-  color: #F8FAFC !important;
+  color: #F1EAFA !important;
 }
 
 .dark .text-\[\#351147\] {

@@ -760,11 +760,11 @@ const Sidebar: React.FC<{
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8EDF5] bg-white transition-all duration-200 shadow-xs dark:bg-[#1E293B] dark:border-[#334155] ${mobileOpen ? 'w-[288px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8EDF5] bg-white transition-all duration-200 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E] ${mobileOpen ? 'w-[288px] translate-x-0' : '-translate-x-full lg:translate-x-0'
           } ${collapsed && !mobileOpen ? 'lg:w-[72px]' : 'lg:w-[288px]'}`}
       >
         {/* Brand Header */}
-        <div className="flex h-16 items-center justify-center border-b border-[#E8EDF5] px-3 dark:border-[#334155]">
+        <div className="flex h-16 items-center justify-center border-b border-[#E8EDF5] px-3 dark:border-[#311B4E]">
           <div className="flex items-center justify-center w-full overflow-hidden">
             <KashtrixLogo variant={collapsed && !mobileOpen ? 'icon' : 'wordmark'} />
           </div>
@@ -775,7 +775,7 @@ const Sidebar: React.FC<{
           {groups.map(group => (
             <div key={group.name} className="space-y-1.5">
               {(!collapsed || mobileOpen) && (
-                <div className="px-3 pt-3 pb-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#64748B] dark:text-[#94A3B8] select-none">
+                <div className="px-3 pt-3 pb-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#64748B] dark:text-[#C4B5FD] select-none">
                   {group.name}
                 </div>
               )}
@@ -790,8 +790,8 @@ const Sidebar: React.FC<{
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
                     className={`group relative flex h-11 w-full items-center rounded-xl text-left transition-all duration-150 ${
                       isActive
-                        ? 'bg-[#F3EEFF] text-[#1E1B4B] font-semibold border-l-4 border-[#7C3AED] dark:bg-[#7C3AED] dark:text-white dark:border-[#A78BFA] shadow-2xs'
-                        : 'hover:bg-[#F8FAFC] dark:hover:bg-[#334155]'
+                        ? 'bg-[#F3EEFF] text-[#1E1B4B] font-semibold border-l-4 border-[#7C3AED] dark:bg-[#311754] dark:text-white dark:border-[#A78BFA] shadow-2xs'
+                        : 'hover:bg-[#F8FAFC] dark:hover:bg-[#281640]'
                     } ${isCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}
                     title={isCollapsed ? item.label : undefined}
                   >
@@ -804,7 +804,7 @@ const Sidebar: React.FC<{
                         <span className={`truncate text-[14px] font-semibold transition-colors ${
                           isActive
                             ? 'text-[#1E1B4B] dark:text-white font-bold'
-                            : 'text-[#475569] dark:text-[#F8FAFC] group-hover:text-[#0F172A] group-hover:dark:text-white'
+                            : 'text-[#475569] dark:text-[#F1EAFA] group-hover:text-[#0F172A] group-hover:dark:text-white'
                         }`}>
                           {item.label}
                         </span>
@@ -831,28 +831,28 @@ const Sidebar: React.FC<{
 
         {/* Bottom License Status Card */}
         {(!collapsed || mobileOpen) ? (
-          <div className="border-t border-[#E8EDF5] p-3.5 dark:border-[#27153B]">
-            <div className="rounded-2xl border border-[#E8EDF5] bg-[#F8FAFC] p-3 flex items-center justify-between shadow-2xs dark:bg-[#1E112B] dark:border-[#371F52]">
+          <div className="border-t border-[#E8EDF5] p-3.5 dark:border-[#311B4E]">
+            <div className="rounded-2xl border border-[#E8EDF5] bg-[#F8FAFC] p-3 flex items-center justify-between shadow-2xs dark:bg-[#211335] dark:border-[#371F59]">
               <div className="space-y-0.5 overflow-hidden pr-2">
                 <div className="flex items-center gap-2 font-bold text-[13px] text-[#0F172A] dark:text-white">
                   <span className="relative flex h-2.5 w-2.5 shrink-0">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#10B981] opacity-75" />
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#10B981]" />
                   </span>
-                  <span className="truncate">{licenseStatus === 'activated' ? 'Pro License Active' : 'License Active'}</span>
+                  <span className="truncate">{licenseStatus === 'activated' ? 'Pro License Active' : 'Trial Mode'}</span>
                 </div>
-                <div className="text-[11px] font-medium text-[#64748B] truncate dark:text-[#A494B5]">
+                <div className="text-[11px] font-medium text-[#64748B] truncate dark:text-[#B9A5CD]">
                   {customerName || 'Kalyan'}
                 </div>
               </div>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E0F2FE] text-[#0284C7] shrink-0 dark:bg-[#0C4A6E] dark:text-[#38BDF8]">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#E0F2FE] text-[#0284C7] shrink-0 dark:bg-[#371F59] dark:text-[#A78BFA]">
                 <FiAward size={16} />
               </div>
             </div>
           </div>
         ) : (
-          <div className="border-t border-[#E8EDF5] p-2 text-center dark:border-[#27153B]">
-            <div className="mx-auto grid h-9 w-9 place-items-center rounded-xl bg-[#F8FAFC] text-[#10B981] dark:bg-[#1E112B]" title="License Active">
+          <div className="border-t border-[#E8EDF5] p-2 text-center dark:border-[#311B4E]">
+            <div className="mx-auto grid h-9 w-9 place-items-center rounded-xl bg-[#F8FAFC] text-[#10B981] dark:bg-[#211335]" title="License Active">
               <FiShield size={17} />
             </div>
           </div>
@@ -904,11 +904,11 @@ const TopHeader: React.FC<{
   }, [activeView, customerName, licenseStatus]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-[56px] items-center justify-between border-b border-[#E8DFF0] bg-white px-4 dark:bg-[#1E293B] dark:border-[#334155]">
+    <header className="sticky top-0 z-30 flex h-[56px] items-center justify-between border-b border-[#E8DFF0] bg-white px-4 dark:bg-[#190E28] dark:border-[#311B4E]">
       <div className="flex items-center gap-3">
         <button
           onClick={onMobileMenuOpen}
-          className="flex h-8 w-8 items-center justify-center rounded text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#94A3B8] dark:hover:bg-[#334155] lg:hidden"
+          className="flex h-8 w-8 items-center justify-center rounded text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#B9A5CD] dark:hover:bg-[#211335] lg:hidden"
         >
           <FiMenu size={18} />
         </button>
