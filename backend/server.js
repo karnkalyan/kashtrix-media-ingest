@@ -367,6 +367,11 @@ app.use(cors());
 
 app.use(express.json());
 
+// Serve static media and recordings
+app.use('/media/recordings', express.static(RECORDINGS_DIR));
+app.use('/recordings', express.static(RECORDINGS_DIR));
+app.use('/media', express.static(MEDIA_ROOT));
+
 const publicPaths = new Set(['/api/auth/login', '/api/license/status', '/api/_hidden/license/generate']);
 
 const authMiddleware = (req, res, next) => {
@@ -2008,9 +2013,10 @@ mediaApp.use('/dash', express.static(DASH_DIR, {
 // Also serve /hls/* directly from HLS_DIR (alternative URL)
 mediaApp.use('/hls', express.static(HLS_DIR));
 
-// Serve recordings
+// Serve recordings and media static paths
+mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR));
 mediaApp.use('/recordings', express.static(RECORDINGS_DIR));
-mediaApp.use('/recordings', express.static(path.join(__dirname, 'media', 'recordings')));
+mediaApp.use('/media', express.static(MEDIA_ROOT));
 mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
     const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(req.params.id);
     if (!recording || !fs.existsSync(recording.file_path)) return res.status(404).end();
