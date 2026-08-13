@@ -40,11 +40,12 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
       const res = await fetch('/api/users', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to fetch users');
-      setUsers(data.users || []);
+      const userList = Array.isArray(data.users) ? data.users : (Array.isArray(data) ? data : []);
+      setUsers(userList);
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || 'Failed to load users');
     } finally {
       setLoading(false);
     }
