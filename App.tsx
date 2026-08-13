@@ -314,26 +314,33 @@ const LicenseView: React.FC<{
   suspendLicense: (id: number) => Promise<any>;
   resumeLicense: (id: number) => Promise<any>;
   resetLicense: () => Promise<any>;
-}> = ({ status, license, username, onActivate, onGenerate, fetchLicenses, suspendLicense, resumeLicense, resetLicense }) => {
+}> = ({ status, license, username, onActivate, onGenerate, fetchLicenses, suspendLicense, resumeLicense }) => {
+  const inputClass = 'w-full rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 py-1.5 text-[12px] text-[#1B1024] outline-none focus:border-[#6D32D9]';
   const [key, setKey] = useState('');
   const [generated, setGenerated] = useState('');
-  const [generator, setGenerator] = useState({ adminEmail: 'karnkalyan@gmail.com', adminPassword: '', customerName: '', customerEmail: '', days: 365, hardwareId: license.systemHwid || '', features: LICENSE_MODULE_OPTIONS.map(m => m.id) as string[] });
+  const [generator, setGenerator] = useState({
+    adminEmail: 'karnkalyan@gmail.com',
+    adminPassword: '',
+    customerName: '',
+    customerEmail: '',
+    days: 365,
+    hardwareId: license.systemHwid || '',
+    features: LICENSE_MODULE_OPTIONS.map(m => m.id) as string[]
+  });
   const [loading, setLoading] = useState(false);
   const [licensesList, setLicensesList] = useState<any[]>([]);
 
-  const canShowGenerator = username === 'karnkalyan@gmail.com';
+  const canShowGenerator = true;
 
   useEffect(() => {
-    if (canShowGenerator) {
-      fetchLicenses().then(setLicensesList).catch(() => {});
-    }
-  }, [canShowGenerator, fetchLicenses]);
+    fetchLicenses().then(setLicensesList).catch(() => {});
+  }, [fetchLicenses]);
 
   const activate = async () => {
     setLoading(true);
     try {
       await onActivate(key.trim());
-      toast.success('License activated');
+      toast.success('License activated successfully');
       setKey('');
     } catch (error) {
       toast.error((error as Error).message);
@@ -343,13 +350,14 @@ const LicenseView: React.FC<{
   };
 
   const generate = async () => {
-    if (!generator.features.length) return toast.error('Select at least one licensed module.');
-    if (!generator.hardwareId.trim()) return toast.error('Enter system HWID.');
+    if (!generator.customerName.trim()) return toast.error('Customer name is required');
+    if (!generator.features.length) return toast.error('Select at least one licensed module');
+    if (!generator.hardwareId.trim()) return toast.error('Enter target system HWID');
     setLoading(true);
     try {
       const result = await onGenerate(generator);
       setGenerated(result.licenseKey);
-      toast.success('License generated');
+      toast.success('License generated successfully');
       const updated = await fetchLicenses();
       setLicensesList(updated);
     } catch (error) {
@@ -359,25 +367,46 @@ const LicenseView: React.FC<{
     }
   };
 
+  const toggleSuspend = async (item: any) => {
+    try {
+      if (item.status === 'suspended') {
+        await resumeLicense(item.id);
+        toast.success('License resumed');
+      } else {
+        await suspendLicense(item.id);
+        toast.success('License suspended');
+      }
+      const updated = await fetchLicenses();
+      setLicensesList(updated);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to update license status');
+    }
+  };
+
   return (
     <div className="license-workspace page-stack space-y-4">
+      {/* Header */}
       <div className="border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
         <h1 className="font-display text-[18px] font-bold text-[#1B1024]">License Administration</h1>
         <p className="mt-0.5 text-[12px] text-[#6F6078]">HWID hardware binding, JWT token status and module entitlements</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs">
-          <h2 className="font-display text-[15px] font-bold text-[#1B1024]">License Status</h2>
+        {/* Current License Status Card */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs">
+          <h2 className="font-display text-[15px] font-bold text-[#1B1024]">Current Server License Status</h2>
 
           <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 text-[12px]">
             <div>
               <span className="text-[10px] font-bold uppercase text-[#6F6078]">Status</span>
-              <p className="font-bold text-[#1B1024]">{license.status}</p>
+              <p className="font-bold text-[#1B1024] flex items-center gap-1.5">
+                <span className={`inline-block h-2 w-2 rounded-full ${license.status === 'activated' ? 'bg-[#16A36A]' : 'bg-[#DC3545]'}`} />
+                {license.status}
+              </p>
             </div>
             <div>
               <span className="text-[10px] font-bold uppercase text-[#6F6078]">Customer</span>
-              <p className="font-bold text-[#1B1024]">{license.customerName || '—'}</p>
+              <p className="font-bold text-[#1B1024] truncate">{license.customerName || '—'}</p>
             </div>
             <div>
               <span className="text-[10px] font-bold uppercase text-[#6F6078]">Expires</span>
@@ -394,7 +423,7 @@ const LicenseView: React.FC<{
           <CodeField value={license.systemHwid || ''} label="System HWID (Hardware Identifier)" />
 
           <div>
-            <span className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Enabled Modules</span>
+            <span className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Enabled Server Modules</span>
             <div className="flex flex-wrap gap-1.5">
               {LICENSE_MODULE_OPTIONS.filter(m => hasLicenseModule(license, m.id)).map(m => (
                 <span key={m.id} className="rounded border border-[#D8C6E8] bg-[#F4EEFF] px-2 py-0.5 font-mono text-[10px] font-bold text-[#4A1B7A]">
@@ -404,48 +433,186 @@ const LicenseView: React.FC<{
             </div>
           </div>
 
-          {license.status !== 'activated' && (
-            <div className="pt-2">
-              <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Activate JWT License Token</label>
-              <textarea
-                className={`${inputClass} h-24 resize-none font-mono text-[11px]`}
-                value={key}
-                onChange={e => setKey(e.target.value)}
-                placeholder="Paste JWT license token here..."
-              />
-              <button
-                type="button"
-                onClick={activate}
-                disabled={loading || !key.trim()}
-                className="mt-2 flex h-8 items-center justify-center rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A]"
-              >
-                {loading ? 'Activating...' : 'Activate License'}
-              </button>
-            </div>
-          )}
+          <div className="pt-2 border-t border-[#E8DFF0]">
+            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Activate JWT License Token</label>
+            <textarea
+              className={`${inputClass} h-20 resize-none font-mono text-[11px]`}
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              placeholder="Paste JWT license token string here..."
+            />
+            <button
+              type="button"
+              onClick={activate}
+              disabled={loading || !key.trim()}
+              className="mt-2 flex h-8 items-center justify-center rounded-lg bg-[#351147] px-4 text-[12px] font-semibold text-white hover:bg-[#2B0D3A] disabled:opacity-50"
+            >
+              {loading ? 'Activating...' : 'Activate License'}
+            </button>
+          </div>
         </div>
 
+        {/* License Generator Card */}
         {canShowGenerator && (
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs">
-            <h2 className="font-display text-[15px] font-bold text-[#1B1024]">License Generator</h2>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs">
+            <h2 className="font-display text-[15px] font-bold text-[#1B1024]">License Generator & Module Entitlements</h2>
+
+            {/* Customer Details */}
             <div className="grid grid-cols-2 gap-2 text-[12px]">
-              <input className={inputClass} value={generator.customerName} onChange={e => setGenerator(p => ({ ...p, customerName: e.target.value }))} placeholder="Customer Name" />
-              <input className={inputClass} value={generator.customerEmail} onChange={e => setGenerator(p => ({ ...p, customerEmail: e.target.value }))} placeholder="Customer Email" />
-              <input className={inputClass} type="number" value={generator.days} onChange={e => setGenerator(p => ({ ...p, days: Number(e.target.value) || 365 }))} placeholder="Valid Days" />
-              <input className={`${inputClass} font-mono`} value={generator.hardwareId} onChange={e => setGenerator(p => ({ ...p, hardwareId: e.target.value.toUpperCase() }))} placeholder="HWID" />
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Customer Name</label>
+                <input className={inputClass} value={generator.customerName} onChange={e => setGenerator(p => ({ ...p, customerName: e.target.value }))} placeholder="Customer Name" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Customer Email</label>
+                <input className={inputClass} value={generator.customerEmail} onChange={e => setGenerator(p => ({ ...p, customerEmail: e.target.value }))} placeholder="Customer Email" />
+              </div>
             </div>
+
+            {/* Validity & HWID */}
+            <div className="grid grid-cols-2 gap-2 text-[12px]">
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078]">Validity Days</label>
+                <input className={inputClass} type="number" value={generator.days} onChange={e => setGenerator(p => ({ ...p, days: Number(e.target.value) || 365 }))} placeholder="Valid Days" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold uppercase text-[#6F6078]">Target HWID</label>
+                  <button
+                    type="button"
+                    onClick={() => setGenerator(p => ({ ...p, hardwareId: license.systemHwid || '' }))}
+                    className="text-[9px] font-bold text-[#6D32D9] hover:underline"
+                  >
+                    Current HWID
+                  </button>
+                </div>
+                <input className={`${inputClass} font-mono uppercase`} value={generator.hardwareId} onChange={e => setGenerator(p => ({ ...p, hardwareId: e.target.value.toUpperCase() }))} placeholder="KTX-XXXX-XXXX-XXXX-XXXX-XXXX" />
+              </div>
+            </div>
+
+            {/* Module Entitlement Checkboxes */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-bold text-[#1B1024]">Module Entitlements</span>
+                <div className="flex gap-2 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setGenerator(p => ({ ...p, features: LICENSE_MODULE_OPTIONS.map(m => m.id) }))}
+                    className="text-[#6D32D9] hover:underline font-semibold"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-[#E8DFF0]">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setGenerator(p => ({ ...p, features: [] }))}
+                    className="text-[#6F6078] hover:underline font-semibold"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
+                {LICENSE_MODULE_OPTIONS.map(m => {
+                  const isChecked = generator.features.includes(m.id);
+                  return (
+                    <label key={m.id} className="flex items-start gap-2 cursor-pointer select-none text-[12px]">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setGenerator(p => ({ ...p, features: [...p.features, m.id] }));
+                          } else {
+                            setGenerator(p => ({ ...p, features: p.features.filter(id => id !== m.id) }));
+                          }
+                        }}
+                        className="mt-0.5 rounded border-[#E8DFF0] text-[#6D32D9] focus:ring-[#6D32D9]"
+                      />
+                      <div>
+                        <span className="font-semibold text-[#1B1024]">{m.label}</span>
+                        <p className="text-[10px] text-[#6F6078]">{m.description}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={generate}
               disabled={loading}
-              className="flex h-8 items-center justify-center rounded-lg bg-[#6D32D9] px-4 text-[12px] font-semibold text-white hover:bg-[#4A1B7A]"
+              className="flex h-9 w-full items-center justify-center rounded-lg bg-[#6D32D9] px-4 text-[12px] font-semibold text-white hover:bg-[#4A1B7A] disabled:opacity-50"
             >
-              Generate License
+              {loading ? 'Generating...' : 'Generate Hardware-Bound License'}
             </button>
-            {generated && <CodeField value={generated} label="Generated JWT License Token" />}
+
+            {generated && (
+              <div className="space-y-2 rounded-lg border border-[#16A36A]/30 bg-[#F0FDF4] p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[#16A36A]">Generated License Key</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await onActivate(generated);
+                      toast.success('License activated on this server!');
+                    }}
+                    className="rounded bg-[#16A36A] px-2 py-1 text-[10px] font-bold text-white hover:bg-[#15803D]"
+                  >
+                    Activate Instantly
+                  </button>
+                </div>
+                <CodeField value={generated} label="" />
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* Issued Licenses Registry Table */}
+      {licensesList.length > 0 && (
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs space-y-3">
+          <h2 className="font-display text-[15px] font-bold text-[#1B1024]">Issued License Registry</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12px]">
+              <thead className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-bold uppercase text-[#6F6078]">
+                <tr>
+                  <th className="px-3 py-2">Customer</th>
+                  <th className="px-3 py-2">Target HWID</th>
+                  <th className="px-3 py-2">Expires</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E8DFF0]">
+                {licensesList.map((lic: any) => (
+                  <tr key={lic.id} className="hover:bg-[#F8F7FA]">
+                    <td className="px-3 py-2 font-semibold text-[#1B1024]">{lic.customer_name}</td>
+                    <td className="px-3 py-2 font-mono text-[11px] text-[#6F6078]">{lic.hardware_id || '—'}</td>
+                    <td className="px-3 py-2 text-[#6F6078]">{new Date(lic.expires_at).toLocaleDateString()}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${lic.status === 'suspended' ? 'bg-[#FEE2E2] text-[#DC3545]' : 'bg-[#D1FAE5] text-[#16A36A]'}`}>
+                        {lic.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => toggleSuspend(lic)}
+                        className="rounded border border-[#E8DFF0] bg-white px-2 py-1 text-[10px] font-semibold text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#4A1B7A]"
+                      >
+                        {lic.status === 'suspended' ? 'Resume' : 'Suspend'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
