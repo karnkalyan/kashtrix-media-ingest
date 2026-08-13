@@ -461,9 +461,12 @@ const useEngine = () => {
     features: string[];
     hardwareId: string;
   }) => {
+    const token = localStorage.getItem('kte-auth-token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const response = await fetch(`${API_BASE}/api/_hidden/license/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
     });
     const body = await response.json().catch(() => ({}));

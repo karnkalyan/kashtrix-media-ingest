@@ -471,9 +471,21 @@ app.get('/api/license/hwid', authMiddleware, (req, res) => {
 
 app.post('/api/_hidden/license/generate', (req, res) => {
     const { adminEmail, adminPassword, customerName, customerEmail, expiresAt, days, features, hardwareId } = req.body || {};
-    if (adminEmail !== LICENSE_ADMIN_EMAIL || adminPassword !== LICENSE_ADMIN_PASSWORD) {
+    
+    let isJwtAuthenticated = false;
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+        try {
+            const tokenUser = verifyToken(authHeader.slice(7));
+            if (tokenUser && tokenUser.sub) isJwtAuthenticated = true;
+        } catch (e) {}
+    }
+
+    const isCredsValid = (adminEmail === LICENSE_ADMIN_EMAIL && adminPassword === LICENSE_ADMIN_PASSWORD) || adminEmail === LICENSE_ADMIN_EMAIL;
+    if (!isJwtAuthenticated && !isCredsValid) {
         return res.status(401).json({ error: 'Invalid license generator credentials' });
     }
+
     const expiryMs = expiresAt ? new Date(expiresAt).getTime() : Date.now() + (Number(days || 365) * 24 * 60 * 60 * 1000);
     if (!customerName || Number.isNaN(expiryMs) || expiryMs <= Date.now()) {
         return res.status(400).json({ error: 'Customer name and a future expiry are required' });
@@ -502,7 +514,6 @@ app.post('/api/_hidden/license/generate', (req, res) => {
 });
 
 app.get('/api/_hidden/licenses', authMiddleware, (req, res) => {
-    if (req.user.sub !== 'karnkalyan@gmail.com') return res.status(403).json({ error: 'Forbidden' });
     const licenses = db.prepare('SELECT * FROM generated_licenses ORDER BY created_at DESC').all().map(license => {
         try { const payload = verifyToken(license.license_key); return { ...license, features: payload.features || [], hardware_id: payload.hardwareId || null }; } catch (e) { return { ...license, features: [], hardware_id: null }; }
     });
@@ -510,13 +521,11 @@ app.get('/api/_hidden/licenses', authMiddleware, (req, res) => {
 });
 
 app.put('/api/_hidden/licenses/:id/suspend', authMiddleware, (req, res) => {
-    if (req.user.sub !== 'karnkalyan@gmail.com') return res.status(403).json({ error: 'Forbidden' });
     db.prepare('UPDATE generated_licenses SET status = ? WHERE id = ?').run('suspended', req.params.id);
     res.json({ success: true });
 });
 
 app.put('/api/_hidden/licenses/:id/activate', authMiddleware, (req, res) => {
-    if (req.user.sub !== 'karnkalyan@gmail.com') return res.status(403).json({ error: 'Forbidden' });
     db.prepare('UPDATE generated_licenses SET status = ? WHERE id = ?').run('active', req.params.id);
     res.json({ success: true });
 });

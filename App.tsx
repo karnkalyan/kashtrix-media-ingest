@@ -56,7 +56,7 @@ const KashtrixLogo: React.FC<{ size?: number; variant?: 'wordmark' | 'full' | 'i
     className={`brand-lockup brand-lockup--${variant} shrink-0`}
     style={{ width: size, height: variant === 'full' ? Math.round(size * 0.66) : variant === 'icon' ? size : Math.round(size * 0.22) }}
   >
-    <img src="/main-logo.png" alt="KASHTRIX StreamOps" draggable={false} />
+    <img src="/logo.png" alt="KASHTRIX StreamOps" draggable={false} />
   </div>
 );
 
@@ -333,7 +333,7 @@ const LicenseView: React.FC<{
   const canShowGenerator = true;
 
   useEffect(() => {
-    fetchLicenses().then(setLicensesList).catch(() => {});
+    fetchLicenses().then(setLicensesList).catch(() => { });
   }, [fetchLicenses]);
 
   const activate = async () => {
@@ -696,9 +696,8 @@ const Sidebar: React.FC<{
     <>
       {mobileOpen && <div className="drawer-overlay lg:hidden" onClick={onMobileClose} />}
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs ${
-          mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
+        className={`fixed left-0 top-0 z-40 flex h-full flex-col border-r border-[#E8DFF0] bg-white transition-all duration-200 shadow-xs ${mobileOpen ? 'w-[224px] translate-x-0' : '-translate-x-full lg:translate-x-0'
+          } ${collapsed && !mobileOpen ? 'lg:w-[64px]' : 'lg:w-[224px]'}`}
       >
         {/* Brand Header */}
         <div className="flex h-14 items-center justify-between border-b border-[#E8DFF0] px-3.5">
@@ -732,15 +731,14 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium transition-all duration-150 ${
-                      isActive
+                    className={`group relative flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium transition-all duration-150 ${isActive
                         ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold border-l-[3px] border-[#6D32D9]'
                         : 'text-[#6F6078] hover:bg-[#F8F7FA] hover:text-[#1B1024]'
-                    } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
+                      } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
                     <Icon size={16} className={`shrink-0 transition-colors ${isActive ? 'text-[#6D32D9]' : 'text-[#6F6078] group-hover:text-[#1B1024]'}`} />
-                    
+
                     {(!collapsed || mobileOpen) && (
                       <div className="flex flex-1 items-center justify-between overflow-hidden">
                         <span className="truncate">{item.label}</span>
