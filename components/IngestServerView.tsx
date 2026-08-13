@@ -506,6 +506,18 @@ export const IngestServerView: React.FC<Props> = ({
                       >
                         <Play size={12} /> Preview
                       </button>
+
+                      {!!(rec.is_active || activeRecordingKeys[`${rec.app || 'live'}/${rec.stream || rec.file_name}`] || recordingStatuses[`${rec.app || 'live'}/${rec.stream || rec.file_name}`]) && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRecord(rec.app || 'live', rec.stream || rec.file_name)}
+                          className="inline-flex items-center gap-1 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-semibold text-[#DC3545] hover:bg-[#FEE2E2]"
+                          title="Stop active recording"
+                        >
+                          <Square size={12} className="fill-[#DC3545]" /> Stop Recording
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => handleDeleteRecordItem(rec.id)}
@@ -544,6 +556,28 @@ export const IngestServerView: React.FC<Props> = ({
                 title={recPreview.file_name}
                 maxHeight={320}
               />
+
+              {!!(recPreview.is_active || activeRecordingKeys[`${recPreview.app || 'live'}/${recPreview.stream || recPreview.file_name}`]) && (
+                <div className="flex items-center justify-between rounded-lg border border-[#FECACA] bg-[#FEF2F2] p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-[#DC3545] animate-pulse" />
+                    <span className="text-[12px] font-bold text-[#DC3545]">Active Recording Session</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await stopRecording(recPreview.app || 'live', recPreview.stream || recPreview.file_name);
+                      toast.success('Recording stopped');
+                      setRecPreview(null);
+                      fetchData();
+                    }}
+                    className="flex items-center gap-1 rounded-md bg-[#DC3545] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#B91C1C]"
+                  >
+                    <Square size={12} className="fill-white" /> Stop Recording Now
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2 text-[12px]">
                 <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
                   <span className="text-[10px] font-semibold uppercase text-[#6F6078]">File Size</span>

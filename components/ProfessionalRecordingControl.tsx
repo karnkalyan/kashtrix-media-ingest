@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo } from 'react-icons/fi';
+import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare } from 'react-icons/fi';
 import { IngestRecordingOptions, TranscodingProfile, VideoCodec } from '../types';
 
 type Format = IngestRecordingOptions['formats'][number];
@@ -291,7 +291,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       <section className="rounded-2xl border border-slate-200 p-4"><h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">4. Simultaneous output formats</h3><div className="grid grid-cols-3 gap-2 sm:grid-cols-5">{(['mp4', 'mkv', 'mov', 'ts', 'flv'] as const).map(format => <button type="button" key={format} onClick={() => toggleFormat(format)} className={`rounded-xl border px-2 py-3 text-xs font-black uppercase ${activeFormats.includes(format) ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>{format}</button>)}</div><p className="mt-3 text-[10px] leading-relaxed text-slate-500">Each selected format records continuously to its own file. MKV and TS are recommended for 24/7 television capture because interrupted files remain recoverable.</p></section>
     </div></div>
 
-    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md sm:flex-row sm:items-center sm:justify-end"><span className="mr-auto text-[10px] text-slate-500">Save configuration before starting the selected source.</span><button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-slate-200 px-4 text-[11px] font-semibold text-slate-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button><button type="button" disabled={startDisabled} onClick={startRecording} className="h-9 rounded-md bg-[var(--primary)] px-4 text-[11px] font-semibold text-white hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-40"><FiDisc className="mr-2 inline" />Start recording</button></div>
+    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md sm:flex-row sm:items-center sm:justify-end">
+      <span className="mr-auto text-[10px] text-slate-500">Save configuration before starting the selected source.</span>
+      <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-slate-200 px-4 text-[11px] font-semibold text-slate-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
+      <button type="button" disabled={startDisabled} onClick={startRecording} className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40"><FiDisc className="mr-2 inline" />Start recording</button>
+      <button type="button" onClick={startRecording} className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"><FiSquare className="mr-1.5 inline fill-rose-700" />Stop active recording</button>
+    </div>
   </>;
 };
 
