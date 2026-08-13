@@ -743,11 +743,11 @@ const Sidebar: React.FC<{
         </div>
 
         {/* Navigation Items Grouped */}
-        <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5 scrollbar-hide">
+        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-2.5 scrollbar-hide font-sans">
           {groups.map(group => (
-            <div key={group.name} className="space-y-0.5">
+            <div key={group.name} className="space-y-1">
               {(!collapsed || mobileOpen) && (
-                <div className="px-2 pt-1.5 pb-0.5 text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] dark:text-[#64748B]">
+                <div className="px-2 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#94A3B8] dark:text-[#64748B] select-none">
                   {group.name}
                 </div>
               )}
@@ -759,16 +759,16 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[10.5px] font-medium tracking-normal transition-all duration-150 ${isActive
-                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-bold dark:bg-[#2B1542] dark:text-white'
+                    className={`group relative flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[11.5px] font-medium tracking-tight transition-all duration-150 ${isActive
+                        ? 'bg-[#F4EEFF] text-[#6D32D9] font-semibold dark:bg-[#2B1542] dark:text-white shadow-2xs'
                         : 'text-[#475569] hover:bg-[#F8F7FA] hover:text-[#0F172A] dark:text-[#CBD5E1] dark:hover:bg-[#1E112B] dark:hover:text-white'
                       } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
                     <div className="flex items-center gap-2 overflow-hidden">
-                      {/* Circular Icon Badge with Soft Colored Drop Shadow */}
-                      <div className={`flex h-6.5 w-6.5 items-center justify-center rounded-full shrink-0 transition-all duration-150 group-hover:scale-105 ${item.iconBg} ${item.iconShadow}`}>
-                        <Icon size={13} className={item.iconColor} />
+                      {/* Circular Icon Badge */}
+                      <div className={`flex h-6 w-6 items-center justify-center rounded-full shrink-0 transition-all duration-150 group-hover:scale-105 ${item.iconBg} ${item.iconShadow}`}>
+                        <Icon size={12} className={item.iconColor} />
                       </div>
 
                       {(!collapsed || mobileOpen) && (
