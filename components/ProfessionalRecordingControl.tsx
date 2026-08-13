@@ -37,6 +37,8 @@ interface Props {
   save?: () => void;
   saving?: boolean;
   start?: () => void;
+  isRecordingActive?: boolean;
+  stopRecording?: () => void;
   profiles?: TranscodingProfile[];
   mediaPort?: number;
 }
@@ -73,6 +75,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   save = () => {},
   saving = false,
   start = () => {},
+  isRecordingActive = false,
+  stopRecording = () => {},
   profiles = [],
   mediaPort = 8080,
 }) => {
@@ -118,10 +122,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       videoRef.current.pause();
       videoRef.current.removeAttribute('src');
       videoRef.current.srcObject = null;
-      videoRef.current.load();
     }
     setPreviewing(false);
-    setPreviewTime(0);
   }, []);
 
   useEffect(() => stopPreview, [stopPreview]);
@@ -132,68 +134,37 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const startSourcePreview = async () => {
     stopPreview();
     setPreviewError('');
-    setPreviewing(true);
-    await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
-    const player = videoRef.current;
-    if (!player) return;
-
-    try {
-      if (sourceType === 'device') {
-        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Browser capture preview is unavailable. Open the dashboard through localhost or HTTPS.');
-        const initial = await navigator.mediaDevices.getUserMedia({ video: !!videoDevice, audio: !!audioDevice });
-        const browserDevices = await navigator.mediaDevices.enumerateDevices();
-        const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const findDevice = (kind: MediaDeviceKind, selected: string) => browserDevices.find(device =>
-          device.kind === kind && (normalize(device.label) === normalize(selected) || normalize(device.label).includes(normalize(selected)) || normalize(selected).includes(normalize(device.label)))
-        );
-        const selectedVideo = videoDevice ? findDevice('videoinput', videoDevice) : undefined;
-        const selectedAudio = audioDevice ? findDevice('audioinput', audioDevice) : undefined;
-        let stream = initial;
-        if (selectedVideo || selectedAudio) {
-          initial.getTracks().forEach(track => track.stop());
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: videoDevice ? (selectedVideo ? { deviceId: { exact: selectedVideo.deviceId } } : true) : false,
-            audio: audioDevice ? (selectedAudio ? { deviceId: { exact: selectedAudio.deviceId } } : true) : false,
-          });
-        }
+    if (sourceType === 'device') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoDevice ? { deviceId: videoDevice } : true,
+          audio: audioDevice ? { deviceId: audioDevice } : false,
+        });
         deviceStreamRef.current = stream;
-        player.srcObject = stream;
-        player.muted = true;
-        await player.play();
-      } else {
-        const selected = streams[selectedStreamKey];
-        if (!selected) throw new Error('Select an active ingest source first.');
-        const app = selected.app || selectedStreamKey.split('/')[0] || 'live';
-        const name = selected.name || selectedStreamKey.split('/').pop();
-        const sourceUrl = new URL(selected.hlsUrl || `/${app}/${name}/index.m3u8`, window.location.origin);
-        const hlsUrl = new URL(`${sourceUrl.pathname}${sourceUrl.search}`, window.location.origin);
-        player.muted = true;
-        const { default: Hls } = await import('hls.js');
-        if (Hls.isSupported()) {
-          const hls = new Hls({ liveSyncDurationCount: 2, lowLatencyMode: true });
-          hlsRef.current = hls;
-          hls.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal) setPreviewError(`Live preview unavailable: ${data.details}`);
-          });
-          hls.loadSource(hlsUrl.toString());
-          hls.attachMedia(player);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => player.play().catch(() => undefined));
-        } else if (player.canPlayType('application/vnd.apple.mpegurl')) {
-          player.src = hlsUrl.toString();
-          await player.play();
-        } else {
-          throw new Error('This browser cannot play the HLS source.');
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
         }
+        setPreviewing(true);
+      } catch (err: any) {
+        setPreviewError('Unable to access device preview: ' + err.message);
       }
-    } catch (error: any) {
-      stopPreview();
-      setPreviewError(error.message || 'Unable to open source preview.');
+    } else if (selectedStreamKey) {
+      const Hls = (await import('hls.js')).default;
+      const hlsUrl = `http://${window.location.hostname}:${mediaPort}/hls/${selectedStreamKey}/index.m3u8`;
+      if (Hls.isSupported() && videoRef.current) {
+        const hls = new Hls();
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(videoRef.current);
+        hlsRef.current = hls;
+        videoRef.current.play().catch(() => {});
+        setPreviewing(true);
+      } else if (videoRef.current?.canPlayType('application/vnd.apple.mpegurl')) {
+        videoRef.current.src = hlsUrl;
+        videoRef.current.play().catch(() => {});
+        setPreviewing(true);
+      }
     }
-  };
-
-  const startRecording = () => {
-    stopPreview();
-    start();
   };
 
   const applyProfile = (id: string) => {
@@ -288,14 +259,120 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
     <div className="contents">
       <section className="rounded-2xl border border-slate-200 p-4"><h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">3. Professional audio</h3><div className="grid grid-cols-1 gap-4 sm:grid-cols-2"><Label>Audio codec<select value={activeConfig.audioCodec} onChange={event => patch({ audioCodec: event.target.value as any })} className={selectClass}><option value="aac">AAC</option><option value="mp3">MP3</option><option value="opus">Opus</option></select></Label><Label>Audio bitrate (Kbps)<input type="number" min="32" max="1024" value={activeConfig.audioBitrate} onChange={event => patch({ audioBitrate: Number(event.target.value) })} className={inputClass} /></Label><Label>Sample rate<select value={activeConfig.sampleRate} onChange={event => patch({ sampleRate: Number(event.target.value) })} className={selectClass}><option value="32000">32 kHz</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz broadcast</option><option value="96000">96 kHz</option></select></Label><Label>Audio channels<select value={activeConfig.audioChannels} onChange={event => patch({ audioChannels: Number(event.target.value) })} className={selectClass}><option value="1">Mono</option><option value="2">Stereo</option><option value="6">5.1 surround</option><option value="8">7.1 surround</option></select></Label></div></section>
-      <section className="rounded-2xl border border-slate-200 p-4"><h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">4. Simultaneous output formats</h3><div className="grid grid-cols-3 gap-2 sm:grid-cols-5">{(['mp4', 'mkv', 'mov', 'ts', 'flv'] as const).map(format => <button type="button" key={format} onClick={() => toggleFormat(format)} className={`rounded-xl border px-2 py-3 text-xs font-black uppercase ${activeFormats.includes(format) ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>{format}</button>)}</div><p className="mt-3 text-[10px] leading-relaxed text-slate-500">Each selected format records continuously to its own file. MKV and TS are recommended for 24/7 television capture because interrupted files remain recoverable.</p></section>
+      <section className="rounded-2xl border border-slate-200 p-4">
+        <h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">4. Simultaneous output formats</h3>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          {(['mp4', 'mkv', 'mov', 'ts', 'flv'] as const).map(format => (
+            <button
+              type="button"
+              key={format}
+              onClick={() => toggleFormat(format)}
+              className={`rounded-xl border px-2 py-3 text-xs font-black uppercase transition-all ${activeFormats.includes(format) ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              {format}
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+          MKV and TS are recommended for 24/7 television capture because interrupted files remain recoverable.
+        </p>
+      </section>
     </div></div>
 
+    <section className="app-panel mt-3 p-4">
+      <h3 className="panel-kicker mb-3">5. Storage Destination & Network Target</h3>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Label>Storage Protocol
+          <select
+            value={activeConfig.storageType || 'local'}
+            onChange={e => patch({ storageType: e.target.value as any })}
+            className={selectClass}
+          >
+            <option value="local">Local Disk Directory</option>
+            <option value="smb">Network Share (SMB / NAS)</option>
+            <option value="ftp">FTP / SFTP Server</option>
+            <option value="s3">AWS S3 / Cloud Bucket</option>
+          </select>
+        </Label>
+
+        {(activeConfig.storageType || 'local') === 'local' && (
+          <Label>Local Path
+            <input
+              type="text"
+              value={activeConfig.storagePath || '/media/recordings'}
+              onChange={e => patch({ storagePath: e.target.value })}
+              placeholder="/media/recordings or C:\Recordings"
+              className={inputClass}
+            />
+          </Label>
+        )}
+
+        {activeConfig.storageType === 'smb' && <>
+          <Label>SMB Share UNC Path
+            <input type="text" value={activeConfig.smbShare || ''} onChange={e => patch({ smbShare: e.target.value })} placeholder="\\192.168.1.100\recordings" className={inputClass} />
+          </Label>
+          <Label>SMB Username
+            <input type="text" value={activeConfig.smbUsername || ''} onChange={e => patch({ smbUsername: e.target.value })} placeholder="admin" className={inputClass} />
+          </Label>
+          <Label>SMB Password
+            <input type="password" value={activeConfig.smbPassword || ''} onChange={e => patch({ smbPassword: e.target.value })} placeholder="••••••••" className={inputClass} />
+          </Label>
+        </>}
+
+        {activeConfig.storageType === 'ftp' && <>
+          <Label>FTP Host / IP
+            <input type="text" value={activeConfig.ftpHost || ''} onChange={e => patch({ ftpHost: e.target.value })} placeholder="ftp.broadcast.net" className={inputClass} />
+          </Label>
+          <Label>FTP User
+            <input type="text" value={activeConfig.ftpUsername || ''} onChange={e => patch({ ftpUsername: e.target.value })} placeholder="username" className={inputClass} />
+          </Label>
+          <Label>FTP Password
+            <input type="password" value={activeConfig.ftpPassword || ''} onChange={e => patch({ ftpPassword: e.target.value })} placeholder="••••••••" className={inputClass} />
+          </Label>
+          <Label>Remote Directory
+            <input type="text" value={activeConfig.ftpPath || ''} onChange={e => patch({ ftpPath: e.target.value })} placeholder="/archives/tv/" className={inputClass} />
+          </Label>
+        </>}
+
+        {activeConfig.storageType === 's3' && <>
+          <Label>S3 Bucket Name
+            <input type="text" value={activeConfig.s3Bucket || ''} onChange={e => patch({ s3Bucket: e.target.value })} placeholder="s3://kashtrix-recordings" className={inputClass} />
+          </Label>
+          <Label>S3 Region
+            <input type="text" value={activeConfig.s3Region || 'us-east-1'} onChange={e => patch({ s3Region: e.target.value })} placeholder="us-east-1" className={inputClass} />
+          </Label>
+          <Label>Access Key ID
+            <input type="text" value={activeConfig.s3AccessKey || ''} onChange={e => patch({ s3AccessKey: e.target.value })} placeholder="AKIA..." className={inputClass} />
+          </Label>
+          <Label>Secret Access Key
+            <input type="password" value={activeConfig.s3SecretKey || ''} onChange={e => patch({ s3SecretKey: e.target.value })} placeholder="••••••••" className={inputClass} />
+          </Label>
+        </>}
+      </div>
+    </section>
+
     <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md sm:flex-row sm:items-center sm:justify-end">
-      <span className="mr-auto text-[10px] text-slate-500">Save configuration before starting the selected source.</span>
+      <span className="mr-auto text-[10px] text-slate-500">Save configuration before starting recording sessions.</span>
       <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-slate-200 px-4 text-[11px] font-semibold text-slate-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
-      <button type="button" disabled={startDisabled} onClick={startRecording} className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40"><FiDisc className="mr-2 inline" />Start recording</button>
-      <button type="button" onClick={startRecording} className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"><FiSquare className="mr-1.5 inline fill-rose-700" />Stop active recording</button>
+
+      {isRecordingActive ? (
+        <button
+          type="button"
+          onClick={stopRecording}
+          className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+        >
+          <FiSquare className="mr-1.5 inline fill-rose-700" /> Stop active recording
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={startDisabled}
+          onClick={start}
+          className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+        >
+          <FiDisc className="mr-2 inline" /> Start recording
+        </button>
+      )}
     </div>
   </>;
 };

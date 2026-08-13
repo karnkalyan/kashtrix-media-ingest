@@ -362,6 +362,36 @@ export const IngestServerView: React.FC<Props> = ({
     setInspectorOpen(true);
   };
 
+  const isCurrentRecordingActive = useMemo(() => {
+    if (sourceType === 'device') {
+      const devName = videoDevice || audioDevice || 'device';
+      return recordings.some((r: any) => r.is_active && (r.app === 'device' || r.stream === devName));
+    }
+    return !!activeRecordingKeys[selectedStreamKey] || recordings.some((r: any) => r.is_active && `${r.app}/${r.stream}` === selectedStreamKey);
+  }, [sourceType, videoDevice, audioDevice, selectedStreamKey, activeRecordingKeys, recordings]);
+
+  const handleStopControlRecording = async () => {
+    const selected = sourceType === 'device'
+      ? (videoDevice || audioDevice || 'device')
+      : selectedStreamKey;
+
+    if (!selected) return toast.error('Select an active stream or device source');
+
+    const [appName, streamName] = sourceType === 'device'
+      ? ['device', selected]
+      : selected.includes('/')
+      ? selected.split('/')
+      : ['live', selected];
+
+    try {
+      await stopRecording(appName, streamName);
+      toast.success(`Stopped recording: ${selected}`);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to stop recording');
+    }
+  };
+
   const filteredRecordings = recordings.filter((r: any) =>
     (r.file_name || r.stream || '').toLowerCase().includes(recSearch.toLowerCase())
   );
@@ -441,6 +471,8 @@ export const IngestServerView: React.FC<Props> = ({
           save={saveConfig}
           saving={savingConfig}
           start={handleStartControlRecording}
+          isRecordingActive={isCurrentRecordingActive}
+          stopRecording={handleStopControlRecording}
           profiles={profiles}
           mediaPort={settings.mediaPort}
         />
@@ -507,6 +539,17 @@ export const IngestServerView: React.FC<Props> = ({
                         <Play size={12} /> Preview
                       </button>
 
+                      <a
+                        href={`/media/recordings/${rec.file_name || rec.stream}`}
+                        download={rec.file_name || 'recording.mp4'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF]"
+                        title="Download recording file to computer"
+                      >
+                        <Download size={12} /> Download
+                      </a>
+
                       {!!(rec.is_active || activeRecordingKeys[`${rec.app || 'live'}/${rec.stream || rec.file_name}`] || recordingStatuses[`${rec.app || 'live'}/${rec.stream || rec.file_name}`]) && (
                         <button
                           type="button"
@@ -520,10 +563,11 @@ export const IngestServerView: React.FC<Props> = ({
 
                       <button
                         type="button"
-                        onClick={() => handleDeleteRecordItem(rec.id)}
+                        onClick={() => deleteRecording(Number(rec.id) || rec.id)}
                         className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545]"
+                        title="Delete recording archive"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={12} />
                       </button>
                     </td>
                   </tr>
@@ -648,7 +692,7 @@ export const IngestServerView: React.FC<Props> = ({
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Incoming Bitrate</span>
-          <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBitrate(totalBitrateKbps)}</p>
+          <p className="font-mono text-[20px] font-bold text-[#2563EB]">{formatBitrate(Number(totalBitrateKbps) || 0)}</p>
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Active Recordings</span>

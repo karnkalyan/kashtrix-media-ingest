@@ -117,6 +117,21 @@ export interface IngestRecordingOptions {
   audioCodec?: 'aac' | 'mp3' | 'opus';
   sampleRate?: number;
   audioChannels?: number;
+  // Storage Destination Options
+  storageType?: 'local' | 'smb' | 'ftp' | 's3';
+  storagePath?: string;
+  smbShare?: string;
+  smbUsername?: string;
+  smbPassword?: string;
+  ftpHost?: string;
+  ftpPort?: number;
+  ftpUsername?: string;
+  ftpPassword?: string;
+  ftpPath?: string;
+  s3Bucket?: string;
+  s3Region?: string;
+  s3AccessKey?: string;
+  s3SecretKey?: string;
 }
 
 export interface ChannelDestination {
