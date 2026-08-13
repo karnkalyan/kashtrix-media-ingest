@@ -112,11 +112,11 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
         <div className="absolute -right-20 -bottom-20 h-96 w-96 rounded-full bg-[#E11D48]/20 blur-3xl pointer-events-none" />
 
         <div className="relative z-10 max-w-md text-white space-y-6">
-          <div className="inline-flex rounded-2xl bg-white p-4 shadow-2xl backdrop-blur-md border border-white/20">
+          <div className="inline-flex rounded-2xl bg-white p-4 shadow-2xl backdrop-blur-md border border-white/20 dark:bg-[#190E28] dark:border-[#311B4E]">
             <img
               src="/sidebar-full-logo.png"
               alt="KASHTRIX StreamOps"
-              className="h-11 w-auto object-contain"
+              className="h-11 w-auto object-contain sidebar-logo login-logo"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/logo-full-with text.png';
               }}
@@ -148,8 +148,8 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
       <div className="flex w-full lg:w-1/2 xl:w-[45%] items-center justify-center bg-[#F8F7FA] p-6 dark:bg-[#0F0817]">
         <div className="w-full max-w-[400px]">
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="inline-flex rounded-xl bg-white p-3 shadow-md border border-slate-200 dark:bg-[#1E1130] dark:border-[#371F59]">
-              <img src="/sidebar-full-logo.png" alt="KASHTRIX" className="h-8 w-auto object-contain dark:brightness-0 dark:invert" />
+            <div className="inline-flex rounded-xl bg-white p-3 shadow-md border border-slate-200 dark:bg-[#190E28] dark:border-[#311B4E]">
+              <img src="/sidebar-full-logo.png" alt="KASHTRIX" className="h-8 w-auto object-contain sidebar-logo login-logo" />
             </div>
           </div>
 
@@ -788,11 +788,10 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-11 w-full items-center rounded-xl text-left transition-all duration-150 ${
-                      isActive
+                    className={`group relative flex h-11 w-full items-center rounded-xl text-left transition-all duration-150 ${isActive
                         ? 'bg-[#F3EEFF] text-[#1E1B4B] font-semibold border-l-4 border-[#7C3AED] dark:bg-[#311754] dark:text-white dark:border-[#A78BFA] shadow-2xs'
                         : 'hover:bg-[#F8FAFC] dark:hover:bg-[#281640]'
-                    } ${isCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}
+                      } ${isCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}
                     title={isCollapsed ? item.label : undefined}
                   >
                     <div className={`flex items-center ${isCollapsed ? 'justify-center w-full' : 'gap-3 overflow-hidden'}`}>
@@ -801,11 +800,10 @@ const Sidebar: React.FC<{
                       </div>
 
                       {!isCollapsed && (
-                        <span className={`truncate text-[14px] transition-colors ${
-                          isActive
+                        <span className={`truncate text-[14px] transition-colors ${isActive
                             ? 'text-[#1E1B4B] dark:text-white font-bold'
                             : 'text-[#334155] dark:text-white font-semibold group-hover:text-[#0F172A] group-hover:dark:text-white'
-                        }`}>
+                          }`}>
                           {item.label}
                         </span>
                       )}

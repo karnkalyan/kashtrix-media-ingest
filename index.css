@@ -225,11 +225,15 @@ html.dark {
   color: #F1EAFA !important;
 }
 
-/* Force Sidebar Logo to 100% Pure White in Dark Mode */
+/* Force Sidebar & Login Logo to 100% Pure White in Dark Mode */
 .dark .sidebar-logo,
 .dark img.sidebar-logo,
 html.dark .sidebar-logo,
-html.dark img.sidebar-logo {
+html.dark img.sidebar-logo,
+.dark .login-logo,
+.dark img.login-logo,
+html.dark .login-logo,
+html.dark img.login-logo {
   filter: brightness(0) invert(1) !important;
 }
 
