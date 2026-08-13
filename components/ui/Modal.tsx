@@ -21,9 +21,9 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, footer,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative w-full ${sizes[size]} rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-xl)] animate-[scale-in_0.2s_ease-out] flex flex-col max-h-[90vh]`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 w-screen h-screen overflow-y-auto" role="dialog" aria-modal="true">
+      <div className="fixed inset-0 w-screen h-screen bg-slate-950/60 backdrop-blur-xs transition-opacity" onClick={onClose} />
+      <div className={`relative w-full ${sizes[size]} rounded-2xl border border-[#E8EDF5] bg-white shadow-2xl animate-[scale-in_0.2s_ease-out] flex flex-col max-h-[90vh] dark:bg-[#190E28] dark:border-[#371F52]`}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4 shrink-0">
           <h3 className="text-lg font-bold text-[var(--text-primary)]">{title}</h3>

@@ -607,10 +607,6 @@ table tbody tr:hover { background-color: var(--surface-secondary); }
   max-height: 382px;
 }
 
-.page-stack > .fixed > div {
-  max-width: 800px !important;
-  border-radius: var(--radius-lg) !important;
-}
 
 .recording-library article .aspect-video {
   max-height: 148px;

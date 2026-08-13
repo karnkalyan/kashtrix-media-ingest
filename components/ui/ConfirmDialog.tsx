@@ -19,9 +19,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative w-full max-w-md rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-xl)] animate-[scale-in_0.2s_ease-out]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 w-screen h-screen overflow-y-auto" role="dialog" aria-modal="true">
+      <div className="fixed inset-0 w-screen h-screen bg-slate-950/60 backdrop-blur-xs transition-opacity" onClick={onCancel} />
+      <div className="relative w-full max-w-md rounded-2xl border border-[#E8EDF5] bg-white p-6 shadow-2xl animate-[scale-in_0.2s_ease-out] dark:bg-[#190E28] dark:border-[#371F52]">
         <h3 className="text-lg font-bold text-[var(--text-primary)]">{title}</h3>
         <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">{message}</p>
         <div className="mt-6 flex items-center justify-end gap-3">
