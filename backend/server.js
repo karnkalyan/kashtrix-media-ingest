@@ -1511,31 +1511,44 @@ app.get('/api/dashboard/overview', authMiddleware, async (req, res) => {
     res.json(buildDashboardOverview(ingest.streams || {}));
 });
 
-// === USER MANAGEMENT ENDPOINTS ===
-app.get('/api/users', authMiddleware, (req, res) => {
+// === SYSTEM TELEMETRY REST ENDPOINTS ===
+app.get(['/api/system/stats', '/api/systeminfo', '/api/diagnostics/system'], async (req, res) => {
     try {
-        const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
-        res.json({ success: true, users });
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to query users database: ' + e.message, users: [] });
-    }
-});
-
-app.post('/api/users', authMiddleware, (req, res) => {
-    try {
-        const { username, password, role } = req.body || {};
-        if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-        const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-        if (existing) return res.status(409).json({ error: 'Username already exists' });
-        const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-            .run(username, hashPassword(password), role || 'admin');
-        res.status(201).json({ success: true, message: 'User created successfully', userId: result.lastInsertRowid });
+        const stats = await systemApi.getFullSystemStats({
+            transcoderActiveStreams: activeChannels.size || 0,
+            transcoderIdleStreams: Math.max(0, 16 - (activeChannels.size || 0)),
+        });
+        res.json(stats);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
 
-app.put('/api/users/:id', authMiddleware, (req, res) => {
+// === USER MANAGEMENT ENDPOINTS ===
+app.route(['/api/users', '/api/users/'])
+    .get(authMiddleware, (req, res) => {
+        try {
+            const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+            res.json({ success: true, users });
+        } catch (e) {
+            res.status(500).json({ error: 'Failed to query users database: ' + e.message, users: [] });
+        }
+    })
+    .post(authMiddleware, (req, res) => {
+        try {
+            const { username, password, role } = req.body || {};
+            if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+            const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+            if (existing) return res.status(409).json({ error: 'Username already exists' });
+            const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+                .run(username, hashPassword(password), role || 'admin');
+            res.status(201).json({ success: true, message: 'User created successfully', userId: result.lastInsertRowid });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+app.put(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => {
     try {
         const { id } = req.params;
         const { username, password, role } = req.body || {};
@@ -1551,7 +1564,7 @@ app.put('/api/users/:id', authMiddleware, (req, res) => {
     }
 });
 
-app.delete('/api/users/:id', authMiddleware, (req, res) => {
+app.delete(['/api/users/:id', '/api/users/:id/'], authMiddleware, (req, res) => {
     try {
         const { id } = req.params;
         const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);

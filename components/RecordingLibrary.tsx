@@ -334,6 +334,19 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
             {visible.map(recording => (
               <div key={recording.id} className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs">
                 <div>
+                  <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-slate-950 mb-2.5">
+                    <img
+                      src={`/recording-thumbnail/${recording.id}.jpg`}
+                      alt={recording.file_name}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                    <div className="absolute bottom-2 right-2 rounded-md bg-slate-950/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white backdrop-blur-xs">
+                      {formatDuration(durationSeconds(recording))}
+                    </div>
+                  </div>
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-semibold text-[#1B1024] truncate text-[13px]" title={recording.file_name}>
                       {recording.file_name}
