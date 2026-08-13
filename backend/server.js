@@ -1323,48 +1323,65 @@ const startHlsProcess = (appName, streamName) => {
     const hlsPlaylist1 = path.join(hlsOutDir1, 'index.m3u8').replace(/\\/g, '/');
     const hlsPlaylist2 = path.join(hlsOutDir2, 'index.m3u8').replace(/\\/g, '/');
 
+    // Standard robust HLS args writing to hlsOutDir1 and copying playlist to hlsOutDir2
     const args = [
         '-y',
         '-hide_banner',
-        '-ignore_unknown',
-        '-fflags', 'nobuffer',
-        '-flags', 'low_delay',
+        '-loglevel', 'warning',
         '-i', rtmpUrl,
         '-c:v', 'copy',
-        '-c:a', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        '-f', 'tee',
-        `[f=hls:hls_time=2:hls_list_size=6:hls_flags=delete_segments:hls_segment_filename=${path.join(hlsOutDir1, 'seg%03d.ts').replace(/\\/g, '/')}]${hlsPlaylist1}|[f=hls:hls_time=2:hls_list_size=6:hls_flags=delete_segments:hls_segment_filename=${path.join(hlsOutDir2, 'seg%03d.ts').replace(/\\/g, '/')}]${hlsPlaylist2}`
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-hls_time', '2',
+        '-hls_list_size', '6',
+        '-hls_flags', 'delete_segments+omit_endlist',
+        '-hls_segment_filename', path.join(hlsOutDir1, 'index%d.ts').replace(/\\/g, '/'),
+        hlsPlaylist1
     ];
 
     console.log(`[HLS] Starting FFmpeg HLS for ${key}: ${ffmpegPath} ${args.join(' ')}`);
     const proc = spawn(ffmpegPath, args, { windowsHide: true });
 
-    proc.stderr.on('data', (data) => {
+    let stderr = '';
+    proc.stderr?.on('data', (data) => {
         const line = data.toString().trim();
+        stderr = `${stderr}${line}\n`.slice(-2000);
         if (/error|warning|failed|cannot|unable/i.test(line)) {
             console.error(`[HLS][${key}] ${line}`);
         }
     });
 
+    // Also sync index.m3u8 to appOutputDir so /live/live/kalyan1112/index.m3u8 works
+    const syncInterval = setInterval(() => {
+        try {
+            if (fs.existsSync(hlsPlaylist1)) {
+                fs.copyFileSync(hlsPlaylist1, hlsPlaylist2);
+            }
+        } catch (e) {}
+    }, 2000);
+
     proc.on('close', (code) => {
         console.log(`[HLS] Process for ${key} exited with code ${code}`);
+        clearInterval(syncInterval);
         hlsProcesses.delete(key);
         [hlsOutDir1, hlsOutDir2].forEach(dir => {
             try {
-                const files = fs.readdirSync(dir).filter(f => /\.(ts|m3u8)$/.test(f));
-                files.forEach(f => { try { fs.unlinkSync(path.join(dir, f)); } catch (e) { } });
+                if (fs.existsSync(dir)) {
+                    const files = fs.readdirSync(dir).filter(f => /\.(ts|m3u8)$/.test(f));
+                    files.forEach(f => { try { fs.unlinkSync(path.join(dir, f)); } catch (e) { } });
+                }
             } catch (e) { }
         });
     });
 
     proc.on('error', (err) => {
-        console.error(`[HLS] Spawn error for ${key}:`, err);
+        console.error(`[HLS] Spawn error for ${key}:`, err.message);
+        clearInterval(syncInterval);
         hlsProcesses.delete(key);
     });
 
-    hlsProcesses.set(key, { proc });
-    console.log(`[HLS] Started for ${key} -> ${hlsPlaylist1} & ${hlsPlaylist2}`);
+    hlsProcesses.set(key, { proc, syncInterval });
+    console.log(`[HLS] Started for ${key} -> ${hlsPlaylist1}`);
 };
 
 const stopHlsProcess = (appName, streamName) => {
@@ -2323,6 +2340,27 @@ mediaApp.get('/live/:stream/index.m3u8', (req, res) => {
 
     console.log(`[HLS] 404 for /live/${stream}/index.m3u8. Searched: ${filePaths.join(', ')}`);
     res.status(404).json({ error: `HLS playlist not found for stream "${stream}". Is the stream live?` });
+});
+
+// Route for HLS segment files (.ts) under /live/:stream/:file
+mediaApp.get('/live/:stream/:file', (req, res) => {
+    const { stream, file } = req.params;
+    const filePaths = [
+        path.join(HLS_DIR, stream, file),
+        path.join(HLS_DIR, 'live', stream, file),
+        path.join(LIVE_DIR, stream, file),
+    ];
+
+    for (const filePath of filePaths) {
+        if (fs.existsSync(filePath)) {
+            if (file.endsWith('.ts')) res.setHeader('Content-Type', 'video/mp2t');
+            else if (file.endsWith('.m3u8')) res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            return res.sendFile(filePath);
+        }
+    }
+
+    res.status(404).end();
 });
 
 // Explicit route for /live/<app>/<stream>/index.m3u8 (legacy compat)
