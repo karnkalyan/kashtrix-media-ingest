@@ -4,7 +4,7 @@ import {
   FiActivity, FiKey, FiList, FiSettings, FiUser, FiUsers, FiCheckCircle,
   FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown, FiChevronLeft, FiChevronRight,
   FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv, FiBell,
-  FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio
+  FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio, FiAward
 } from 'react-icons/fi';
 import { FaBroadcastTower } from 'react-icons/fa';
 import ChannelDashboard from './components/JobQueue';
@@ -747,7 +747,7 @@ const Sidebar: React.FC<{
           {groups.map(group => (
             <div key={group.name} className="space-y-1">
               {(!collapsed || mobileOpen) && (
-                <div className="px-2 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#94A3B8] dark:text-[#64748B] select-none">
+                <div className="px-2 pt-2 pb-0.5 text-[9.5px] font-bold uppercase tracking-[0.06em] text-[#94A3B8] dark:text-[#64748B] select-none">
                   {group.name}
                 </div>
               )}
@@ -759,16 +759,16 @@ const Sidebar: React.FC<{
                   <button
                     key={item.id}
                     onClick={() => { setActiveView(item.id); onMobileClose(); }}
-                    className={`group relative flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[11.5px] font-medium tracking-tight transition-all duration-150 ${isActive
-                        ? 'bg-[#F4EEFF] text-[#6D32D9] font-semibold dark:bg-[#2B1542] dark:text-white shadow-2xs'
+                    className={`group relative flex h-9.5 w-full items-center justify-between rounded-xl px-2 text-left text-[11.5px] font-medium tracking-tight transition-all duration-150 ${isActive
+                        ? 'bg-[#F4EEFF] text-[#2B0D3A] font-semibold border-l-[3.5px] border-[#6D32D9] dark:bg-[#2B1542] dark:text-white shadow-2xs'
                         : 'text-[#475569] hover:bg-[#F8F7FA] hover:text-[#0F172A] dark:text-[#CBD5E1] dark:hover:bg-[#1E112B] dark:hover:text-white'
                       } ${collapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
                     title={collapsed && !mobileOpen ? item.label : undefined}
                   >
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      {/* Circular Icon Badge */}
-                      <div className={`flex h-6 w-6 items-center justify-center rounded-full shrink-0 transition-all duration-150 group-hover:scale-105 ${item.iconBg} ${item.iconShadow}`}>
-                        <Icon size={12} className={item.iconColor} />
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      {/* Rounded Square Icon Badge (Matching Reference UI) */}
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-xl shrink-0 transition-all duration-150 group-hover:scale-105 ${item.iconBg} ${item.iconShadow}`}>
+                        <Icon size={13} className={item.iconColor} />
                       </div>
 
                       {(!collapsed || mobileOpen) && (
@@ -794,25 +794,30 @@ const Sidebar: React.FC<{
           ))}
         </nav>
 
-        {/* Footer License Status */}
+        {/* Footer License Status Card */}
         {(!collapsed || mobileOpen) ? (
-          <div className="border-t border-[#E8DFF0] p-3">
-            <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 text-[11px]">
-              <div className="flex items-center gap-2 font-semibold text-[#1B1024]">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#16A36A] opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#16A36A]" />
-                </span>
-                <span className="truncate">{licenseStatus === 'activated' ? 'Pro License Active' : 'License Active'}</span>
+          <div className="border-t border-[#E8DFF0] p-3 dark:border-[#27153B]">
+            <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 flex items-center justify-between shadow-2xs dark:bg-[#1E112B] dark:border-[#371F52]">
+              <div className="space-y-0.5 overflow-hidden pr-2">
+                <div className="flex items-center gap-2 font-bold text-[11px] text-[#1B1024] dark:text-white">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#16A36A] opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#16A36A]" />
+                  </span>
+                  <span className="truncate">{licenseStatus === 'activated' ? 'Pro License Active' : 'License Active'}</span>
+                </div>
+                <div className="text-[10px] font-medium text-[#6F6078] truncate dark:text-[#A494B5]">
+                  {customerName || 'KASHTRIX Engine'}
+                </div>
               </div>
-              <div className="mt-0.5 text-[10px] text-[#6F6078] truncate">
-                {customerName || 'KASHTRIX Media Engine'}
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#E0F2FE] text-[#0284C7] shrink-0 dark:bg-[#0C4A6E] dark:text-[#38BDF8]">
+                <FiAward size={15} />
               </div>
             </div>
           </div>
         ) : (
-          <div className="border-t border-[#E8DFF0] p-2 text-center">
-            <div className="mx-auto grid h-8 w-8 place-items-center rounded-lg bg-[#F8F7FA] text-[#16A36A]" title="License Active">
+          <div className="border-t border-[#E8DFF0] p-2 text-center dark:border-[#27153B]">
+            <div className="mx-auto grid h-8 w-8 place-items-center rounded-lg bg-[#F8F7FA] text-[#16A36A] dark:bg-[#1E112B]" title="License Active">
               <FiShield size={16} />
             </div>
           </div>
