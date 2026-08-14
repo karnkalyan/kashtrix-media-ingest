@@ -1,13 +1,13 @@
-# Multi-stage build providing modern FFmpeg with complete codec toolchain (SRT, H.264, H.265, AAC, etc.)
-FROM mwader/static-ffmpeg:latest AS ffmpeg-source
+# Node.js runtime is copied into the FFmpeg 6 image so recording and
+# transcoding always use the declared broadcast toolchain versions.
+FROM node:22.23.1-bookworm-slim AS node-runtime
 
-FROM node:22.23.1-bookworm-slim
+FROM jrottenberg/ffmpeg:6.1.3-ubuntu2404
 
+ENTRYPOINT []
 WORKDIR /app
 
-# Copy modern static FFmpeg & FFprobe binaries (zero missing dynamic library errors)
-COPY --from=ffmpeg-source /ffmpeg /usr/local/bin/ffmpeg
-COPY --from=ffmpeg-source /ffprobe /usr/local/bin/ffprobe
+COPY --from=node-runtime /usr/local/ /usr/local/
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
