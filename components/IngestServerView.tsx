@@ -35,6 +35,7 @@ import CodeField from './ui/CodeField';
 import DetailDrawer from './ui/DetailDrawer';
 import MediaPreview from './ui/MediaPreview';
 import StatusBadge from './ui/StatusBadge';
+import ConfirmDialog from './ui/ConfirmDialog';
 import { sendRealtime, subscribeRealtime } from '../services/realtime';
 
 const getRecordingFormat = (item: any): string => {
@@ -142,6 +143,8 @@ export const IngestServerView: React.FC<Props> = ({
   // Recording Library Preview & Filter state
   const [recSearch, setRecSearch] = useState('');
   const [recPreview, setRecPreview] = useState<any | null>(null);
+  const [deletingRec, setDeletingRec] = useState<any | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // SRT Listener & Relay Modals (Live Server mode)
   const [srtModalOpen, setSrtModalOpen] = useState(false);
@@ -378,14 +381,27 @@ export const IngestServerView: React.FC<Props> = ({
     }
   };
 
-  const handleDeleteRecordItem = async (id: number | string) => {
-    if (!window.confirm('Delete this recording archive file?')) return;
+  const handleDeleteRecordItem = (idOrRec: any) => {
+    if (typeof idOrRec === 'object' && idOrRec !== null) {
+      setDeletingRec(idOrRec);
+    } else {
+      const rec = recordings.find((r: any) => String(r.id) === String(idOrRec));
+      setDeletingRec(rec || { id: idOrRec });
+    }
+  };
+
+  const confirmDeleteRecording = async () => {
+    if (!deletingRec) return;
+    setDeleteLoading(true);
     try {
-      await deleteRecording(id);
+      await deleteRecording(Number(deletingRec.id) || deletingRec.id);
       toast.success('Recording deleted');
-      fetchData();
+      await fetchData();
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || 'Failed to delete recording');
+    } finally {
+      setDeleteLoading(false);
+      setDeletingRec(null);
     }
   };
 
@@ -596,8 +612,8 @@ export const IngestServerView: React.FC<Props> = ({
 
                       <button
                         type="button"
-                        onClick={() => deleteRecording(Number(rec.id) || rec.id)}
-                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545]"
+                        onClick={() => setDeletingRec(rec)}
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#451220] dark:hover:text-[#F87171]"
                         title="Delete recording archive"
                       >
                         <Trash2 size={12} />
@@ -669,6 +685,17 @@ export const IngestServerView: React.FC<Props> = ({
             </div>
           )}
         </DetailDrawer>
+
+        <ConfirmDialog
+          open={!!deletingRec}
+          title="Delete Recording File"
+          message={`Are you sure you want to delete recording "${deletingRec?.file_name || deletingRec?.stream || 'archive'}"? The file will be permanently deleted.`}
+          confirmLabel="Delete File"
+          variant="danger"
+          loading={deleteLoading}
+          onConfirm={confirmDeleteRecording}
+          onCancel={() => setDeletingRec(null)}
+        />
       </div>
     );
   }
@@ -982,6 +1009,17 @@ export const IngestServerView: React.FC<Props> = ({
           </DetailDrawer>
         );
       })()}
+
+      <ConfirmDialog
+        open={!!deletingRec}
+        title="Delete Recording File"
+        message={`Are you sure you want to delete recording "${deletingRec?.file_name || deletingRec?.stream || 'archive'}"? The file will be permanently deleted.`}
+        confirmLabel="Delete File"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteRecording}
+        onCancel={() => setDeletingRec(null)}
+      />
     </div>
   );
 };
