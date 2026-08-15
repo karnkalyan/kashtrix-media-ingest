@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
+import { RefreshCw } from 'lucide-react';
 import Button from './ui/Button';
 import { UploadIcon } from './icons';
 
@@ -20,8 +21,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadButtonTex
     formData.append('vodFile', file);
 
     try {
+      const token = localStorage.getItem('kte-auth-token');
       const response = await fetch('/api/vod/upload', {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
       const data: { fileName?: string; serverFileName?: string; originalName?: string; error?: string } = await response.json();
@@ -54,7 +57,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadButtonTex
         onChange={event => event.target.files?.[0] && uploadFile(event.target.files[0])}
       />
       <Button type="button" onClick={() => inputRef.current?.click()} className="w-full" variant="secondary" disabled={isUploading}>
-        <UploadIcon className={`h-4 w-4 mr-2 ${isUploading ? 'animate-spin' : ''}`} />
+        {isUploading ? (
+          <RefreshCw className="h-4 w-4 mr-2 animate-spin text-[#4A1B7A] dark:text-[#A78BFA]" />
+        ) : (
+          <UploadIcon className="h-4 w-4 mr-2" />
+        )}
         {isUploading ? 'Uploading...' : uploadButtonText}
       </Button>
       {selectedName && (

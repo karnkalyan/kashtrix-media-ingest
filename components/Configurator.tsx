@@ -162,9 +162,9 @@ export const Configurator: React.FC<Props> = ({
   profileId,
   setProfileId,
 }) => {
-  const [inputType, setInputType] = useState<InputType>(InputType.SRT);
-  const [channelName, setChannelName] = useState('Main Feed');
-  const [inputUrl, setInputUrl] = useState('srt://0.0.0.0:8890?mode=listener');
+  const [inputType, setInputType] = useState<InputType>(InputType.URL);
+  const [channelName, setChannelName] = useState('');
+  const [inputUrl, setInputUrl] = useState('');
   const [vodFiles, setVodFiles] = useState<VODFile[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [programId, setProgramId] = useState<number | undefined>();
@@ -181,8 +181,8 @@ export const Configurator: React.FC<Props> = ({
       id: uniqueId(),
       name: 'HLS Preview',
       protocol: Protocol.HLS,
-      url: defaultUrl(Protocol.HLS, 'Main Feed', settings),
-      playbackUrl: playbackUrl(Protocol.HLS, 'Main Feed', settings, defaultUrl(Protocol.HLS, 'Main Feed', settings)),
+      url: defaultUrl(Protocol.HLS, 'channel', settings),
+      playbackUrl: playbackUrl(Protocol.HLS, 'channel', settings, defaultUrl(Protocol.HLS, 'channel', settings)),
     },
   ]);
 
@@ -215,16 +215,16 @@ export const Configurator: React.FC<Props> = ({
       setSelectedAudioStream(editingChannel.selectedAudioStream);
       setProgramId(editingChannel.programId);
     } else {
-      setInputType(InputType.SRT);
-      setChannelName('Main Feed');
-      setInputUrl('srt://0.0.0.0:8890?mode=listener');
+      setInputType(InputType.URL);
+      setChannelName('');
+      setInputUrl('');
       setDestinations([
         {
           id: uniqueId(),
           name: 'HLS Preview',
           protocol: Protocol.HLS,
-          url: defaultUrl(Protocol.HLS, 'Main Feed', settings),
-          playbackUrl: playbackUrl(Protocol.HLS, 'Main Feed', settings, defaultUrl(Protocol.HLS, 'Main Feed', settings)),
+          url: defaultUrl(Protocol.HLS, 'channel', settings),
+          playbackUrl: playbackUrl(Protocol.HLS, 'channel', settings, defaultUrl(Protocol.HLS, 'channel', settings)),
         },
       ]);
       setSelectedVideoStream(undefined);
@@ -250,8 +250,11 @@ export const Configurator: React.FC<Props> = ({
   }, [profiles, profileId, setProfileId]);
 
   const refreshVod = useCallback(async () => {
-    const files = await fetch('/api/vod/list').then(res => res.json()).catch(() => []);
-    setVodFiles(files);
+    const token = localStorage.getItem('kte-auth-token');
+    const files = await fetch('/api/vod/list', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    }).then(res => res.json()).catch(() => []);
+    setVodFiles(Array.isArray(files) ? files : []);
   }, []);
 
   const refreshDevices = useCallback(() => {
@@ -410,11 +413,16 @@ export const Configurator: React.FC<Props> = ({
 
   const renderInputFields = () => {
     if (inputType === InputType.URL || inputType === InputType.SRT || inputType === InputType.YOUTUBE) {
+      const placeholder = inputType === InputType.URL
+        ? 'http://, https://, udp://, rtp://, or rtsp://...'
+        : inputType === InputType.SRT
+        ? 'srt://0.0.0.0:8890?mode=listener'
+        : 'https://www.youtube.com/watch?v=...';
       return (
         <div className="relative">
           <input
             className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
-            placeholder="srt://0.0.0.0:8890?mode=listener"
+            placeholder={placeholder}
             value={inputUrl}
             onChange={e => setInputUrl(e.target.value)}
           />
@@ -422,14 +430,25 @@ export const Configurator: React.FC<Props> = ({
       );
     }
     if (inputType === InputType.VOD) {
-      const vodOptions = vodFiles.map(f => ({ value: f.name, label: f.originalName || f.name }));
+      const vodOptions = vodFiles.map(f => ({
+        value: f.name,
+        label: f.originalName && f.originalName !== f.name ? `${f.originalName} (${f.name})` : f.name
+      }));
       if (inputUrl && !vodOptions.some(o => o.value === inputUrl)) {
         vodOptions.unshift({ value: inputUrl, label: inputUrl });
       }
       return (
         <div className="space-y-2">
           <Select label="Server VOD File" value={inputUrl} onChange={e => setInputUrl(e.target.value)} placeholder="Select VOD file" options={vodOptions} />
-          <FileUpload onFileUploaded={(file, original) => { setInputUrl(file); if (!channelName) setChannelName(original.replace(/\.[^.]+$/, '')); refreshVod(); }} selectedFileName={null} uploadButtonText="Upload VOD File" />
+          <FileUpload
+            onFileUploaded={(file, original) => {
+              setInputUrl(file);
+              if (!channelName) setChannelName(original.replace(/\.[^.]+$/, ''));
+              refreshVod();
+            }}
+            selectedFileName={null}
+            uploadButtonText="Upload VOD File"
+          />
         </div>
       );
     }

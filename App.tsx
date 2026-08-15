@@ -1100,6 +1100,7 @@ const App: React.FC = () => {
               updateProfile={engine.updateProfile}
               removeProfile={engine.removeProfile}
               addChannel={engine.addChannel}
+              updateChannel={engine.updateChannel}
               getTsPrograms={engine.getTsPrograms}
               fetchIngestStreams={engine.fetchIngestStreams}
               settings={engine.state.settings}

@@ -570,15 +570,22 @@ const useEngine = () => {
     }
     const profile = state.profiles.find(p => p.id === channel.profileId);
     const command = generateCommand(channel, profile, state.settings);
+
+    // Save channel and generated command to database before sending start request
+    try {
+      await persistChannel({ ...channel, command });
+      if (command !== channel.command) {
+        dispatch({ type: 'UPDATE_CHANNEL', payload: { id: channel.id, command } });
+      }
+    } catch (persistErr) {
+      console.warn('Persist channel before start warning:', persistErr);
+    }
+
     try {
       await api('/api/channels/start', {
         method: 'POST',
         body: JSON.stringify({ channelId: channel.id, streamName: sanitizeName(channel.name) })
       });
-      if (command !== channel.command) {
-        dispatch({ type: 'UPDATE_CHANNEL', payload: { id: channel.id, command } });
-        persistChannel({ ...channel, command }).catch(() => undefined);
-      }
       dispatch({ type: 'START_CHANNEL', payload: { id } });
       toast.success(`Started channel: ${channel.name}`);
     } catch (error) {

@@ -711,16 +711,37 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res)
 
     let finalCommand = req.body.command;
     if (!finalCommand) {
-        const channelRow = db.prepare('SELECT data FROM channels WHERE id = ?').get(channelId);
-        if (!channelRow || !channelRow.data) {
+        let channelRow = db.prepare('SELECT data FROM channels WHERE id = ?').get(channelId);
+        let channelData = null;
+        if (channelRow && channelRow.data) {
+            try {
+                channelData = typeof channelRow.data === 'string' ? JSON.parse(channelRow.data) : channelRow.data;
+            } catch (e) {}
+        }
+
+        if (!channelData) {
+            // Fallback: search all channel rows in database by ID or name
+            const allRows = db.prepare('SELECT id, data FROM channels').all();
+            const targetSlug = sanitizeName(streamName || channelId);
+            for (const row of allRows) {
+                try {
+                    const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                    const rowIdStr = String(row.id || '');
+                    const parsedIdStr = String(parsed?.id || '');
+                    const parsedNameSlug = sanitizeName(parsed?.name || '');
+                    if (rowIdStr === String(channelId) || parsedIdStr === String(channelId) || (targetSlug && parsedNameSlug === targetSlug)) {
+                        channelData = parsed;
+                        break;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        if (!channelData) {
             return res.status(404).json({ error: 'Channel not found in database' });
         }
-        try {
-            const channelData = typeof channelRow.data === 'string' ? JSON.parse(channelRow.data) : channelRow.data;
-            finalCommand = channelData?.command;
-        } catch (e) {
-            return res.status(500).json({ error: 'Failed to read channel configuration from database' });
-        }
+
+        finalCommand = channelData.command;
     }
     if (!finalCommand) {
         return res.status(400).json({ error: 'No FFmpeg command configured for this channel' });
