@@ -98,27 +98,23 @@ if (!fs.existsSync(LIVE_DIR)) fs.mkdirSync(LIVE_DIR, { recursive: true });
 const db = new PrismaStore();
 await db.initialize();
 
-// Fix any existing recordings with invalid end_time (before start_time)
+// Fix any unclosed or dangling recordings on startup
 try {
-    const invalidRecordings = db.prepare(`
-        SELECT id, start_time, end_time FROM stream_recordings
-        WHERE end_time IS NOT NULL AND (
-            datetime(end_time) < datetime(start_time) OR 
-            (datetime(end_time) = datetime(start_time) AND end_time NOT LIKE '%Z' AND start_time LIKE '%Z')
-        )
-    `).all();
-
-    if (invalidRecordings.length > 0) {
-        console.log(`[DB] Fixing ${invalidRecordings.length} recordings with invalid end_time`);
-        for (const rec of invalidRecordings) {
-            // If it's the same second but different format, it's likely just a 0s or very short recording that got messed up by formats
-            // We'll keep it as is but ensure it doesn't fail the > check in listRecordings
-            // Or just mark as NULL if it's truly before start_time
-            db.prepare('UPDATE stream_recordings SET end_time = NULL WHERE id = ?').run(rec.id);
+    const unclosedRecordings = db.prepare('SELECT id, file_path, start_time, end_time, size FROM stream_recordings WHERE end_time IS NULL').all();
+    for (const rec of unclosedRecordings) {
+        let endTime = rec.start_time;
+        let size = rec.size || 0;
+        if (rec.file_path && fs.existsSync(rec.file_path)) {
+            try {
+                const stat = fs.statSync(rec.file_path);
+                endTime = stat.mtime.toISOString();
+                size = stat.size || size;
+            } catch (e) { }
         }
+        db.prepare('UPDATE stream_recordings SET end_time = ?, size = ? WHERE id = ?').run(endTime, size, rec.id);
     }
 } catch (e) {
-    console.error('[Prisma] Error fixing invalid recordings:', e);
+    console.error('[DB] Error fixing unclosed recordings on startup:', e);
 }
 
 const hashPassword = (password) => crypto.createHash('sha256').update(`kte:${password}`).digest('hex');
@@ -1184,8 +1180,24 @@ const listRecordings = (limit = 50) => {
             return { ...row, size, is_active: true, formats: session.options.formats };
         }
 
+        let size = row.size || 0;
+        let endTime = row.end_time;
+        if (!endTime && row.file_path && fs.existsSync(row.file_path)) {
+            try {
+                const stat = fs.statSync(row.file_path);
+                endTime = stat.mtime.toISOString();
+                if (!size) size = stat.size;
+                db.prepare('UPDATE stream_recordings SET end_time = ?, size = ? WHERE id = ?').run(endTime, size, row.id);
+            } catch (e) { }
+        } else if (!endTime) {
+            endTime = row.start_time;
+            db.prepare('UPDATE stream_recordings SET end_time = ? WHERE id = ?').run(endTime, row.id);
+        }
+
         return {
             ...row,
+            size,
+            end_time: endTime,
             is_active: false
         };
     });

@@ -35,8 +35,21 @@ const formatBytes = (bytes = 0) => {
   return `${(bytes / Math.pow(1024, index)).toFixed(index ? 1 : 0)} ${units[index]}`;
 };
 
-const durationSeconds = (recording: any) =>
-  Math.max(0, Math.floor(((recording.end_time ? new Date(recording.end_time).getTime() : Date.now()) - new Date(recording.start_time).getTime()) / 1000));
+const durationSeconds = (recording: any) => {
+  if (recording?.duration && typeof recording.duration === 'number') {
+    return Math.max(0, Math.floor(recording.duration));
+  }
+  const start = new Date(recording?.start_time).getTime();
+  if (isNaN(start)) return 0;
+
+  if (recording?.is_active) {
+    return Math.max(0, Math.floor((Date.now() - start) / 1000));
+  }
+
+  const end = recording?.end_time ? new Date(recording.end_time).getTime() : start;
+  if (isNaN(end) || end < start) return 0;
+  return Math.max(0, Math.floor((end - start) / 1000));
+};
 
 const formatDuration = (seconds: number) => {
   const hours = Math.floor(seconds / 3600);
