@@ -148,6 +148,7 @@ const setJsonSetting = (key, value) => {
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`)
         .run(key, JSON.stringify(value));
 };
+const sanitizeName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'stream';
 const normalizeHwid = value => String(value || '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
 const deriveSystemHwid = () => {
     const configured = normalizeHwid(process.env.KTE_HWID);
@@ -836,7 +837,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res)
         broadcastStats(channelId, { status: 'stopped', log: `Exited with code ${code}` });
     });
 
-    res.status(202).json({ message: 'Started', usedCommand: finalCommand });
+    res.status(202).json({ success: true, message: 'Started', channelId });
 });
 
 app.post('/api/channels/stop', authMiddleware, (req, res) => {
