@@ -30,12 +30,12 @@ interface Props {
   channels: Channel[];
   profiles: TranscodingProfile[];
   username?: string;
-  startChannel: (id: string) => void;
-  stopChannel: (id: string) => void;
-  removeChannel: (id: string) => void;
-  clearChannels: () => void;
-  startAllChannels: () => void;
-  stopAllChannels: () => void;
+  startChannel: (id: string) => Promise<void> | void;
+  stopChannel: (id: string) => Promise<void> | void;
+  removeChannel: (id: string) => Promise<void> | void;
+  clearChannels: () => Promise<void> | void;
+  startAllChannels: () => Promise<void> | void;
+  stopAllChannels: () => Promise<void> | void;
   addProfile: (profileData: Omit<TranscodingProfile, 'id'>) => Promise<void>;
   updateProfile: (profile: TranscodingProfile) => Promise<void>;
   removeProfile: (id: string) => Promise<void>;

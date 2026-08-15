@@ -875,7 +875,8 @@ const TopHeader: React.FC<{
   onToggleSidebar: () => void;
   themeMode: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-}> = ({ activeView, username, customerName, licenseStatus, saveStatus, onLogout, onMobileMenuOpen, sidebarCollapsed, onToggleSidebar, themeMode, onThemeChange }) => {
+  onNavigateToLicense?: () => void;
+}> = ({ activeView, username, customerName, licenseStatus, saveStatus, onLogout, onMobileMenuOpen, sidebarCollapsed, onToggleSidebar, themeMode, onThemeChange, onNavigateToLicense }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const viewLabels: Record<string, string> = {
@@ -930,6 +931,49 @@ const TopHeader: React.FC<{
           />
           <FiSearch size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#94A3B8]" />
         </div>
+
+        {/* License Status Badge */}
+        {licenseStatus === 'activated' ? (
+          <button
+            type="button"
+            onClick={onNavigateToLicense}
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-2.5 py-1 text-[11px] font-bold text-[#16A36A] hover:bg-[#DCFCE7] dark:border-[#059669]/60 dark:bg-[#064E3B]/40 dark:text-[#34D399] dark:hover:bg-[#064E3B]/70 transition-colors shadow-xs"
+            title="License is Active. Click to view License."
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A] dark:bg-[#34D399]" />
+            Licensed
+          </button>
+        ) : licenseStatus === 'expired' ? (
+          <button
+            type="button"
+            onClick={onNavigateToLicense}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-bold text-[#DC3545] hover:bg-[#FEE2E2] dark:border-[#DC3545]/60 dark:bg-[#450A0A]/60 dark:text-[#FCA5A5] dark:hover:bg-[#450A0A] transition-colors shadow-xs animate-pulse"
+            title="License has expired! Click to activate a license."
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#DC3545]" />
+            License Expired
+          </button>
+        ) : licenseStatus === 'trial' ? (
+          <button
+            type="button"
+            onClick={onNavigateToLicense}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-2.5 py-1 text-[11px] font-bold text-[#D97706] hover:bg-[#FEF3C7] dark:border-[#D97706]/60 dark:bg-[#451A03]/50 dark:text-[#FCD34D] dark:hover:bg-[#451A03]/80 transition-colors shadow-xs"
+            title="System is running in Trial Mode. Streaming and ingest actions are restricted. Click to activate."
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#D97706]" />
+            Trial Mode
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onNavigateToLicense}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-bold text-[#DC3545] hover:bg-[#FEE2E2] dark:border-[#DC3545]/60 dark:bg-[#450A0A]/60 dark:text-[#FCA5A5] dark:hover:bg-[#450A0A] transition-colors shadow-xs"
+            title="Unlicensed Version. Click to activate a license."
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#DC3545]" />
+            Unlicensed Version
+          </button>
+        )}
 
         {/* Theme Mode Toggle */}
         <button
@@ -1036,6 +1080,7 @@ const App: React.FC = () => {
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
           themeMode={themeMode}
           onThemeChange={setThemeMode}
+          onNavigateToLicense={() => setActiveView('license')}
         />
 
         <main className="flex-1 overflow-y-auto p-4 scrollbar-hide">
@@ -1075,6 +1120,7 @@ const App: React.FC = () => {
               ingestHistory={engine.ingestHistory}
               recordings={engine.recordings}
               profiles={engine.state.profiles}
+              licenseStatus={engine.auth.license.status}
               mode="recording"
             />
           )}
@@ -1091,6 +1137,7 @@ const App: React.FC = () => {
               ingestHistory={engine.ingestHistory}
               recordings={engine.recordings}
               profiles={engine.state.profiles}
+              licenseStatus={engine.auth.license.status}
               mode="live"
             />
           )}

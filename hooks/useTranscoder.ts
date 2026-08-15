@@ -426,8 +426,28 @@ const useEngine = () => {
     return payload;
   }, [api]);
   const fetchIngestProcesses = useCallback(() => api('/api/ingest/processes', { method: 'GET' }), [api]);
-  const startSrtListener = useCallback((port: number, streamName: string) => api('/api/ingest/srt/start', { method: 'POST', body: JSON.stringify({ port, streamName }) }), [api]);
-  const startRtmpRelay = useCallback((streamPath: string, destinationUrl: string) => api('/api/ingest/relay/start', { method: 'POST', body: JSON.stringify({ streamPath, destinationUrl }) }), [api]);
+  const startSrtListener = useCallback(async (port: number, streamName: string) => {
+    if (auth.license?.status === 'expired') {
+      toast.error('Cannot start SRT listener: License has expired. Please activate a valid license.');
+      throw new Error('License expired');
+    }
+    if (auth.license?.status !== 'activated') {
+      toast.error('Cannot start SRT listener: SRT listener is disabled in Trial / Unlicensed Mode.');
+      throw new Error('Trial mode restriction');
+    }
+    return api('/api/ingest/srt/start', { method: 'POST', body: JSON.stringify({ port, streamName }) });
+  }, [api, auth.license]);
+  const startRtmpRelay = useCallback(async (streamPath: string, destinationUrl: string) => {
+    if (auth.license?.status === 'expired') {
+      toast.error('Cannot start RTMP relay: License has expired. Please activate a valid license.');
+      throw new Error('License expired');
+    }
+    if (auth.license?.status !== 'activated') {
+      toast.error('Cannot start RTMP relay: RTMP relay is disabled in Trial / Unlicensed Mode.');
+      throw new Error('Trial mode restriction');
+    }
+    return api('/api/ingest/relay/start', { method: 'POST', body: JSON.stringify({ streamPath, destinationUrl }) });
+  }, [api, auth.license]);
   const stopIngestProcess = useCallback((id: string) => api(`/api/ingest/processes/${id}`, { method: 'DELETE' }), [api]);
 
   const fetchRecordings = useCallback(async () => {
@@ -436,10 +456,18 @@ const useEngine = () => {
     return payload;
   }, [api]);
   const startRecording = useCallback(async (appName: string, stream: string, options?: Partial<IngestRecordingOptions>) => {
+    if (auth.license?.status === 'expired') {
+      toast.error('Cannot start recording: License has expired. Please activate a valid license.');
+      throw new Error('License expired');
+    }
+    if (auth.license?.status !== 'activated') {
+      toast.error('Cannot start recording: Live ingest and recording are disabled in Trial / Unlicensed Mode.');
+      throw new Error('Trial mode restriction');
+    }
     const payload = await api('/api/ingest/record/start', { method: 'POST', body: JSON.stringify({ app: appName, stream, ...options }) });
     await Promise.all([fetchIngestStreams(), fetchRecordings()]);
     return payload;
-  }, [api, fetchIngestStreams, fetchRecordings]);
+  }, [api, auth.license, fetchIngestStreams, fetchRecordings]);
   const stopRecording = useCallback(async (appName: string, stream: string) => {
     const payload = await api('/api/ingest/record/stop', { method: 'POST', body: JSON.stringify({ app: appName, stream }) });
     await Promise.all([fetchIngestStreams(), fetchRecordings()]);
@@ -532,15 +560,32 @@ const useEngine = () => {
   const startChannel = useCallback(async (id: string) => {
     const channel = state.channels.find(c => c.id === id);
     if (!channel) return;
+    if (auth.license?.status === 'expired') {
+      toast.error(`Cannot start "${channel.name}": License has expired. Please activate a valid license.`);
+      throw new Error('License expired');
+    }
+    if (auth.license?.status !== 'activated') {
+      toast.error(`Cannot start "${channel.name}": Trial Mode / Unlicensed version does not allow streaming. Please activate a license.`);
+      throw new Error('Trial mode restriction');
+    }
     const profile = state.profiles.find(p => p.id === channel.profileId);
     const command = generateCommand(channel, profile, state.settings);
-    await api('/api/channels/start', { method: 'POST', body: JSON.stringify({ channelId: channel.id, command, streamName: sanitizeName(channel.name) }) });
-    if (command !== channel.command) {
-      dispatch({ type: 'UPDATE_CHANNEL', payload: { id: channel.id, command } });
-      persistChannel({ ...channel, command }).catch(() => undefined);
+    try {
+      await api('/api/channels/start', {
+        method: 'POST',
+        body: JSON.stringify({ channelId: channel.id, streamName: sanitizeName(channel.name) })
+      });
+      if (command !== channel.command) {
+        dispatch({ type: 'UPDATE_CHANNEL', payload: { id: channel.id, command } });
+        persistChannel({ ...channel, command }).catch(() => undefined);
+      }
+      dispatch({ type: 'START_CHANNEL', payload: { id } });
+      toast.success(`Started channel: ${channel.name}`);
+    } catch (error) {
+      toast.error(`Failed to start "${channel.name}": ${(error as Error).message}`);
+      throw error;
     }
-    dispatch({ type: 'START_CHANNEL', payload: { id } });
-  }, [api, persistChannel, state.channels, state.profiles, state.settings]);
+  }, [api, auth.license, persistChannel, state.channels, state.profiles, state.settings]);
 
   const stopChannel = useCallback(async (id: string) => {
     await api('/api/channels/stop', { method: 'POST', body: JSON.stringify({ channelId: id }) });
@@ -548,10 +593,18 @@ const useEngine = () => {
   }, [api]);
 
   const startAllChannels = useCallback(async () => {
-    for (const channel of state.channels.filter(c => c.status !== ChannelStatus.Running)) {
-      try { await startChannel(channel.id); } catch (error) { toast.error(`${channel.name}: ${(error as Error).message}`); }
+    if (auth.license?.status === 'expired') {
+      toast.error('Cannot start streams: License has expired. Please activate a valid license.');
+      return;
     }
-  }, [startChannel, state.channels]);
+    if (auth.license?.status !== 'activated') {
+      toast.error('Cannot start streams: Trial Mode / Unlicensed version does not allow streaming. Please activate a license.');
+      return;
+    }
+    for (const channel of state.channels.filter(c => c.status !== ChannelStatus.Running)) {
+      try { await startChannel(channel.id); } catch { }
+    }
+  }, [auth.license, startChannel, state.channels]);
 
   const stopAllChannels = useCallback(async () => {
     await Promise.all(state.channels.filter(c => c.status === ChannelStatus.Running).map(c => stopChannel(c.id).catch(() => undefined)));

@@ -415,7 +415,10 @@ const authMiddleware = (req, res, next) => {
 const requireActiveLicense = (req, res, next) => {
     const license = getLicense();
     if (license.status !== 'activated') {
-        return res.status(403).json({ error: license.status === 'expired' ? 'Application license has expired' : 'Trial mode does not allow this action', license });
+        const message = license.status === 'expired'
+            ? 'Application license has expired. Please activate a valid license.'
+            : 'Trial mode / Unlicensed version does not allow this action. Please activate a full license.';
+        return res.status(403).json({ error: message, license });
     }
     next();
 };
@@ -702,11 +705,26 @@ const ensureCommandDirectories = (cmdString) => {
 };
 
 app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res) => {
-    const { channelId, command, streamName } = req.body;
-    if (!channelId || !command) return res.status(400).json({ error: 'channelId and command are required' });
+    const { channelId, streamName } = req.body;
+    if (!channelId) return res.status(400).json({ error: 'channelId is required' });
     if (runningProcesses[channelId]) return res.status(409).json({ error: 'Channel is already running' });
 
-    let finalCommand = command;
+    let finalCommand = req.body.command;
+    if (!finalCommand) {
+        const channelRow = db.prepare('SELECT data FROM channels WHERE id = ?').get(channelId);
+        if (!channelRow || !channelRow.data) {
+            return res.status(404).json({ error: 'Channel not found in database' });
+        }
+        try {
+            const channelData = typeof channelRow.data === 'string' ? JSON.parse(channelRow.data) : channelRow.data;
+            finalCommand = channelData?.command;
+        } catch (e) {
+            return res.status(500).json({ error: 'Failed to read channel configuration from database' });
+        }
+    }
+    if (!finalCommand) {
+        return res.status(400).json({ error: 'No FFmpeg command configured for this channel' });
+    }
     try {
         // 1. Resolve VOD/file input paths to absolute paths
         const inputMatch = finalCommand.match(/-i\s+["']?([^"'\s]+)["']?/i);
@@ -1840,7 +1858,7 @@ app.put('/api/ingest/record/config', authMiddleware, (req, res) => {
     res.json({ success: true, config });
 });
 
-app.post('/api/ingest/record/start', authMiddleware, async (req, res) => {
+app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async (req, res) => {
     const { app: appName, stream, ...requestedOptions } = req.body || {};
     if (!appName || !stream) return res.status(400).json({ error: 'app and stream are required' });
     const liveIngestSelected = activeSessions.has(getRecordingKey(appName, stream));
@@ -1861,7 +1879,7 @@ app.post('/api/ingest/record/start', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/ingest/record/stop', authMiddleware, (req, res) => {
+app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, (req, res) => {
     const { app: appName, stream } = req.body;
     const key = `${appName}/${stream}`;
     const data = activeRecordings.get(key);
@@ -1873,7 +1891,7 @@ app.post('/api/ingest/record/stop', authMiddleware, (req, res) => {
     res.json({ success: true, message: 'Recording stopped' });
 });
 
-app.delete('/api/ingest/recordings/:id', authMiddleware, (req, res) => {
+app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, (req, res) => {
     const { id } = req.params;
     try {
         const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(id);
@@ -1953,7 +1971,7 @@ app.get('/api/diagnostics/stream-stats', async (req, res) => {
     res.json(streams);
 });
 
-app.post('/api/ingest/srt/start', authMiddleware, (req, res) => {
+app.post('/api/ingest/srt/start', authMiddleware, requireActiveLicense, (req, res) => {
     const port = clampPort(req.body?.port, 8890);
     const streamName = req.body?.streamName || 'srt-feed';
     const id = `srt-${port}`;
@@ -1966,7 +1984,7 @@ app.post('/api/ingest/srt/start', authMiddleware, (req, res) => {
     res.json({ success: true, id, port, streamName });
 });
 
-app.post('/api/ingest/relay/start', authMiddleware, (req, res) => {
+app.post('/api/ingest/relay/start', authMiddleware, requireActiveLicense, (req, res) => {
     const { streamPath, destinationUrl } = req.body || {};
     if (!streamPath || !destinationUrl) return res.status(400).json({ error: 'streamPath and destinationUrl required' });
     const id = `relay-${crypto.randomBytes(4).toString('hex')}`;
@@ -1978,7 +1996,7 @@ app.post('/api/ingest/relay/start', authMiddleware, (req, res) => {
     res.json({ success: true, id, streamPath, destinationUrl });
 });
 
-app.delete('/api/ingest/processes/:id', authMiddleware, (req, res) => {
+app.delete('/api/ingest/processes/:id', authMiddleware, requireActiveLicense, (req, res) => {
     const id = req.params.id;
     if (activeIngestProcesses.has(id)) {
         activeIngestProcesses.get(id).proc.kill('SIGKILL');
@@ -2430,8 +2448,29 @@ const nmsConfig = {
 const nms = new NodeMediaServer(nmsConfig);
 const rtmpEmitter = nms.nms || nms;
 
+rtmpEmitter.on('prePublish', (id, StreamPath, args) => {
+    const license = getLicense();
+    if (license.status !== 'activated') {
+        console.warn(`[RTMP] Stream publish rejected for ${StreamPath}: License is ${license.status}`);
+        const sessions = nms.sessions || nms.nms?.sessions;
+        const session = (typeof id === 'object' && id !== null) ? id : sessions?.get(id);
+        if (session && typeof session.reject === 'function') {
+            session.reject();
+        }
+    }
+});
+
 rtmpEmitter.on('postPublish', (id, StreamPath, args) => {
     console.log('[NodeEvent on postPublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
+
+    const license = getLicense();
+    if (license.status !== 'activated') {
+        console.warn(`[RTMP] Skipping postPublish handling: License is ${license.status}`);
+        const sessions = nms.sessions || nms.nms?.sessions;
+        const session = (typeof id === 'object' && id !== null) ? id : sessions?.get(id);
+        if (session && typeof session.reject === 'function') session.reject();
+        return;
+    }
 
     const sessions = nms.sessions || nms.nms?.sessions;
     const session = (typeof id === 'object' && id !== null) ? id : sessions?.get(id);

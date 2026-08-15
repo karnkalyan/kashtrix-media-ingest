@@ -42,7 +42,7 @@ const Header: React.FC<Props> = ({ saveStatus, license, username, onLogout }) =>
         <div className="flex items-center gap-3">
           <SaveIndicator status={saveStatus} />
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${active ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : expired ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-100' : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'}`}>
-            {active ? 'Activated' : expired ? 'Expired' : 'Trial'}
+            {active ? 'Activated' : expired ? 'License Expired' : license.status === 'trial' ? 'Trial Mode' : 'Unlicensed Version'}
           </span>
           {license.expiresAt && <span className="hidden text-xs text-slate-500 xl:block">Expires {new Date(license.expiresAt).toLocaleDateString()}</span>}
           <span className="hidden text-xs font-medium text-slate-600 md:inline">{username}</span>

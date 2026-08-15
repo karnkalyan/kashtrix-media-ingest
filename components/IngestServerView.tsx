@@ -64,6 +64,7 @@ interface Props {
   ingestHistory: any[];
   recordings: any[];
   profiles: TranscodingProfile[];
+  licenseStatus?: string;
   mode?: 'recording' | 'live';
 }
 
@@ -117,6 +118,7 @@ export const IngestServerView: React.FC<Props> = ({
   ingestHistory,
   recordings,
   profiles,
+  licenseStatus,
   mode = 'live',
 }) => {
   const [selectedStreamKey, setSelectedStreamKey] = useState<string>('');
@@ -267,6 +269,13 @@ export const IngestServerView: React.FC<Props> = ({
   };
 
   const handleStartControlRecording = async () => {
+    if (licenseStatus === 'expired') {
+      return toast.error('Cannot start recording: License has expired. Please activate a valid license.');
+    }
+    if (licenseStatus && licenseStatus !== 'activated') {
+      return toast.error('Recording is disabled in Trial / Unlicensed Mode. Please activate a full license.');
+    }
+
     const selected = sourceType === 'device'
       ? (videoDevice || audioDevice || 'device')
       : selectedStreamKey;
@@ -312,6 +321,14 @@ export const IngestServerView: React.FC<Props> = ({
   const handleToggleRecord = async (app: string, stream: string) => {
     const key = `${app}/${stream}`;
     const isRecording = !!(recordingStatuses[key] || activeRecordingKeys[key]);
+    if (!isRecording) {
+      if (licenseStatus === 'expired') {
+        return toast.error('Cannot start recording: License has expired. Please activate a valid license.');
+      }
+      if (licenseStatus && licenseStatus !== 'activated') {
+        return toast.error('Recording is disabled in Trial / Unlicensed Mode. Please activate a full license.');
+      }
+    }
     try {
       if (isRecording) {
         await stopRecording(app, stream);
@@ -329,6 +346,12 @@ export const IngestServerView: React.FC<Props> = ({
   };
 
   const startSrtListener = async () => {
+    if (licenseStatus === 'expired') {
+      return toast.error('Cannot start SRT listener: License has expired. Please activate a valid license.');
+    }
+    if (licenseStatus && licenseStatus !== 'activated') {
+      return toast.error('SRT listener is disabled in Trial / Unlicensed Mode. Please activate a full license.');
+    }
     if (!srtPort || !srtStreamName) return toast.error('Port and stream name are required');
     try {
       const token = localStorage.getItem('kte-auth-token');
@@ -348,6 +371,12 @@ export const IngestServerView: React.FC<Props> = ({
   };
 
   const startRtmpRelay = async () => {
+    if (licenseStatus === 'expired') {
+      return toast.error('Cannot start RTMP relay: License has expired. Please activate a valid license.');
+    }
+    if (licenseStatus && licenseStatus !== 'activated') {
+      return toast.error('RTMP relay is disabled in Trial / Unlicensed Mode. Please activate a full license.');
+    }
     if (!relayStreamPath || !relayDestinationUrl) return toast.error('Stream path and destination URL required');
     try {
       const token = localStorage.getItem('kte-auth-token');
@@ -478,6 +507,16 @@ export const IngestServerView: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {/* License Warning Banner */}
+        {licenseStatus && licenseStatus !== 'activated' && (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-[12px] text-amber-900 shadow-xs">
+            <Radio className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
+            <span>
+              <strong>{licenseStatus === 'expired' ? 'License Expired' : 'Trial Mode Notice'}:</strong> Hardware capture and stream recording operations are disabled in {licenseStatus === 'expired' ? 'unlicensed' : 'trial'} mode. Please activate a full server license to enable recordings.
+            </span>
+          </div>
+        )}
 
         {/* Ingest Summary KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -743,6 +782,16 @@ export const IngestServerView: React.FC<Props> = ({
           </button>
         </div>
       </div>
+
+      {/* License Warning Banner */}
+      {licenseStatus && licenseStatus !== 'activated' && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-[12px] text-amber-900 shadow-xs dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+          <Radio className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
+          <span>
+            <strong>{licenseStatus === 'expired' ? 'License Expired' : 'Trial Mode Notice'}:</strong> Live RTMP ingest, SRT listener, and background relay operations are disabled in {licenseStatus === 'expired' ? 'unlicensed' : 'trial'} mode. Please activate a full server license to enable live operations.
+          </span>
+        </div>
+      )}
 
       {/* Live Server Summary KPI Row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
