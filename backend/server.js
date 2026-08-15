@@ -545,6 +545,9 @@ app.post('/api/_hidden/license/generate', (req, res) => {
 });
 
 app.get('/api/_hidden/licenses', authMiddleware, (req, res) => {
+    if (String(req.user?.sub || '').toLowerCase() !== 'karnkalyan@gmail.com') {
+        return res.json([]);
+    }
     const licenses = db.prepare('SELECT * FROM generated_licenses ORDER BY created_at DESC').all().map(license => {
         try { const payload = verifyToken(license.license_key); return { ...license, features: payload.features || [], hardware_id: payload.hardwareId || null }; } catch (e) { return { ...license, features: [], hardware_id: null }; }
     });

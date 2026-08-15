@@ -380,11 +380,13 @@ const LicenseView: React.FC<{
   const [loading, setLoading] = useState(false);
   const [licensesList, setLicensesList] = useState<any[]>([]);
 
-  const canShowGenerator = true;
+  const canShowGenerator = username?.trim().toLowerCase() === 'karnkalyan@gmail.com';
 
   useEffect(() => {
-    fetchLicenses().then(setLicensesList).catch(() => { });
-  }, [fetchLicenses]);
+    if (canShowGenerator) {
+      fetchLicenses().then(setLicensesList).catch(() => { });
+    }
+  }, [fetchLicenses, canShowGenerator]);
 
   const activate = async () => {
     setLoading(true);
@@ -441,7 +443,7 @@ const LicenseView: React.FC<{
         <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">HWID hardware binding, JWT token status and module entitlements</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-4 ${canShowGenerator ? 'xl:grid-cols-2' : 'max-w-3xl'}`}>
         {/* Current License Status Card */}
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
           <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">Current Server License Status</h2>
@@ -634,7 +636,7 @@ const LicenseView: React.FC<{
       </div>
 
       {/* Issued Licenses Registry Table */}
-      {licensesList.length > 0 && (
+      {canShowGenerator && licensesList.length > 0 && (
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs space-y-3 dark:bg-[#190E28] dark:border-[#311B4E]">
           <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">Issued License Registry</h2>
           <div className="overflow-x-auto">
