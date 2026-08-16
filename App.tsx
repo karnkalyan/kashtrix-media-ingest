@@ -1092,6 +1092,7 @@ const App: React.FC = () => {
               channels={engine.state.channels}
               profiles={engine.state.profiles}
               username={engine.auth.user?.username}
+              userRole={engine.auth.user?.role}
               startChannel={engine.startChannel}
               stopChannel={engine.stopChannel}
               removeChannel={engine.removeChannel}

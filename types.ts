@@ -165,7 +165,7 @@ export interface AppSettings {
 
 export interface AuthUser {
   username: string;
-  role: 'admin';
+  role: 'admin' | 'superadmin';
 }
 
 export interface AuthState {

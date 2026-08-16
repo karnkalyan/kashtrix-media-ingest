@@ -30,6 +30,7 @@ interface Props {
   channels: Channel[];
   profiles: TranscodingProfile[];
   username?: string;
+  userRole?: string;
   startChannel: (id: string) => Promise<void> | void;
   stopChannel: (id: string) => Promise<void> | void;
   removeChannel: (id: string) => Promise<void> | void;
@@ -145,6 +146,7 @@ export const ChannelDashboard: React.FC<Props> = ({
   channels,
   profiles,
   username,
+  userRole,
   startChannel,
   stopChannel,
   removeChannel,
@@ -161,6 +163,8 @@ export const ChannelDashboard: React.FC<Props> = ({
   settings,
   licenseStatus,
 }) => {
+  const canViewTerminal = userRole === 'superadmin'
+    && username?.trim().toLowerCase() === 'karnkalyan@gmail.com';
   const [activeTab, setActiveTab] = useState<'channels' | 'profiles'>('channels');
   const [search, setSearch] = useState('');
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
@@ -368,14 +372,16 @@ export const ChannelDashboard: React.FC<Props> = ({
                               <Play size={12} /> Start
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedLogChannel(channel)}
-                            className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#6D32D9] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
-                            title="View Terminal Logs & Command"
-                          >
-                            <Terminal size={13} />
-                          </button>
+                          {canViewTerminal && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedLogChannel(channel)}
+                              className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#6D32D9] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
+                              title="View Terminal Logs & Command"
+                            >
+                              <Terminal size={13} />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => { setEditingChannel(channel); setProfileId(channel.profileId || ''); setCreateDrawerOpen(true); }}
@@ -511,10 +517,12 @@ export const ChannelDashboard: React.FC<Props> = ({
       />
 
       {/* Live Terminal Logs & Command Inspector Modal */}
-      <ChannelLogsModal
-        channel={selectedLogChannel}
-        onClose={() => setSelectedLogChannel(null)}
-      />
+      {canViewTerminal && (
+        <ChannelLogsModal
+          channel={selectedLogChannel}
+          onClose={() => setSelectedLogChannel(null)}
+        />
+      )}
     </div>
   );
 };

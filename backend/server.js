@@ -58,6 +58,12 @@ const RECORDING_THUMBNAILS_DIR = path.join(MEDIA_ROOT, 'recording-thumbnails');
 const JWT_SECRET = process.env.KTE_JWT_SECRET || 'change-this-local-kte-secret';
 const LICENSE_ADMIN_EMAIL = process.env.KTE_LICENSE_ADMIN_EMAIL || 'karnkalyan@gmail.com';
 const LICENSE_ADMIN_PASSWORD = process.env.KTE_LICENSE_ADMIN_PASSWORD || 'kalyan_vickey';
+const TERMINAL_OWNER_EMAIL = 'karnkalyan@gmail.com';
+const canViewTerminal = (user) => user?.role === 'superadmin'
+    && String(user?.sub || '').trim().toLowerCase() === TERMINAL_OWNER_EMAIL;
+const redactTerminalData = (channel, user) => canViewTerminal(user)
+    ? channel
+    : { ...channel, command: '', outputLog: [] };
 
 const VOD_DIR = path.join(__dirname, 'media', 'vod');
 
@@ -620,10 +626,10 @@ app.get('/api/state', authMiddleware, (req, res) => {
     try {
         const channels = db.prepare('SELECT * FROM channels').all().map(c => {
             try { return JSON.parse(c.data); } catch (e) { return null; }
-        }).filter(Boolean).map(c => ({
+        }).filter(Boolean).map(c => redactTerminalData({
             ...c,
             status: runningProcesses[c.id] ? 'Running' : 'Stopped'
-        }));
+        }, req.user));
         const profiles = db.prepare('SELECT * FROM profiles').all().map(p => {
             try { return JSON.parse(p.data); } catch (e) { return null; }
         }).filter(Boolean);
@@ -2076,7 +2082,10 @@ let runningProcesses = {};
 const broadcastStats = (channelId, stats) => {
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN && websocketCanAccess(client, ['live-tv'])) {
-            client.send(JSON.stringify({ type: 'stats', channelId, payload: stats }));
+            const payload = canViewTerminal(client.user)
+                ? stats
+                : Object.fromEntries(Object.entries(stats).filter(([key]) => key !== 'log' && key !== 'command'));
+            client.send(JSON.stringify({ type: 'stats', channelId, payload }));
         }
     });
 };

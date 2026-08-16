@@ -7,6 +7,7 @@ interface CodeFieldProps {
   label?: string;
   className?: string;
   readOnly?: boolean;
+  onChange?: (value: string) => void;
 }
 
 export const CodeField: React.FC<CodeFieldProps> = ({
@@ -14,6 +15,7 @@ export const CodeField: React.FC<CodeFieldProps> = ({
   label,
   className = '',
   readOnly = true,
+  onChange,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -37,6 +39,7 @@ export const CodeField: React.FC<CodeFieldProps> = ({
           type="text"
           readOnly={readOnly}
           value={value}
+          onChange={e => onChange?.(e.target.value)}
           onFocus={e => e.currentTarget.select()}
           className="h-8 w-full rounded-md border border-[#E8DFF0] bg-[#F8F7FA] pl-2.5 pr-8 font-mono text-[11px] font-medium text-[#1B1024] outline-none transition-colors focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] dark:focus:border-[#8B5CF6]"
         />

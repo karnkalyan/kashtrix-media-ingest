@@ -637,7 +637,12 @@ export const Configurator: React.FC<Props> = ({
                   />
                 )}
 
-                <CodeField value={dest.url} label="Output URL" readOnly={false} />
+                <CodeField
+                  value={dest.url}
+                  label="Output URL"
+                  readOnly={false}
+                  onChange={url => setDestination(dest.id, { url })}
+                />
               </div>
             ))}
           </div>
