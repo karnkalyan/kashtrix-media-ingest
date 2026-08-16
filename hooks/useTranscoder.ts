@@ -490,8 +490,6 @@ const useEngine = () => {
   }, [api, fetchIngestStreams, fetchRecordings]);
 
   const generateLicense = useCallback(async (payload: {
-    adminEmail: string;
-    adminPassword: string;
     customerName: string;
     customerEmail?: string;
     expiresAt?: string;

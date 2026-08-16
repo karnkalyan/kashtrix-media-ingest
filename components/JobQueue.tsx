@@ -29,7 +29,6 @@ import Configurator from './Configurator';
 interface Props {
   channels: Channel[];
   profiles: TranscodingProfile[];
-  username?: string;
   userRole?: string;
   startChannel: (id: string) => Promise<void> | void;
   stopChannel: (id: string) => Promise<void> | void;
@@ -145,7 +144,6 @@ const ChannelLogsModal: React.FC<{ channel: Channel | null; onClose: () => void 
 export const ChannelDashboard: React.FC<Props> = ({
   channels,
   profiles,
-  username,
   userRole,
   startChannel,
   stopChannel,
@@ -163,8 +161,7 @@ export const ChannelDashboard: React.FC<Props> = ({
   settings,
   licenseStatus,
 }) => {
-  const canViewTerminal = userRole === 'superadmin'
-    && username?.trim().toLowerCase() === 'karnkalyan@gmail.com';
+  const canViewTerminal = userRole === 'superadmin';
   const [activeTab, setActiveTab] = useState<'channels' | 'profiles'>('channels');
   const [search, setSearch] = useState('');
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);

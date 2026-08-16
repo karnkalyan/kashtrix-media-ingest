@@ -22,6 +22,20 @@ const bundledFfmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
+const {
+    canViewTerminal,
+    createTokenCodec,
+    hashPassword,
+    isStrongPassword,
+    isSuperadmin,
+    normalizeUserRole,
+    parseManagedRole,
+    passwordNeedsUpgrade,
+    redactTerminalData,
+    requireEnv,
+    resolvePersistedIdentity,
+    verifyPassword,
+} = require('./securityPolicy');
 
 const loadEnvFile = () => {
     const envFile = path.join(__dirname, '.env');
@@ -55,15 +69,8 @@ const MEDIA_ROOT = path.join(process.cwd(), 'media');
 const RECORDINGS_DIR = path.join(MEDIA_ROOT, 'recordings');
 const RECORDING_THUMBNAILS_DIR = path.join(MEDIA_ROOT, 'recording-thumbnails');
 
-const JWT_SECRET = process.env.KTE_JWT_SECRET || 'change-this-local-kte-secret';
-const LICENSE_ADMIN_EMAIL = process.env.KTE_LICENSE_ADMIN_EMAIL || 'karnkalyan@gmail.com';
-const LICENSE_ADMIN_PASSWORD = process.env.KTE_LICENSE_ADMIN_PASSWORD || 'kalyan_vickey';
-const TERMINAL_OWNER_EMAIL = 'karnkalyan@gmail.com';
-const canViewTerminal = (user) => user?.role === 'superadmin'
-    && String(user?.sub || '').trim().toLowerCase() === TERMINAL_OWNER_EMAIL;
-const redactTerminalData = (channel, user) => canViewTerminal(user)
-    ? channel
-    : { ...channel, command: '', outputLog: [] };
+const JWT_SECRET = requireEnv('KTE_JWT_SECRET', 32);
+const { signToken, verifyToken } = createTokenCodec(JWT_SECRET);
 const CHANNEL_RUNTIME_FIELDS = ['status', 'uptime', 'speed', 'speedHistory', 'outputLog'];
 const sanitizeChannelForStorage = (channel) => {
     const source = channel && typeof channel === 'object' && !Array.isArray(channel) ? channel : {};
@@ -161,23 +168,16 @@ try {
     console.error('[DB] Error fixing unclosed recordings on startup:', e);
 }
 
-const hashPassword = (password) => crypto.createHash('sha256').update(`kte:${password}`).digest('hex');
-const base64url = (input) => Buffer.from(input).toString('base64url');
-const signToken = (payload) => {
-    const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-    const body = base64url(JSON.stringify(payload));
-    const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-    return `${header}.${body}.${sig}`;
+const resolveAuthenticatedUser = (claims) => {
+    return resolvePersistedIdentity(claims, username => (
+        db.prepare('SELECT username, password_hash, role FROM users WHERE username = ?').get(username)
+    ));
 };
-const verifyToken = (token) => {
-    const [header, body, sig] = String(token || '').split('.');
-    if (!header || !body || !sig) throw new Error('Invalid token');
-    const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) throw new Error('Invalid token signature');
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (payload.exp && Date.now() / 1000 > payload.exp) throw new Error('Token expired');
-    return payload;
-};
+const authenticateToken = (token) => resolveAuthenticatedUser(verifyToken(token));
+const signAuthToken = (user) => signToken({
+    sub: user.username,
+    exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60),
+});
 const getJsonSetting = (key, fallback) => {
     const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get(key);
     if (!row) return fallback;
@@ -264,14 +264,29 @@ const requiredModulesForRequest = (req) => {
     if (path.startsWith('/api/ingest/history') || path.startsWith('/api/ingest/processes') || path.startsWith('/api/ingest/srt') || path.startsWith('/api/ingest/relay') || path.startsWith('/api/diagnostics')) return ['live-server'];
     return [];
 };
-const ensureDefaultUser = () => {
-    const count = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
-    if (count === 0) {
+const ensureBootstrapSuperadmin = async () => {
+    const users = db.prepare('SELECT id, username, role FROM users').all();
+    if (users.some(user => normalizeUserRole(user.role) === 'superadmin')) return;
+
+    const username = requireEnv('KTE_DEFAULT_USERNAME');
+    const password = requireEnv('KTE_DEFAULT_PASSWORD', 16);
+    const existing = users.find(user => user.username === username);
+
+    if (existing) {
+        db.prepare('UPDATE users SET username = ?, password_hash = ?, role = ? WHERE id = ?')
+            .run(username, hashPassword(password), 'superadmin', existing.id);
+    } else {
         db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-            .run(process.env.KTE_DEFAULT_USERNAME || 'admin', hashPassword(process.env.KTE_DEFAULT_PASSWORD || 'admin123'), 'admin');
+            .run(username, hashPassword(password), 'superadmin');
     }
+    await db.pending;
+    const persisted = await db.prisma.user.findFirst({ where: { username } });
+    if (!persisted || persisted.role !== 'SUPER_ADMIN') {
+        throw new Error('[Security] Failed to persist the bootstrap superadmin role');
+    }
+    console.warn('[Security] Persisted bootstrap superadmin initialized; change its password after first login');
 };
-ensureDefaultUser();
+await ensureBootstrapSuperadmin();
 
 const DEFAULT_PROFILES = [
     {
@@ -436,14 +451,14 @@ app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions));
 app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions));
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
-const publicPaths = new Set(['/api/auth/login', '/api/license/status', '/api/_hidden/license/generate']);
+const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
 
 const authMiddleware = (req, res, next) => {
     if (!req.path.startsWith('/api') || publicPaths.has(req.path) || req.path.startsWith('/api/vod')) return next();
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     try {
-        req.user = verifyToken(token);
+        req.user = authenticateToken(token);
         const requiredModules = requiredModulesForRequest(req);
         if (req.user.role !== 'superadmin' && requiredModules.length && !requiredModules.some(module => licenseHasModule(getLicense(), module))) {
             return res.status(403).json({ error: `License module required: ${requiredModules.join(' or ')}`, requiredModules });
@@ -452,6 +467,12 @@ const authMiddleware = (req, res, next) => {
     } catch (error) {
         res.status(401).json({ error: 'Authentication required' });
     }
+};
+const requireSuperadmin = (req, res, next) => {
+    if (!isSuperadmin(req.user)) {
+        return res.status(403).json({ error: 'Superadmin access required' });
+    }
+    next();
 };
 const requireActiveLicense = (req, res, next) => {
     const license = getLicense();
@@ -466,16 +487,16 @@ const requireActiveLicense = (req, res, next) => {
 
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body || {};
-    if (username === 'karnkalyan@gmail.com' && password === 'kalyan_vickey') {
-        const token = signToken({ sub: username, role: 'superadmin', exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60) });
-        return res.json({ token, user: { username, role: 'superadmin' }, license: getLicense() });
-    }
     const user = db.prepare('SELECT username, password_hash, role FROM users WHERE username = ?').get(username || '');
-    if (!user || user.password_hash !== hashPassword(password || '')) {
+    if (!user || !verifyPassword(password || '', user.password_hash)) {
         return res.status(401).json({ error: 'Invalid username or password' });
     }
-    const token = signToken({ sub: user.username, role: user.role, exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60) });
-    res.json({ token, user: { username: user.username, role: user.role }, license: getLicense() });
+    if (passwordNeedsUpgrade(user.password_hash)) {
+        db.prepare('UPDATE users SET username = ?, password_hash = ? WHERE username = ?')
+            .run(user.username, hashPassword(password), user.username);
+    }
+    const persistedUser = { username: user.username, role: normalizeUserRole(user.role) };
+    res.json({ token: signAuthToken(persistedUser), user: persistedUser, license: getLicense() });
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
@@ -517,17 +538,20 @@ app.post('/api/vod/upload', vodUpload.single('vodFile'), (req, res) => {
 app.put('/api/auth/account', authMiddleware, (req, res) => {
     const { username, currentPassword, newPassword } = req.body || {};
     const currentUser = db.prepare('SELECT username, password_hash, role FROM users WHERE username = ?').get(req.user.sub);
-    if (!currentUser || currentUser.password_hash !== hashPassword(currentPassword || '')) {
+    if (!currentUser || !verifyPassword(currentPassword || '', currentUser.password_hash)) {
         return res.status(400).json({ error: 'Current password is incorrect' });
     }
     const nextUsername = String(username || currentUser.username).trim();
     if (!nextUsername) return res.status(400).json({ error: 'Username is required' });
-    const nextHash = newPassword ? hashPassword(newPassword) : currentUser.password_hash;
+    if (newPassword && !isStrongPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 12 characters' });
+    const nextHash = newPassword
+        ? hashPassword(newPassword)
+        : (passwordNeedsUpgrade(currentUser.password_hash) ? hashPassword(currentPassword) : currentUser.password_hash);
     try {
         db.prepare('UPDATE users SET username = ?, password_hash = ? WHERE username = ?')
             .run(nextUsername, nextHash, currentUser.username);
-        const token = signToken({ sub: nextUsername, role: currentUser.role, exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60) });
-        res.json({ token, user: { username: nextUsername, role: currentUser.role } });
+        const nextUser = { username: nextUsername, role: normalizeUserRole(currentUser.role) };
+        res.json({ token: signAuthToken(nextUser), user: nextUser });
     } catch (error) {
         res.status(409).json({ error: 'Username already exists' });
     }
@@ -541,26 +565,8 @@ app.get('/api/license/hwid', authMiddleware, (req, res) => {
     res.json({ hardwareId: SYSTEM_HWID });
 });
 
-app.post('/api/_hidden/license/generate', (req, res) => {
-    const { adminEmail, adminPassword, customerName, customerEmail, expiresAt, days, features, hardwareId } = req.body || {};
-    
-    let isJwtAuthenticated = false;
-    const authHeader = req.headers.authorization || '';
-    if (authHeader.startsWith('Bearer ')) {
-        try {
-            const tokenUser = verifyToken(authHeader.slice(7));
-            if (tokenUser && tokenUser.sub) isJwtAuthenticated = true;
-        } catch (e) {}
-    }
-
-    const isCredsValid = (adminEmail === LICENSE_ADMIN_EMAIL && adminPassword === LICENSE_ADMIN_PASSWORD) ||
-                         (adminEmail === 'karnkalyan@gmail.com' && adminPassword === 'kalyan_vickey') ||
-                         adminEmail === LICENSE_ADMIN_EMAIL ||
-                         adminEmail === 'karnkalyan@gmail.com';
-    if (!isJwtAuthenticated && !isCredsValid) {
-        return res.status(401).json({ error: 'Invalid license generator credentials' });
-    }
-
+app.post('/api/_hidden/license/generate', authMiddleware, requireSuperadmin, (req, res) => {
+    const { customerName, customerEmail, expiresAt, days, features, hardwareId } = req.body || {};
     const expiryMs = expiresAt ? new Date(expiresAt).getTime() : Date.now() + (Number(days || 365) * 24 * 60 * 60 * 1000);
     if (!customerName || Number.isNaN(expiryMs) || expiryMs <= Date.now()) {
         return res.status(400).json({ error: 'Customer name and a future expiry are required' });
@@ -588,22 +594,19 @@ app.post('/api/_hidden/license/generate', (req, res) => {
     res.json({ licenseKey, payload: { ...payload, expiresAt: new Date(expiryMs).toISOString() } });
 });
 
-app.get('/api/_hidden/licenses', authMiddleware, (req, res) => {
-    if (String(req.user?.sub || '').toLowerCase() !== 'karnkalyan@gmail.com') {
-        return res.json([]);
-    }
+app.get('/api/_hidden/licenses', authMiddleware, requireSuperadmin, (req, res) => {
     const licenses = db.prepare('SELECT * FROM generated_licenses ORDER BY created_at DESC').all().map(license => {
         try { const payload = verifyToken(license.license_key); return { ...license, features: payload.features || [], hardware_id: payload.hardwareId || null }; } catch (e) { return { ...license, features: [], hardware_id: null }; }
     });
     res.json(licenses);
 });
 
-app.put('/api/_hidden/licenses/:id/suspend', authMiddleware, (req, res) => {
+app.put('/api/_hidden/licenses/:id/suspend', authMiddleware, requireSuperadmin, (req, res) => {
     db.prepare('UPDATE generated_licenses SET status = ? WHERE id = ?').run('suspended', req.params.id);
     res.json({ success: true });
 });
 
-app.put('/api/_hidden/licenses/:id/activate', authMiddleware, (req, res) => {
+app.put('/api/_hidden/licenses/:id/activate', authMiddleware, requireSuperadmin, (req, res) => {
     db.prepare('UPDATE generated_licenses SET status = ? WHERE id = ?').run('active', req.params.id);
     res.json({ success: true });
 });
@@ -1807,20 +1810,25 @@ const handleCreateUser = (req, res) => {
     try {
         const { username, password, role } = req.body || {};
         if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+        if (!isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 12 characters' });
+        const nextRole = parseManagedRole(role);
+        if (!nextRole) {
+            return res.status(400).json({ error: 'Role must be admin or user' });
+        }
         const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
         if (existing) return res.status(409).json({ error: 'Username already exists' });
         const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-            .run(username, hashPassword(password), role || 'admin');
+            .run(username, hashPassword(password), nextRole);
         res.status(201).json({ success: true, message: 'User created successfully', userId: result.lastInsertRowid });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
 
-app.get('/api/users', authMiddleware, handleGetUsers);
-app.get('/api/users/', authMiddleware, handleGetUsers);
-app.post('/api/users', authMiddleware, handleCreateUser);
-app.post('/api/users/', authMiddleware, handleCreateUser);
+app.get('/api/users', authMiddleware, requireSuperadmin, handleGetUsers);
+app.get('/api/users/', authMiddleware, requireSuperadmin, handleGetUsers);
+app.post('/api/users', authMiddleware, requireSuperadmin, handleCreateUser);
+app.post('/api/users/', authMiddleware, requireSuperadmin, handleCreateUser);
 
 const handleUpdateUser = (req, res) => {
     try {
@@ -1828,9 +1836,14 @@ const handleUpdateUser = (req, res) => {
         const { username, password, role } = req.body || {};
         const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
         if (!user) return res.status(404).json({ error: 'User not found' });
+        if (normalizeUserRole(user.role) === 'superadmin') {
+            return res.status(403).json({ error: 'Superadmin credentials must be changed from the account profile' });
+        }
+        if (password && !isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 12 characters' });
         const nextUsername = username || user.username;
         const nextHash = password ? hashPassword(password) : user.password_hash;
-        const nextRole = role || user.role || 'admin';
+        const nextRole = parseManagedRole(role || user.role);
+        if (!nextRole) return res.status(400).json({ error: 'Role must be admin or user' });
         db.prepare('UPDATE users SET username = ?, password_hash = ?, role = ? WHERE id = ?').run(nextUsername, nextHash, nextRole, id);
         res.json({ success: true, message: 'User updated successfully' });
     } catch (e) {
@@ -1838,14 +1851,15 @@ const handleUpdateUser = (req, res) => {
     }
 };
 
-app.put('/api/users/:id', authMiddleware, handleUpdateUser);
-app.put('/api/users/:id/', authMiddleware, handleUpdateUser);
+app.put('/api/users/:id', authMiddleware, requireSuperadmin, handleUpdateUser);
+app.put('/api/users/:id/', authMiddleware, requireSuperadmin, handleUpdateUser);
 
 const handleDeleteUser = (req, res) => {
     try {
         const { id } = req.params;
         const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
         if (!user) return res.status(404).json({ error: 'User not found' });
+        if (normalizeUserRole(user.role) === 'superadmin') return res.status(403).json({ error: 'Cannot delete a superadmin account' });
         if (user.username === req.user.sub) return res.status(400).json({ error: 'Cannot delete logged in user account' });
         db.prepare('DELETE FROM users WHERE id = ?').run(id);
         res.json({ success: true, message: 'User deleted successfully' });
@@ -1854,8 +1868,8 @@ const handleDeleteUser = (req, res) => {
     }
 };
 
-app.delete('/api/users/:id', authMiddleware, handleDeleteUser);
-app.delete('/api/users/:id/', authMiddleware, handleDeleteUser);
+app.delete('/api/users/:id', authMiddleware, requireSuperadmin, handleDeleteUser);
+app.delete('/api/users/:id/', authMiddleware, requireSuperadmin, handleDeleteUser);
 
 // === STORAGE PROTOCOL & REMOTE DIRECTORY VALIDATION ===
 app.post(['/api/storage/test-connection', '/api/storage/test-connection/'], authMiddleware, async (req, res) => {
@@ -2146,7 +2160,7 @@ const ensureOutputDirectories = (command) => {
 wss.on('connection', (ws, request) => {
     try {
         const token = new URL(request.url, 'http://localhost').searchParams.get('token');
-        ws.user = verifyToken(token);
+        ws.user = authenticateToken(token);
     } catch (error) {
         ws.close(1008, 'Authentication required');
         return;

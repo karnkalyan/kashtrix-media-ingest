@@ -1,6 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
+const { normalizeUserRole } = require('./securityPolicy');
 
-const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: String(row.role || 'admin').toLowerCase(), created_at: row.createdAt });
+const toPrismaRole = role => ({ superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER' })[normalizeUserRole(role)];
+const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: normalizeUserRole(row.role), created_at: row.createdAt });
 const snakeLicense = row => row && ({ id: row.id, customer_name: row.customerName, customer_email: row.customerEmail, license_key: row.licenseKey, status: row.status, expires_at: row.expiresAt, created_at: row.createdAt });
 const snakeSession = row => row && ({ id: row.id, app: row.app, stream: row.stream, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, max_viewers: row.maxViewers, total_bytes: Number(row.totalBytes), outgoing_bytes: Number(row.outgoingBytes), video_info: row.videoInfo, audio_info: row.audioInfo });
 const snakeRecording = row => row && ({ id: row.id, app: row.app, stream: row.stream, file_path: row.filePath, file_name: row.fileName, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, size: Number(row.size), format: row.format, video_bitrate: row.videoBitrate, audio_bitrate: row.audioBitrate, encoder: row.encoder, resolution: row.resolution, continuous: row.continuous ? 1 : 0, source_type: row.sourceType, settings_json: row.settingsJson });
@@ -82,10 +84,11 @@ class PrismaStore {
     if (sql.startsWith('insert into users')) {
       const [username, password_hash, role] = args;
       const id = Math.max(0, ...this.data.users.map(r => Number(r.id) || 0)) + 1;
-      const newUser = { id, username, password_hash, role: role || 'admin', created_at: new Date() };
+      const normalizedRole = normalizeUserRole(role);
+      const newUser = { id, username, password_hash, role: normalizedRole, created_at: new Date() };
       this.data.users.push(newUser);
       this.persist(() => this.prisma.user.create({
-        data: { id, username, email: `${username}@kashtrix.local`, passwordHash: password_hash, role: String(role || 'admin').toUpperCase() === 'USER' ? 'USER' : 'ADMIN' }
+        data: { id, username, email: `${username}@kashtrix.local`, passwordHash: password_hash, role: toPrismaRole(normalizedRole) }
       }));
       return { lastInsertRowid: id };
     }
@@ -105,13 +108,13 @@ class PrismaStore {
         if (row) {
           if (args.length >= 2) row.username = args[0];
           if (args.length >= 3) row.password_hash = args[1];
-          if (args.length >= 4) row.role = args[2];
+          if (args.length >= 4) row.role = normalizeUserRole(args[2]);
         }
       }
       if (row) {
         this.persist(() => this.prisma.user.update({
           where: { id: row.id },
-          data: { username: row.username, passwordHash: row.password_hash, role: String(row.role || 'admin').toUpperCase() }
+          data: { username: row.username, passwordHash: row.password_hash, role: toPrismaRole(row.role) }
         }).catch(e => console.error('[Prisma] update user error:', e.message)));
       }
       return {};

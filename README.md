@@ -10,13 +10,15 @@ The production stack uses FFmpeg 6.1.3 and Node.js 22.23.1 in the media backend,
 
 ```bash
 cp .env.example .env
-# Edit every password and secret in .env before starting.
+# Replace every SET_/GENERATE_ placeholder with a unique value before starting.
 docker compose up -d --build
 ```
 
 Open `http://localhost:3000`. RTMP ingest listens on `rtmp://localhost:1935/live/<stream-name>`. API, WebSocket, HLS, DASH, recordings and previews all pass through the same web origin; internal ports `3005` and `8080` are not publicly exposed.
 
 MySQL and recordings use named Docker volumes, so container recreation does not remove them. Environment files, databases, recordings, generated streams, dependencies, logs, archives, and build output are excluded from Git.
+
+`KTE_JWT_SECRET` is always required. When no persisted superadmin exists, the backend also requires `KTE_DEFAULT_USERNAME` and `KTE_DEFAULT_PASSWORD`; it creates or securely promotes that one account, persists the `SUPER_ADMIN` role in MySQL, and does not reuse the bootstrap password on later starts. Change the bootstrap password from Account Profile after the first login.
 
 ## Local development
 

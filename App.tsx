@@ -290,6 +290,7 @@ const AccountView: React.FC<{ username?: string; onSave: (payload: { username: s
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
+    if (newPassword && newPassword.length < 12) return toast.error('New password must be at least 12 characters');
     setSaving(true);
     try {
       await onSave({ username: nextUsername, currentPassword, newPassword: newPassword || undefined });
@@ -335,7 +336,7 @@ const AccountView: React.FC<{ username?: string; onSave: (payload: { username: s
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">New Password</label>
-            <input className={inputClass} type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Leave blank to keep unchanged" />
+            <input className={inputClass} type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={12} placeholder="Leave blank to keep unchanged" />
           </div>
           <button
             type="button"
@@ -357,20 +358,18 @@ const AccountView: React.FC<{ username?: string; onSave: (payload: { username: s
 const LicenseView: React.FC<{
   status: string;
   license: LicenseInfo;
-  username?: string;
+  userRole?: string;
   onActivate: (key: string) => Promise<any>;
-  onGenerate: (payload: { adminEmail: string; adminPassword: string; customerName: string; customerEmail?: string; expiresAt?: string; days?: number; features: string[]; hardwareId: string }) => Promise<any>;
+  onGenerate: (payload: { customerName: string; customerEmail?: string; expiresAt?: string; days?: number; features: string[]; hardwareId: string }) => Promise<any>;
   fetchLicenses: () => Promise<any[]>;
   suspendLicense: (id: number) => Promise<any>;
   resumeLicense: (id: number) => Promise<any>;
   resetLicense: () => Promise<any>;
-}> = ({ status, license, username, onActivate, onGenerate, fetchLicenses, suspendLicense, resumeLicense }) => {
+}> = ({ status, license, userRole, onActivate, onGenerate, fetchLicenses, suspendLicense, resumeLicense }) => {
   const inputClass = 'w-full rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 py-1.5 text-[12px] text-[#1B1024] outline-none focus:border-[#6D32D9] dark:bg-[#211335] dark:border-[#371F59] dark:text-white';
   const [key, setKey] = useState('');
   const [generated, setGenerated] = useState('');
   const [generator, setGenerator] = useState({
-    adminEmail: 'karnkalyan@gmail.com',
-    adminPassword: 'kalyan_vickey',
     customerName: '',
     customerEmail: '',
     days: 365,
@@ -380,7 +379,7 @@ const LicenseView: React.FC<{
   const [loading, setLoading] = useState(false);
   const [licensesList, setLicensesList] = useState<any[]>([]);
 
-  const canShowGenerator = username?.trim().toLowerCase() === 'karnkalyan@gmail.com';
+  const canShowGenerator = userRole === 'superadmin';
 
   useEffect(() => {
     if (canShowGenerator) {
@@ -508,18 +507,6 @@ const LicenseView: React.FC<{
         {canShowGenerator && (
           <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3.5 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
             <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">License Generator & Module Entitlements</h2>
-
-            {/* Admin Generator Credentials */}
-            <div className="grid grid-cols-2 gap-2 text-[12px]">
-              <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Generator Admin Email</label>
-                <input className={inputClass} value={generator.adminEmail} onChange={e => setGenerator(p => ({ ...p, adminEmail: e.target.value }))} placeholder="karnkalyan@gmail.com" />
-              </div>
-              <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Generator Admin Password</label>
-                <input className={inputClass} type="password" value={generator.adminPassword} onChange={e => setGenerator(p => ({ ...p, adminPassword: e.target.value }))} placeholder="kalyan_vickey" />
-              </div>
-            </div>
 
             {/* Customer Details */}
             <div className="grid grid-cols-2 gap-2 text-[12px]">
@@ -737,13 +724,16 @@ const Sidebar: React.FC<{
   licenseStatus: string;
   customerName?: string;
   license: LicenseInfo;
-  username?: string;
+  userRole?: string;
   mobileOpen: boolean;
   onMobileClose: () => void;
-}> = ({ activeView, setActiveView, collapsed, onToggle, licenseStatus, customerName, license, username, mobileOpen, onMobileClose }) => {
+}> = ({ activeView, setActiveView, collapsed, onToggle, licenseStatus, customerName, license, userRole, mobileOpen, onMobileClose }) => {
   const visibleItems = useMemo(() => {
-    return navItems.filter(item => username === 'karnkalyan@gmail.com' || hasLicenseModule(license, item.licenseModule));
-  }, [license, username]);
+    return navItems.filter(item => {
+      if (item.id === 'users' && userRole !== 'superadmin') return false;
+      return userRole === 'superadmin' || hasLicenseModule(license, item.licenseModule);
+    });
+  }, [license, userRole]);
 
   const groups = useMemo(() => {
     const list: { name: string; items: NavItem[] }[] = [];
@@ -1042,9 +1032,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const item = navItems.find(navItem => navItem.id === activeView);
-    const isGeneratorAdmin = engine.auth.user?.username === 'karnkalyan@gmail.com';
-    if (item?.licenseModule && !isGeneratorAdmin && !hasLicenseModule(engine.auth.license, item.licenseModule)) setActiveView('dashboard');
-  }, [activeView, engine.auth.license, engine.auth.user?.username]);
+    const isSuperadmin = engine.auth.user?.role === 'superadmin';
+    if ((item?.licenseModule && !isSuperadmin && !hasLicenseModule(engine.auth.license, item.licenseModule)) || (item?.id === 'users' && !isSuperadmin)) {
+      setActiveView('dashboard');
+    }
+  }, [activeView, engine.auth.license, engine.auth.user?.role]);
 
   if (!engine.auth.token) return <LoginScreen onLogin={engine.login} />;
 
@@ -1064,7 +1056,7 @@ const App: React.FC = () => {
         licenseStatus={engine.auth.license.status}
         customerName={engine.auth.license.customerName}
         license={engine.auth.license}
-        username={engine.auth.user?.username}
+        userRole={engine.auth.user?.role}
         mobileOpen={mobileMenuOpen}
         onMobileClose={() => setMobileMenuOpen(false)}
       />
@@ -1091,7 +1083,6 @@ const App: React.FC = () => {
             <ChannelDashboard
               channels={engine.state.channels}
               profiles={engine.state.profiles}
-              username={engine.auth.user?.username}
               userRole={engine.auth.user?.role}
               startChannel={engine.startChannel}
               stopChannel={engine.stopChannel}
@@ -1147,9 +1138,9 @@ const App: React.FC = () => {
           )}
           {activeView === 'recordings' && <RecordingLibrary realtimeRecordings={engine.recordings} settings={engine.state.settings} deleteRecording={engine.deleteRecording} />}
           {activeView === 'events' && <EventsAndAlerts />}
-          {activeView === 'users' && <UserManagementView currentUser={engine.auth.user?.username} />}
+          {activeView === 'users' && engine.auth.user?.role === 'superadmin' && <UserManagementView currentUser={engine.auth.user?.username} />}
           {activeView === 'settings' && <SettingsView settings={engine.state.settings} onSave={engine.updateSettings} />}
-          {activeView === 'license' && <LicenseView status={engine.auth.license.status} license={engine.auth.license} username={engine.auth.user?.username} onActivate={engine.activateLicense} onGenerate={engine.generateLicense} fetchLicenses={engine.fetchLicenses} suspendLicense={engine.suspendLicense} resumeLicense={engine.resumeLicense} resetLicense={engine.resetLicense} />}
+          {activeView === 'license' && <LicenseView status={engine.auth.license.status} license={engine.auth.license} userRole={engine.auth.user?.role} onActivate={engine.activateLicense} onGenerate={engine.generateLicense} fetchLicenses={engine.fetchLicenses} suspendLicense={engine.suspendLicense} resumeLicense={engine.resumeLicense} resetLicense={engine.resetLicense} />}
           {activeView === 'account' && <AccountView username={engine.auth.user?.username} onSave={engine.changeAccount} />}
         </main>
       </div>

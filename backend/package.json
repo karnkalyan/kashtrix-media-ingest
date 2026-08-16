@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test securityPolicy.test.js",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "db:push": "prisma db push --schema prisma/schema.prisma",
     "db:migrate-sqlite": "node scripts/migrate-sqlite-to-mysql.cjs"
