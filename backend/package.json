@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test securityPolicy.test.js superadminBootstrap.test.js",
+    "test": "node --test getDevices.test.js securityPolicy.test.js superadminBootstrap.test.js",
     "bootstrap:superadmin": "node scripts/bootstrap-superadmin.cjs",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "db:push": "prisma db push --schema prisma/schema.prisma",

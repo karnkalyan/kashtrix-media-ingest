@@ -28,27 +28,21 @@ function parseDeckLink(output) {
     let readingDevices = false;
 
     for (const line of lines) {
-        if (line.includes('Auto-detected sources for decklink:') || line.includes('Auto-detected sources:')) {
+        if (line.trim() === 'Auto-detected sources for decklink:') {
             readingDevices = true;
             continue;
         }
-        if (readingDevices) {
-            const match = line.match(/^\s*(\S.*?)\s*\[DeckLink/i) || line.match(/^\s*(\d+)\s+([^\n\r]+)/);
-            if (match) {
-                const devName = (match[2] || match[1]).trim();
-                if (devName && !video.includes(devName)) {
-                    video.push(devName);
-                    audio.push(devName);
-                }
-            } else {
-                const trimmed = line.trim();
-                if (trimmed && !trimmed.startsWith('Auto-detected') && !trimmed.startsWith('ffmpeg') && !trimmed.startsWith('[')) {
-                    const cleanName = trimmed.split('[')[0].trim();
-                    if (cleanName && !video.includes(cleanName)) {
-                        video.push(cleanName);
-                        audio.push(cleanName);
-                    }
-                }
+
+        if (!readingDevices) continue;
+
+        // FFmpeg 8 prints: * <internal handle> [<display name>] (video, audio)
+        // The leading '*' is optional and marks FFmpeg's default device.
+        const match = line.match(/^\s*\*?\s*\S+\s+\[([^\]\r\n]+)\]\s+\(\s*video\s*,\s*audio\s*\)\s*$/i);
+        if (match) {
+            const displayName = match[1].trim();
+            if (displayName && !video.includes(displayName)) {
+                video.push(displayName);
+                audio.push(displayName);
             }
         }
     }
