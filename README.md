@@ -18,7 +18,7 @@ Open `http://localhost:3000`. RTMP ingest listens on `rtmp://localhost:1935/live
 
 MySQL and recordings use named Docker volumes, so container recreation does not remove them. Environment files, databases, recordings, generated streams, dependencies, logs, archives, and build output are excluded from Git.
 
-`KTE_JWT_SECRET` is always required. When no persisted superadmin exists, the backend also requires `KTE_DEFAULT_USERNAME` and `KTE_DEFAULT_PASSWORD`; it creates or securely promotes that one account, persists the `SUPER_ADMIN` role in MySQL, and does not reuse the bootstrap password on later starts. Change the bootstrap password from Account Profile after the first login.
+`KTE_JWT_SECRET` is always required. The backend never creates or promotes a superadmin from environment variables or API payloads. Create the first persisted superadmin from an interactive terminal with `npm --prefix backend run bootstrap:superadmin` (or `docker compose exec backend npm run bootstrap:superadmin` in Compose); the password prompt is hidden and the CLI accepts no credential arguments. Log in afterward through the normal `/api/auth/login` endpoint.
 
 ## Local development
 

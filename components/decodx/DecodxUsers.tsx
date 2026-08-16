@@ -175,9 +175,10 @@ const DecodxUsers: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
                     <button
+                      disabled={user.role === 'SUPER_ADMIN'}
                       onClick={() => setDeleteConfirm(user)}
-                      className="p-2 text-[var(--text-secondary)] hover:text-red-600 hover:bg-red-50 rounded-[var(--radius-sm)] transition-colors"
-                      title="Delete User"
+                      className="p-2 text-[var(--text-secondary)] hover:text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 rounded-[var(--radius-sm)] transition-colors"
+                      title={user.role === 'SUPER_ADMIN' ? 'Superadmin is CLI-managed' : 'Delete User'}
                     >
                       <FiTrash2 size={16} />
                     </button>
@@ -253,7 +254,6 @@ const DecodxUsers: React.FC = () => {
               >
                 <option value="USER">User</option>
                 <option value="ADMIN">Admin</option>
-                <option value="SUPER_ADMIN">Super Admin</option>
               </select>
             </div>
             <div>

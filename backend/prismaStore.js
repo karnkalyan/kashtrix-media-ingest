@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const { normalizeUserRole } = require('./securityPolicy');
 
 const toPrismaRole = role => ({ superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER' })[normalizeUserRole(role)];
-const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: normalizeUserRole(row.role), created_at: row.createdAt });
+const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: normalizeUserRole(row.role), is_active: row.isActive !== false, created_at: row.createdAt });
 const snakeLicense = row => row && ({ id: row.id, customer_name: row.customerName, customer_email: row.customerEmail, license_key: row.licenseKey, status: row.status, expires_at: row.expiresAt, created_at: row.createdAt });
 const snakeSession = row => row && ({ id: row.id, app: row.app, stream: row.stream, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, max_viewers: row.maxViewers, total_bytes: Number(row.totalBytes), outgoing_bytes: Number(row.outgoingBytes), video_info: row.videoInfo, audio_info: row.audioInfo });
 const snakeRecording = row => row && ({ id: row.id, app: row.app, stream: row.stream, file_path: row.filePath, file_name: row.fileName, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, size: Number(row.size), format: row.format, video_bitrate: row.videoBitrate, audio_bitrate: row.audioBitrate, encoder: row.encoder, resolution: row.resolution, continuous: row.continuous ? 1 : 0, source_type: row.sourceType, settings_json: row.settingsJson });
@@ -34,6 +34,12 @@ class PrismaStore {
       sessions: sessions.map(snakeSession),
       recordings: recordings.map(snakeRecording)
     };
+  }
+
+  async refreshUsers() {
+    const users = await this.prisma.user.findMany();
+    this.data.users = users.map(snakeUser);
+    return this.data.users;
   }
 
   persist(task) {

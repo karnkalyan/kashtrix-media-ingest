@@ -27,8 +27,6 @@ services:
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-kashtrix}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-kashtrix_db}
       KTE_JWT_SECRET: ${KTE_JWT_SECRET:?KTE_JWT_SECRET is required}
-      KTE_DEFAULT_USERNAME: ${KTE_DEFAULT_USERNAME:-}
-      KTE_DEFAULT_PASSWORD: ${KTE_DEFAULT_PASSWORD:-}
       KTE_HWID: ${KTE_HWID:-}
       FFMPEG_PATH: /usr/local/bin/ffmpeg
       FFPROBE_PATH: /usr/local/bin/ffprobe

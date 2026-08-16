@@ -12,6 +12,8 @@ const fs = require('fs');
 
 const prisma = new PrismaClient();
 const app = express();
+const JWT_SECRET = String(process.env.DECODX_JWT_SECRET || '').trim();
+if (JWT_SECRET.length < 32) throw new Error('[Security] DECODX_JWT_SECRET must be configured with at least 32 characters');
 
 app.use(cors());
 app.use(express.json());
@@ -46,16 +48,22 @@ const adminApiAuth = (req, res, next) => {
     next();
 };
 
-const jwtAuth = (req, res, next) => {
+const jwtAuth = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader?.replace('Bearer ', '');
     if (!token) {
         return res.status(401).json({ error: 'No token' });
     }
     try {
-        const secret = process.env.JWT_SECRET || 'decodx-secret-change-me';
-        const decoded = jwt.verify(token, secret);
-        req.user = decoded;
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = Number(decoded.id);
+        if (!Number.isInteger(userId)) throw new Error('Invalid token subject');
+        const persistedUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, email: true, role: true, isActive: true },
+        });
+        if (!persistedUser?.isActive) throw new Error('User is not active');
+        req.user = { id: persistedUser.id, email: persistedUser.email, role: persistedUser.role };
         next();
     } catch (e) {
         return res.status(401).json({ error: 'Invalid token' });
@@ -66,6 +74,11 @@ const requireAdmin = (req, res, next) => {
     if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user?.role))
         return res.status(403).json({ error: 'Forbidden' });
     next();
+};
+
+const parseManagedRole = role => {
+    const normalized = String(role || '').trim().toUpperCase();
+    return normalized === 'ADMIN' || normalized === 'USER' ? normalized : null;
 };
 
 const flexAuth = (req, res, next) => {
@@ -246,8 +259,8 @@ app.post('/v1/auth/login', async (req, res) => {
         if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
         const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role },
-            process.env.JWT_SECRET || 'decodx-secret-change-me',
+            { id: user.id, email: user.email },
+            JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -329,6 +342,8 @@ app.get('/v1/admin/users', jwtAuth, requireAdmin, async (req, res) => {
 app.post('/v1/admin/users', jwtAuth, requireAdmin, async (req, res) => {
     const { email, password, firstName, lastName, role, subscription, maxDevicesAllowed } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Missing fields' });
+    const nextRole = parseManagedRole(role || 'USER');
+    if (!nextRole) return res.status(400).json({ error: 'Role must be ADMIN or USER' });
     try {
         const hash = await bcrypt.hash(password, 12);
         const user = await prisma.user.create({
@@ -336,7 +351,7 @@ app.post('/v1/admin/users', jwtAuth, requireAdmin, async (req, res) => {
                 email: email.toLowerCase(),
                 passwordHash: hash,
                 firstName, lastName,
-                role: role || 'USER',
+                role: nextRole,
                 subscription: subscription || 'FREE',
                 maxDevicesAllowed: maxDevicesAllowed || 5
             }
@@ -351,9 +366,15 @@ app.post('/v1/admin/users', jwtAuth, requireAdmin, async (req, res) => {
 app.put('/v1/admin/users/:id', jwtAuth, requireAdmin, async (req, res) => {
     const { firstName, lastName, role, subscription, isActive, maxDevicesAllowed } = req.body;
     try {
+        const id = parseInt(req.params.id);
+        const existing = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+        if (!existing) return res.status(404).json({ error: 'User not found' });
+        if (existing.role === 'SUPER_ADMIN') return res.status(403).json({ error: 'Superadmin cannot be managed through the API' });
+        const nextRole = parseManagedRole(role || existing.role);
+        if (!nextRole) return res.status(400).json({ error: 'Role must be ADMIN or USER' });
         const user = await prisma.user.update({
-            where: { id: parseInt(req.params.id) },
-            data: { firstName, lastName, role, subscription, isActive, maxDevicesAllowed }
+            where: { id },
+            data: { firstName, lastName, role: nextRole, subscription, isActive, maxDevicesAllowed }
         });
         res.json({ status: 'OK', user: { id: user.id, email: user.email } });
     } catch (e) {
@@ -365,6 +386,9 @@ app.delete('/v1/admin/users/:id', jwtAuth, requireAdmin, async (req, res) => {
     const id = parseInt(req.params.id);
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
     try {
+        const existing = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+        if (!existing) return res.status(404).json({ error: 'User not found' });
+        if (existing.role === 'SUPER_ADMIN') return res.status(403).json({ error: 'Superadmin cannot be managed through the API' });
         await prisma.user.delete({ where: { id } });
         res.json({ status: 'OK' });
     } catch (e) {

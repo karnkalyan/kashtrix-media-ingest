@@ -562,7 +562,6 @@ export const IngestServerView: React.FC<Props> = ({
           isRecordingActive={isCurrentRecordingActive}
           stopRecording={handleStopControlRecording}
           profiles={profiles}
-          mediaPort={settings.mediaPort}
         />
 
         {/* Recording Archives & Items Table */}

@@ -405,7 +405,6 @@
                 <select id="uf-role" class="input-cls">
                     <option value="USER">User</option>
                     <option value="ADMIN">Admin</option>
-                    <option value="SUPER_ADMIN">Super Admin</option>
                 </select>
                 <select id="uf-subscription" class="input-cls">
                     <option value="FREE">Free</option>
@@ -957,8 +956,10 @@
   <td class="px-4 py-2.5 text-xs text-gray-500">${ago(u.lastLogin)}</td>
   <td class="px-4 py-2.5 text-center">
     <div class="flex gap-1 justify-center">
-      <button onclick="openEditUser(${u.id})" class="px-2 py-1 bg-blue-900 hover:bg-blue-800 rounded text-xs">Edit</button>
-      <button onclick="confirmDeleteUser(${u.id},'${escapeAttr(u.email)}')" class="px-2 py-1 bg-red-950 hover:bg-red-900 rounded text-xs text-red-400">Delete</button>
+      ${u.role === 'SUPER_ADMIN'
+                    ? '<span class="text-xs text-gray-500">CLI managed</span>'
+                    : `<button onclick="openEditUser(${u.id})" class="px-2 py-1 bg-blue-900 hover:bg-blue-800 rounded text-xs">Edit</button>
+      <button onclick="confirmDeleteUser(${u.id},'${escapeAttr(u.email)}')" class="px-2 py-1 bg-red-950 hover:bg-red-900 rounded text-xs text-red-400">Delete</button>`}
     </div>
   </td>
 </tr>`).join('');

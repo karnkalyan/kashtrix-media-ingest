@@ -5,6 +5,7 @@ services:
     environment:
       - DATABASE_URL=${DECODX_DATABASE_URL}
       - ADMIN_API_KEY=${DECODX_ADMIN_API_KEY}
+      - DECODX_JWT_SECRET=${DECODX_JWT_SECRET:?DECODX_JWT_SECRET is required}
       - PORT=3100
     depends_on:
       db:

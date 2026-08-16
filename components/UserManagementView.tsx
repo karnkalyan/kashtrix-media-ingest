@@ -74,6 +74,10 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
   };
 
   const openEditModal = (user: UserItem) => {
+    if (user.role === 'superadmin') {
+      toast.error('Superadmin accounts are managed only through the trusted backend CLI and account profile');
+      return;
+    }
     setEditingUser(user);
     setFormUsername(user.username);
     setFormPassword('');
@@ -226,6 +230,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
             <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
               {filtered.map(user => {
                 const isCurrent = user.username === currentUser;
+                const isProtectedSuperadmin = user.role === 'superadmin';
 
                 return (
                   <tr key={user.id} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2B1745]">
@@ -258,17 +263,18 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
                     <td className="px-4 py-3 text-right space-x-1">
                       <button
                         type="button"
+                        disabled={isProtectedSuperadmin}
                         onClick={() => openEditModal(user)}
-                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
                       >
                         <Edit3 size={12} /> Edit
                       </button>
                       <button
                         type="button"
-                        disabled={isCurrent}
+                        disabled={isCurrent || isProtectedSuperadmin}
                         onClick={() => handleDeleteUserClick(user)}
                         className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] disabled:opacity-40 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#450A0A] dark:hover:text-[#FCA5A5]"
-                        title={isCurrent ? 'Cannot delete current account' : 'Delete user'}
+                        title={isProtectedSuperadmin ? 'Superadmin is CLI-managed' : isCurrent ? 'Cannot delete current account' : 'Delete user'}
                       >
                         <Trash2 size={13} />
                       </button>

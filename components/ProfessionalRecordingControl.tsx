@@ -40,7 +40,6 @@ interface Props {
   isRecordingActive?: boolean;
   stopRecording?: () => void;
   profiles?: TranscodingProfile[];
-  mediaPort?: number;
 }
 
 const selectClass = 'mt-1.5 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-[11px] disabled:bg-slate-100';
@@ -78,10 +77,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   isRecordingActive = false,
   stopRecording = () => {},
   profiles = [],
-  mediaPort = 8080,
 }) => {
   const [profileId, setProfileId] = useState('custom');
   const [previewing, setPreviewing] = useState(false);
+  const [previewStarting, setPreviewStarting] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [previewTime, setPreviewTime] = useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -89,8 +88,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const deviceStreamRef = useRef<MediaStream | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
+  const devicePreviewIdRef = useRef<string | null>(null);
+  const previewGenerationRef = useRef(0);
 
   const activeConfig = config || defaultConfig;
 
@@ -136,57 +136,96 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     .replace(/\{time\}/gi, 'HH-MM-SS')
     .replace(/\{timestamp\}/gi, String(Date.now()));
 
+  const releaseDevicePreview = useCallback((previewId: string) => {
+    const token = localStorage.getItem('kte-auth-token');
+    fetch(`/api/ingest/device-preview/${encodeURIComponent(previewId)}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
+
   const stopPreview = useCallback(() => {
-    deviceStreamRef.current?.getTracks().forEach(track => track.stop());
-    deviceStreamRef.current = null;
+    previewGenerationRef.current += 1;
+    if (devicePreviewIdRef.current) releaseDevicePreview(devicePreviewIdRef.current);
+    devicePreviewIdRef.current = null;
     hlsRef.current?.destroy();
     hlsRef.current = null;
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.removeAttribute('src');
       videoRef.current.srcObject = null;
+      videoRef.current.load();
     }
+    setPreviewStarting(false);
     setPreviewing(false);
-  }, []);
+    setPreviewTime(0);
+  }, [releaseDevicePreview]);
 
   useEffect(() => stopPreview, [stopPreview]);
   useEffect(() => {
-    if (previewing) stopPreview();
+    if (previewing || previewStarting) stopPreview();
   }, [sourceType, selectedStreamKey, videoDevice, audioDevice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startSourcePreview = async () => {
     stopPreview();
+    const generation = previewGenerationRef.current;
     setPreviewError('');
-    if (sourceType === 'device') {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoDevice ? { deviceId: videoDevice } : true,
-          audio: audioDevice ? { deviceId: audioDevice } : false,
-        });
-        deviceStreamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        setPreviewing(true);
-      } catch (err: any) {
-        setPreviewError('Unable to access device preview: ' + err.message);
-      }
-    } else if (selectedStreamKey) {
+    setPreviewStarting(true);
+
+    const attachHls = async (hlsUrl: string) => {
       const Hls = (await import('hls.js')).default;
-      const hlsUrl = `http://${window.location.hostname}:${mediaPort}/hls/${selectedStreamKey}/index.m3u8`;
-      if (Hls.isSupported() && videoRef.current) {
-        const hls = new Hls();
+      if (generation !== previewGenerationRef.current || !videoRef.current) return;
+      const video = videoRef.current;
+      if (Hls.isSupported()) {
+        const hls = new Hls({ liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 5 });
         hls.loadSource(hlsUrl);
-        hls.attachMedia(videoRef.current);
+        hls.attachMedia(video);
         hlsRef.current = hls;
-        videoRef.current.play().catch(() => {});
-        setPreviewing(true);
-      } else if (videoRef.current?.canPlayType('application/vnd.apple.mpegurl')) {
-        videoRef.current.src = hlsUrl;
-        videoRef.current.play().catch(() => {});
-        setPreviewing(true);
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal || generation !== previewGenerationRef.current) return;
+          stopPreview();
+          setPreviewError(`Preview stream failed: ${data.details || 'HLS playback error'}`);
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = hlsUrl;
+      } else {
+        throw new Error('HLS preview playback is not supported by this browser');
       }
+      setPreviewing(true);
+      await video.play().catch(() => {});
+    };
+
+    try {
+      if (sourceType === 'device') {
+        const token = localStorage.getItem('kte-auth-token');
+        const response = await fetch('/api/ingest/device-preview/start', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ videoDevice, audioDevice }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'FFmpeg could not start the device preview');
+        if (generation !== previewGenerationRef.current) {
+          if (data.previewId) releaseDevicePreview(data.previewId);
+          return;
+        }
+        devicePreviewIdRef.current = data.previewId;
+        await attachHls(data.hlsUrl);
+      } else if (selectedStreamKey) {
+        const encodedStreamKey = selectedStreamKey.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+        await attachHls(`/hls/${encodedStreamKey}/index.m3u8`);
+      }
+    } catch (err: any) {
+      if (generation === previewGenerationRef.current) {
+        stopPreview();
+        setPreviewError(`Unable to preview source: ${err.message || 'Unknown error'}`);
+      }
+    } finally {
+      if (generation === previewGenerationRef.current) setPreviewStarting(false);
     }
   };
 
@@ -238,12 +277,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           </div>
         </div>
       </div>
-        <button type="button" onClick={previewing ? stopPreview : startSourcePreview} disabled={startDisabled} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">{previewing ? <FiEyeOff size={13} /> : <FiEye size={13} />}{previewing ? 'Close preview' : 'Preview source'}</button>
+        <button type="button" onClick={previewing ? stopPreview : startSourcePreview} disabled={startDisabled || previewStarting} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">{previewing ? <FiEyeOff size={13} /> : <FiEye size={13} />}{previewStarting ? 'Starting FFmpeg preview…' : previewing ? 'Close preview' : 'Preview source'}</button>
       </section>
 
       <section className="source-preview app-panel min-w-0 overflow-hidden bg-slate-950">
         <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.1em]">Source preview</p><p className="mt-0.5 text-[10px] text-slate-400">Live confidence monitor</p></div>
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.1em]">Source preview</p><p className="mt-0.5 text-[10px] text-slate-400">Server FFmpeg / HLS confidence monitor</p></div>
           <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2 py-1 text-[9px] font-bold"><span className="h-1.5 w-1.5 rounded-full bg-pink-400" />LIVE</span>
         </div>
         <div className="relative aspect-video min-h-[180px] w-full bg-[#090d17]">

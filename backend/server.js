@@ -85,9 +85,11 @@ const VOD_DIR = path.join(__dirname, 'media', 'vod');
 const HLS_DIR = path.join(MEDIA_ROOT, 'hls');
 const DASH_DIR = path.join(MEDIA_ROOT, 'dash');
 const LIVE_DIR = path.join(MEDIA_ROOT, 'live');
+const DEVICE_PREVIEW_DIR = path.join(HLS_DIR, 'device-preview');
 
 // FIX: Per-stream HLS processes managed by us (since NMS http is disabled)
 const hlsProcesses = new Map(); // streamKey -> { proc, pid }
+const devicePreviewProcesses = new Map(); // previewId -> { proc, owner, videoDevice, audioDevice, outputDir }
 
 // Bitrate and session tracking
 const streamStatsHistory = new Map(); // key -> { lastBytes, lastTime, kbps }
@@ -111,6 +113,7 @@ if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: tr
 if (!fs.existsSync(RECORDING_THUMBNAILS_DIR)) fs.mkdirSync(RECORDING_THUMBNAILS_DIR, { recursive: true });
 if (!fs.existsSync(VOD_DIR)) fs.mkdirSync(VOD_DIR, { recursive: true });
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
+if (!fs.existsSync(DEVICE_PREVIEW_DIR)) fs.mkdirSync(DEVICE_PREVIEW_DIR, { recursive: true });
 if (!fs.existsSync(DASH_DIR)) fs.mkdirSync(DASH_DIR, { recursive: true });
 if (!fs.existsSync(LIVE_DIR)) fs.mkdirSync(LIVE_DIR, { recursive: true });
 
@@ -168,12 +171,16 @@ try {
     console.error('[DB] Error fixing unclosed recordings on startup:', e);
 }
 
-const resolveAuthenticatedUser = (claims) => {
-    return resolvePersistedIdentity(claims, username => (
-        db.prepare('SELECT username, password_hash, role FROM users WHERE username = ?').get(username)
-    ));
+const resolveAuthenticatedUser = async (claims) => {
+    const username = String(claims?.sub || '').trim();
+    const user = username ? await db.prisma.user.findFirst({
+        where: { username },
+        select: { username: true, role: true, isActive: true },
+    }) : null;
+    if (!user?.isActive) throw new Error('Authenticated user is missing or inactive');
+    return resolvePersistedIdentity(claims, subject => subject === user.username ? user : null);
 };
-const authenticateToken = (token) => resolveAuthenticatedUser(verifyToken(token));
+const authenticateToken = async (token) => resolveAuthenticatedUser(verifyToken(token));
 const signAuthToken = (user) => signToken({
     sub: user.username,
     exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60),
@@ -258,36 +265,13 @@ const requiredModulesForRequest = (req) => {
     const path = req.path;
     if (path.startsWith('/api/channels') || path.startsWith('/api/profiles') || path === '/api/ffprobe-ts-programs') return ['live-tv'];
     if (path.startsWith('/api/ffmpeg/devices')) return ['live-tv', 'ingest-server'];
+    if (path.startsWith('/api/ingest/device-preview')) return ['ingest-server'];
     if (path.startsWith('/api/ingest/record/')) return ['ingest-server'];
     if (path.startsWith('/api/ingest/recordings')) return ['recording-library', 'ingest-server'];
     if (path === '/api/ingest/streams') return ['live-server', 'ingest-server'];
     if (path.startsWith('/api/ingest/history') || path.startsWith('/api/ingest/processes') || path.startsWith('/api/ingest/srt') || path.startsWith('/api/ingest/relay') || path.startsWith('/api/diagnostics')) return ['live-server'];
     return [];
 };
-const ensureBootstrapSuperadmin = async () => {
-    const users = db.prepare('SELECT id, username, role FROM users').all();
-    if (users.some(user => normalizeUserRole(user.role) === 'superadmin')) return;
-
-    const username = requireEnv('KTE_DEFAULT_USERNAME');
-    const password = requireEnv('KTE_DEFAULT_PASSWORD', 16);
-    const existing = users.find(user => user.username === username);
-
-    if (existing) {
-        db.prepare('UPDATE users SET username = ?, password_hash = ?, role = ? WHERE id = ?')
-            .run(username, hashPassword(password), 'superadmin', existing.id);
-    } else {
-        db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
-            .run(username, hashPassword(password), 'superadmin');
-    }
-    await db.pending;
-    const persisted = await db.prisma.user.findFirst({ where: { username } });
-    if (!persisted || persisted.role !== 'SUPER_ADMIN') {
-        throw new Error('[Security] Failed to persist the bootstrap superadmin role');
-    }
-    console.warn('[Security] Persisted bootstrap superadmin initialized; change its password after first login');
-};
-await ensureBootstrapSuperadmin();
-
 const DEFAULT_PROFILES = [
     {
         id: 'low-cpu-720p',
@@ -453,12 +437,12 @@ app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
     if (!req.path.startsWith('/api') || publicPaths.has(req.path) || req.path.startsWith('/api/vod')) return next();
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     try {
-        req.user = authenticateToken(token);
+        req.user = await authenticateToken(token);
         const requiredModules = requiredModulesForRequest(req);
         if (req.user.role !== 'superadmin' && requiredModules.length && !requiredModules.some(module => licenseHasModule(getLicense(), module))) {
             return res.status(403).json({ error: `License module required: ${requiredModules.join(' or ')}`, requiredModules });
@@ -485,15 +469,16 @@ const requireActiveLicense = (req, res, next) => {
     next();
 };
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body || {};
+    await db.refreshUsers();
     const user = db.prepare('SELECT username, password_hash, role FROM users WHERE username = ?').get(username || '');
-    if (!user || !verifyPassword(password || '', user.password_hash)) {
+    if (!user || user.is_active === false || !verifyPassword(password || '', user.password_hash)) {
         return res.status(401).json({ error: 'Invalid username or password' });
     }
     if (passwordNeedsUpgrade(user.password_hash)) {
-        db.prepare('UPDATE users SET username = ?, password_hash = ? WHERE username = ?')
-            .run(user.username, hashPassword(password), user.username);
+        await db.prisma.user.update({ where: { username: user.username }, data: { passwordHash: hashPassword(password) } });
+        await db.refreshUsers();
     }
     const persistedUser = { username: user.username, role: normalizeUserRole(user.role) };
     res.json({ token: signAuthToken(persistedUser), user: persistedUser, license: getLicense() });
@@ -964,6 +949,136 @@ const scanCaptureDevices = async ({ refresh = false } = {}) => {
 app.get('/api/ffmpeg/devices', authMiddleware, async (req, res) => {
     try { res.json(await scanCaptureDevices({ refresh: req.query.refresh === 'true' })); }
     catch (error) { res.status(500).json({ error: error.message || 'Unable to detect capture devices' }); }
+});
+
+const devicePreviewInputArgs = (videoDevice, audioDevice) => {
+    if (process.platform === 'win32') {
+        const source = [
+            videoDevice ? `video=${videoDevice}` : '',
+            audioDevice ? `audio=${audioDevice}` : '',
+        ].filter(Boolean).join(':');
+        return ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M', '-i', source];
+    }
+
+    // The Linux appliance enumerates DeckLink sources. A DeckLink input carries
+    // its embedded audio and video together, so both selectors must identify the
+    // same physical input when both are supplied.
+    if (videoDevice && audioDevice && videoDevice !== audioDevice) {
+        throw new Error('DeckLink video and audio preview must use the same capture device');
+    }
+    return ['-thread_queue_size', '1024', '-f', 'decklink', '-i', videoDevice || audioDevice];
+};
+
+const scheduleDevicePreviewCleanup = (outputDir) => {
+    setTimeout(() => {
+        const resolvedRoot = path.resolve(DEVICE_PREVIEW_DIR);
+        const resolvedOutput = path.resolve(outputDir);
+        if (path.dirname(resolvedOutput) !== resolvedRoot) return;
+        try { fs.rmSync(resolvedOutput, { recursive: true, force: true }); } catch (error) { }
+    }, 1500).unref?.();
+};
+
+const stopDevicePreview = (previewId) => {
+    const preview = devicePreviewProcesses.get(previewId);
+    if (!preview) return false;
+    devicePreviewProcesses.delete(previewId);
+    if (preview.expiryTimer) clearTimeout(preview.expiryTimer);
+    try { if (!preview.proc.killed) preview.proc.kill('SIGTERM'); } catch (error) { }
+    scheduleDevicePreviewCleanup(preview.outputDir);
+    return true;
+};
+
+const waitForDevicePreview = (preview, playlistPath, timeoutMs = 10000) => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const inspect = () => {
+        if (fs.existsSync(playlistPath)) return resolve();
+        if (preview.closed) return reject(new Error(preview.lastError || 'FFmpeg could not open the selected capture device'));
+        if (Date.now() - startedAt >= timeoutMs) return reject(new Error(preview.lastError || 'Timed out waiting for capture device signal'));
+        setTimeout(inspect, 100);
+    };
+    inspect();
+});
+
+app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) => {
+    const videoDevice = String(req.body?.videoDevice || '').trim().slice(0, 256);
+    const audioDevice = String(req.body?.audioDevice || '').trim().slice(0, 256);
+    if (!videoDevice && !audioDevice) return res.status(400).json({ error: 'Select at least one capture device' });
+
+    let previewId = '';
+    let outputDir = '';
+    try {
+        const devices = await scanCaptureDevices({ refresh: true });
+        if (videoDevice && !devices.video.includes(videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
+        if (audioDevice && !devices.audio.includes(audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
+        let inputArgs;
+        try { inputArgs = devicePreviewInputArgs(videoDevice, audioDevice); }
+        catch (error) { return res.status(400).json({ error: error.message }); }
+
+        for (const [previewId, preview] of devicePreviewProcesses) {
+            if (preview.owner === req.user.sub) stopDevicePreview(previewId);
+            else if ((videoDevice && preview.videoDevice === videoDevice) || (audioDevice && preview.audioDevice === audioDevice)) {
+                return res.status(409).json({ error: 'The selected capture device is already being previewed' });
+            }
+        }
+
+        previewId = crypto.randomUUID();
+        outputDir = path.join(DEVICE_PREVIEW_DIR, previewId);
+        const playlistPath = path.join(outputDir, 'index.m3u8');
+        const segmentPattern = path.join(outputDir, 'segment-%06d.ts');
+        fs.mkdirSync(outputDir, { recursive: true });
+
+        const args = [
+            '-y', '-hide_banner', '-loglevel', 'warning',
+            ...inputArgs,
+            '-map', '0:v:0?', '-map', '0:a:0?',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+            '-pix_fmt', 'yuv420p', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '48000',
+            '-max_muxing_queue_size', '2048',
+            '-f', 'hls', '-hls_time', '1', '-hls_list_size', '4',
+            '-hls_flags', 'delete_segments+append_list+omit_endlist+independent_segments',
+            '-hls_segment_filename', segmentPattern,
+            playlistPath,
+        ];
+        const proc = spawn(ffmpegPath, args, { windowsHide: true });
+        const preview = { proc, owner: req.user.sub, videoDevice, audioDevice, outputDir, lastError: '', closed: false };
+        preview.expiryTimer = setTimeout(() => stopDevicePreview(previewId), 30 * 60 * 1000);
+        preview.expiryTimer.unref?.();
+        devicePreviewProcesses.set(previewId, preview);
+
+        proc.stderr.on('data', data => {
+            const message = data.toString().trim();
+            if (message) preview.lastError = message.slice(-2000);
+        });
+        proc.on('error', error => { preview.lastError = error.message; });
+        proc.on('close', () => {
+            preview.closed = true;
+            if (preview.expiryTimer) clearTimeout(preview.expiryTimer);
+            if (devicePreviewProcesses.get(previewId) === preview) devicePreviewProcesses.delete(previewId);
+            scheduleDevicePreviewCleanup(outputDir);
+        });
+
+        try {
+            await waitForDevicePreview(preview, playlistPath);
+        } catch (error) {
+            stopDevicePreview(previewId);
+            return res.status(422).json({ error: error.message || 'Unable to start capture device preview' });
+        }
+
+        res.json({ success: true, previewId, hlsUrl: `/hls/device-preview/${previewId}/index.m3u8` });
+    } catch (error) {
+        if (previewId) stopDevicePreview(previewId);
+        else if (outputDir) scheduleDevicePreviewCleanup(outputDir);
+        res.status(500).json({ error: error.message || 'Unable to start capture device preview' });
+    }
+});
+
+app.delete('/api/ingest/device-preview/:previewId', authMiddleware, (req, res) => {
+    const preview = devicePreviewProcesses.get(req.params.previewId);
+    if (!preview) return res.json({ success: true });
+    if (preview.owner !== req.user.sub) return res.status(403).json({ error: 'This preview belongs to another user' });
+    stopDevicePreview(req.params.previewId);
+    res.json({ success: true });
 });
 
 app.use(authMiddleware);
@@ -2157,10 +2272,10 @@ const ensureOutputDirectories = (command) => {
 };
 
 // --- WebSocket Setup ---
-wss.on('connection', (ws, request) => {
+wss.on('connection', async (ws, request) => {
     try {
         const token = new URL(request.url, 'http://localhost').searchParams.get('token');
-        ws.user = authenticateToken(token);
+        ws.user = await authenticateToken(token);
     } catch (error) {
         ws.close(1008, 'Authentication required');
         return;
