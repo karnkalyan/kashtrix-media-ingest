@@ -253,7 +253,7 @@ export const generateCommand = (
 
 type PersistentChannel = Omit<Channel, 'status' | 'uptime' | 'speed' | 'speedHistory' | 'outputLog'>;
 
-const toPersistentChannel = (channel: Channel): PersistentChannel => {
+const channelToPersistentData = (channel: Channel): PersistentChannel => {
   const { status, uptime, speed, speedHistory, outputLog, ...persistentChannel } = channel;
   return persistentChannel;
 };
@@ -383,7 +383,7 @@ const useEngine = () => {
     setSaveStatus('saving');
     await api(`/api/channels/${channel.id}`, {
       method: 'PUT',
-      body: JSON.stringify(toPersistentChannel(channel)),
+      body: JSON.stringify(channelToPersistentData(channel)),
     });
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1200);
