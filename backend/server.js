@@ -64,6 +64,12 @@ const canViewTerminal = (user) => user?.role === 'superadmin'
 const redactTerminalData = (channel, user) => canViewTerminal(user)
     ? channel
     : { ...channel, command: '', outputLog: [] };
+const CHANNEL_RUNTIME_FIELDS = ['status', 'uptime', 'speed', 'speedHistory', 'outputLog'];
+const sanitizeChannelForStorage = (channel) => {
+    const source = channel && typeof channel === 'object' && !Array.isArray(channel) ? channel : {};
+    const { status, uptime, speed, speedHistory, outputLog, ...persistentChannel } = source;
+    return persistentChannel;
+};
 
 const VOD_DIR = path.join(__dirname, 'media', 'vod');
 
@@ -103,6 +109,38 @@ if (!fs.existsSync(LIVE_DIR)) fs.mkdirSync(LIVE_DIR, { recursive: true });
 
 const db = new PrismaStore();
 await db.initialize();
+
+const normalizeStoredChannels = async () => {
+    const rows = db.prepare('SELECT id, data FROM channels').all();
+    const upsert = db.prepare(`INSERT INTO channels (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`);
+    let normalized = 0;
+
+    for (const row of rows) {
+        let channel;
+        try {
+            channel = JSON.parse(row.data);
+        } catch (error) {
+            console.warn(`[DB] Skipping malformed channel row ${row.id} during runtime-state cleanup: ${error.message}`);
+            continue;
+        }
+
+        if (!channel || typeof channel !== 'object' || Array.isArray(channel)) {
+            console.warn(`[DB] Skipping invalid channel row ${row.id} during runtime-state cleanup`);
+            continue;
+        }
+        if (!CHANNEL_RUNTIME_FIELDS.some(field => Object.prototype.hasOwnProperty.call(channel, field))) continue;
+
+        upsert.run(row.id, JSON.stringify(sanitizeChannelForStorage(channel)));
+        normalized += 1;
+    }
+
+    if (normalized > 0) {
+        await db.pending;
+        console.log(`[DB] Removed persisted runtime state from ${normalized} channel row(s)`);
+    }
+};
+await normalizeStoredChannels();
 
 // Fix any unclosed or dangling recordings on startup
 try {
@@ -627,8 +665,12 @@ app.get('/api/state', authMiddleware, (req, res) => {
         const channels = db.prepare('SELECT * FROM channels').all().map(c => {
             try { return JSON.parse(c.data); } catch (e) { return null; }
         }).filter(Boolean).map(c => redactTerminalData({
-            ...c,
-            status: runningProcesses[c.id] ? 'Running' : 'Stopped'
+            ...sanitizeChannelForStorage(c),
+            status: runningProcesses[c.id] ? 'Running' : 'Stopped',
+            uptime: 0,
+            speed: 0,
+            speedHistory: [],
+            outputLog: []
         }, req.user));
         const profiles = db.prepare('SELECT * FROM profiles').all().map(p => {
             try { return JSON.parse(p.data); } catch (e) { return null; }
@@ -659,7 +701,7 @@ app.delete('/api/profiles/:id', authMiddleware, (req, res) => {
 });
 
 app.put('/api/channels/:id', authMiddleware, (req, res) => {
-    const channel = { ...req.body, id: req.params.id };
+    const channel = sanitizeChannelForStorage({ ...req.body, id: req.params.id });
     db.prepare(`INSERT INTO channels (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`)
         .run(channel.id, JSON.stringify(channel));

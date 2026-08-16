@@ -251,6 +251,13 @@ export const generateCommand = (
   return `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f tee ${quote(teeSpec)}`.replace(/\s+/g, ' ').trim();
 };
 
+type PersistentChannel = Omit<Channel, 'status' | 'uptime' | 'speed' | 'speedHistory' | 'outputLog'>;
+
+const toPersistentChannel = (channel: Channel): PersistentChannel => {
+  const { status, uptime, speed, speedHistory, outputLog, ...persistentChannel } = channel;
+  return persistentChannel;
+};
+
 const reducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'HYDRATE_STATE':
@@ -374,7 +381,10 @@ const useEngine = () => {
 
   const persistChannel = useCallback(async (channel: Channel) => {
     setSaveStatus('saving');
-    await api(`/api/channels/${channel.id}`, { method: 'PUT', body: JSON.stringify(channel) });
+    await api(`/api/channels/${channel.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(toPersistentChannel(channel)),
+    });
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1200);
   }, [api]);
