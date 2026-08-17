@@ -314,7 +314,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         rateControl: 'cbr',
         videoBitrate: 12000,
         maxBitrate: 18000,
-        preset: 'fast',
+        preset: 'ultrafast',
         gopSize: 60,
         pixelFormat: 'yuv420p',
         audioCodec: 'aac',

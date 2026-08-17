@@ -1522,14 +1522,16 @@ const recordingArgs = (inputUrl, filePath, options) => {
     return args;
 };
 
-const recordingTeeArgs = (inputUrl, outputs, options) => {
+const recordingExecutionArgs = (inputUrl, outputs, options) => {
+    if (outputs.length === 1) {
+        return recordingArgs(inputUrl, outputs[0].filePath, options);
+    }
     const args = recordingArgs(inputUrl, 'recording-output.mkv', options);
     args.pop();
     const muxers = { mp4: 'mp4', mkv: 'matroska', mov: 'mov', ts: 'mpegts', flv: 'flv' };
     const teeSpec = outputs.map(output => {
         const safePath = output.filePath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/\|/g, '\\|');
-        const recoveryOptions = output.format === 'mp4' || output.format === 'mov' ? ':movflags=+frag_keyframe+empty_moov' : '';
-        return `[f=${muxers[output.format]}:onfail=ignore${recoveryOptions}]${safePath}`;
+        return `[f=${muxers[output.format] || 'mp4'}:onfail=ignore]${safePath}`;
     }).join('|');
     args.push('-flags', '+global_header', '-f', 'tee', teeSpec);
     return args;
@@ -1570,7 +1572,7 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
         return { filePath, fileName, format, recordId: result.lastInsertRowid };
     });
 
-    const proc = spawn(ffmpegPath, recordingTeeArgs(inputUrl, outputs, options), { windowsHide: true });
+    const proc = spawn(ffmpegPath, recordingExecutionArgs(inputUrl, outputs, options), { windowsHide: true });
     outputs.forEach(output => { output.proc = proc; });
 
     const active = { appName, stream, startTime, options, outputs, lastError: '' };
