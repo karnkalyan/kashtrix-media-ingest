@@ -1068,7 +1068,14 @@ const stopDevicePreview = (previewId) => {
     if (!preview) return false;
     devicePreviewProcesses.delete(previewId);
     if (preview.expiryTimer) clearTimeout(preview.expiryTimer);
-    try { if (!preview.proc.killed) preview.proc.kill('SIGTERM'); } catch (error) { }
+    try {
+        if (!preview.proc.killed) {
+            preview.proc.kill('SIGTERM');
+            setTimeout(() => {
+                try { if (!preview.proc.killed) preview.proc.kill('SIGKILL'); } catch (e) {}
+            }, 200).unref?.();
+        }
+    } catch (error) { }
     scheduleDevicePreviewCleanup(preview.outputDir);
     return true;
 };
@@ -2194,11 +2201,18 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         if (options.videoDevice && !devices.video.includes(options.videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
         if (options.audioDevice && !devices.audio.includes(options.audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
 
-        // Auto-close any active device preview holding the hardware capture device
+        // Auto-close any active device preview holding the hardware capture device and allow driver lock release
+        let stoppedAny = false;
         for (const [previewId, preview] of devicePreviewProcesses) {
-            if ((options.videoDevice && preview.videoDevice === options.videoDevice) || (options.audioDevice && preview.audioDevice === options.audioDevice)) {
+            if (preview.videoDevice === options.videoDevice || preview.audioDevice === options.audioDevice ||
+                resolveCaptureDevice(devices, preview.videoDevice) === options.videoDevice ||
+                resolveCaptureDevice(devices, preview.audioDevice) === options.audioDevice) {
                 stopDevicePreview(previewId);
+                stoppedAny = true;
             }
+        }
+        if (stoppedAny) {
+            await new Promise(resolve => setTimeout(resolve, 600));
         }
 
         if (options.videoDevice) options.videoDevice = resolveCaptureDevice(devices, options.videoDevice);
