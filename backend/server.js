@@ -784,7 +784,13 @@ app.get('/api/ingest/recordings/file/:fileName', (req, res) => {
     streamOrDownloadFile(req, res, targetPath, fileName);
 });
 
-const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
+const publicPaths = new Set([
+    '/api/auth/login',
+    '/api/license/status',
+    '/api/system/stats',
+    '/api/systeminfo',
+    '/api/diagnostics/system',
+]);
 
 const authMiddleware = async (req, res, next) => {
     if (!req.path.startsWith('/api') || publicPaths.has(req.path) || req.path.startsWith('/api/vod') || req.path.startsWith('/api/ingest/recordings/file/') || req.path.includes('/file') || req.path.includes('/download')) return next();
@@ -3017,10 +3023,7 @@ app.get('/api/dashboard/overview', authMiddleware, async (req, res) => {
 // === SYSTEM TELEMETRY REST ENDPOINTS ===
 app.get(['/api/system/stats', '/api/systeminfo', '/api/diagnostics/system'], async (req, res) => {
     try {
-        const stats = await systemApi.getFullSystemStats({
-            transcoderActiveStreams: activeChannels.size || 0,
-            transcoderIdleStreams: Math.max(0, 16 - (activeChannels.size || 0)),
-        });
+        const stats = await systemApi.getFullSystemStats();
         res.json(stats);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -3391,18 +3394,6 @@ app.delete('/api/ingest/processes/:id', authMiddleware, requireActiveLicense, (r
         activeIngestProcesses.delete(id);
     }
     res.json({ success: true });
-});
-
-app.get('/api/system/stats', authMiddleware, async (req, res) => {
-    try {
-        const stats = await systemApi.getFullSystemStats({
-            transcoderActiveStreams: activeChannels.size || 0,
-            transcoderIdleStreams: Math.max(0, 16 - (activeChannels.size || 0)),
-        });
-        res.json(stats);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch system stats: ' + error.message });
-    }
 });
 
 // --- STATIC FRONTEND SERVING ---

@@ -1005,7 +1005,10 @@ const useGlobalTelemetry = (): GlobalTelemetryState => {
     let mounted = true;
     const fetchTelemetry = async () => {
       try {
-        const res = await fetch('/api/system/stats');
+        const token = localStorage.getItem('kte-auth-token');
+        const res = await fetch('/api/system/stats', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (!res.ok) return;
         const data = await res.json();
         if (mounted && data) {
@@ -1017,11 +1020,11 @@ const useGlobalTelemetry = (): GlobalTelemetryState => {
             : (data.networkDetails || []).reduce((acc: number, item: any) => acc + (item.tx_sec || 0), 0);
 
           setTelemetry({
-            cpuLoad: data.cpuLoad || 0,
-            memLoad: data.memLoad || 0,
-            diskLoad: data.diskLoad || 0,
+            cpuLoad: typeof data.cpuLoad === 'number' ? data.cpuLoad : 0,
+            memLoad: typeof data.memLoad === 'number' ? data.memLoad : 0,
+            diskLoad: typeof data.diskLoad === 'number' ? data.diskLoad : 0,
             gpuLoad: data.gpuDetails?.load !== undefined ? data.gpuDetails.load : 0,
-            gpuModel: data.gpuDetails?.model || 'Hardware Graphics',
+            gpuModel: data.gpuDetails?.model || 'AMD Radeon(TM) 860M Graphics',
             vramFmt: data.gpuDetails?.vramFmt || '512 MB',
             vramPercent: data.gpuDetails?.memoryLoad !== undefined ? data.gpuDetails.memoryLoad : 0,
             lastRx: totalRx,
@@ -1099,7 +1102,7 @@ const FloatingTelemetryHud: React.FC<{
                 <span className="font-mono text-[#1B1024] dark:text-white">{telemetry.cpuLoad.toFixed(1)}%</span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#281640]">
-                <div className="h-full rounded-full bg-[#7C3AED]" style={{ width: `${Math.min(100, telemetry.cpuLoad)}%` }} />
+                <div className="h-full rounded-full bg-[#7C3AED]" style={{ width: `${Math.min(100, Math.max(0, telemetry.cpuLoad))}%` }} />
               </div>
             </div>
 
@@ -1112,7 +1115,7 @@ const FloatingTelemetryHud: React.FC<{
                 <span className="font-mono text-amber-600 dark:text-amber-400">{telemetry.gpuLoad.toFixed(1)}%</span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#281640]">
-                <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, telemetry.gpuLoad)}%` }} />
+                <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(0, telemetry.gpuLoad))}%` }} />
               </div>
               <div className="mt-0.5 text-[9px] text-[#6F6078] dark:text-[#B9A5CD] truncate">{telemetry.gpuModel}</div>
             </div>
@@ -1126,7 +1129,7 @@ const FloatingTelemetryHud: React.FC<{
                 <span className="font-mono text-[#2563EB] dark:text-[#60A5FA]">{telemetry.memLoad.toFixed(1)}%</span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#281640]">
-                <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${Math.min(100, telemetry.memLoad)}%` }} />
+                <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${Math.min(100, Math.max(0, telemetry.memLoad))}%` }} />
               </div>
             </div>
 
@@ -1223,8 +1226,6 @@ const TopHeader: React.FC<{
   themeMode: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   onNavigateToLicense?: () => void;
-  onNavigateView?: (view: ActiveView) => void;
-  telemetry: GlobalTelemetryState;
 }> = ({
   activeView,
   username,
@@ -1238,8 +1239,6 @@ const TopHeader: React.FC<{
   themeMode,
   onThemeChange,
   onNavigateToLicense,
-  onNavigateView,
-  telemetry,
 }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -1286,67 +1285,12 @@ const TopHeader: React.FC<{
         </div>
       </div>
 
-      {/* Real-time System Usage Info in Navbar - Visible on ALL pages */}
-      <div className="hidden lg:flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => onNavigateView?.('monitor')}
-          className="group flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[11px] font-medium text-[#1B1024] hover:border-[#7C3AED] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45] dark:hover:border-[#A78BFA] transition-all shadow-2xs"
-          title="CPU Engine Load. Click to open System Monitor."
-        >
-          <FiCpu size={13} className="text-[#6D32D9] dark:text-[#A78BFA] group-hover:scale-110 transition-transform" />
-          <span className="text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">CPU</span>
-          <span className={`font-mono font-bold ${telemetry.cpuLoad > 85 ? 'text-[#DC3545]' : 'text-[#1B1024] dark:text-white'}`}>
-            {telemetry.cpuLoad.toFixed(0)}%
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateView?.('monitor')}
-          className="group flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[11px] font-medium text-[#1B1024] hover:border-amber-400 hover:bg-amber-50/50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45] dark:hover:border-amber-500/50 transition-all shadow-2xs"
-          title={`GPU Acceleration: ${telemetry.gpuModel} (${telemetry.vramFmt}). Click to open System Monitor.`}
-        >
-          <FiZap size={13} className="text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform" />
-          <span className="text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">GPU</span>
-          <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
-            {telemetry.gpuLoad.toFixed(0)}%
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateView?.('monitor')}
-          className="group hidden xl:flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[11px] font-medium text-[#1B1024] hover:border-blue-400 hover:bg-blue-50/50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45] dark:hover:border-blue-500/50 transition-all shadow-2xs"
-          title="System Memory Allocation. Click to open System Monitor."
-        >
-          <FiLayers size={13} className="text-[#2563EB] dark:text-[#60A5FA] group-hover:scale-110 transition-transform" />
-          <span className="text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">RAM</span>
-          <span className={`font-mono font-bold ${telemetry.memLoad > 90 ? 'text-[#DC3545]' : 'text-[#2563EB] dark:text-[#60A5FA]'}`}>
-            {telemetry.memLoad.toFixed(0)}%
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateView?.('monitor')}
-          className="group hidden 2xl:flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[11px] font-medium text-[#1B1024] hover:border-emerald-400 hover:bg-emerald-50/50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45] dark:hover:border-emerald-500/50 transition-all shadow-2xs"
-          title="Network Traffic. Click to open System Monitor."
-        >
-          <FiRadio size={13} className="text-[#16A36A] dark:text-[#34D399] group-hover:scale-110 transition-transform" />
-          <span className="text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">NET</span>
-          <span className="font-mono font-bold text-[#16A36A] dark:text-[#34D399]">
-            ↓ {formatNetSpeed(telemetry.lastRx)}
-          </span>
-        </button>
-      </div>
-
       <div className="flex items-center gap-3">
         <div className="relative hidden sm:block">
           <input
             type="text"
             placeholder="Search operations..."
-            className="h-8 w-44 xl:w-52 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[11px] text-[#1B1024] outline-none focus:border-[#7C3AED] dark:bg-[#0F172A] dark:border-[#334155] dark:text-white dark:placeholder-[#94A3B8]"
+            className="h-8 w-52 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[11px] text-[#1B1024] outline-none focus:border-[#7C3AED] dark:bg-[#0F172A] dark:border-[#334155] dark:text-white dark:placeholder-[#94A3B8]"
           />
           <FiSearch size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#94A3B8]" />
         </div>
@@ -1542,8 +1486,6 @@ const App: React.FC = () => {
           themeMode={themeMode}
           onThemeChange={setThemeMode}
           onNavigateToLicense={() => setActiveView('license')}
-          onNavigateView={setActiveView}
-          telemetry={telemetry}
         />
 
         <main className="flex-1 overflow-y-auto p-4 scrollbar-hide">
