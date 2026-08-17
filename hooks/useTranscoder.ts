@@ -234,17 +234,21 @@ export const generateCommand = (
   const sharedAudioFlags = buildAudioFlags(profile);
   const recordingFlags = recordingOverride ? recordingOutputFlags(recordingOverride) : '';
 
-  if (destinations.length === 1) {
+  const hasHls = destinations.some(d => d.protocol === Protocol.HLS);
+  const slug = sanitizeName(channel.name);
+  const hlsPreviewTee = `[f=hls:hls_time=2:hls_list_size=4:hls_flags=delete_segments]${teeEscape(`media/hls/${slug}/index.m3u8`)}`;
+
+  if (destinations.length === 1 && hasHls) {
     const destination = destinations[0];
-    let url = destinationUrl(destination, channel.name, settings);
-    if (destination.protocol === Protocol.HLS) url = `media/hls/${sanitizeName(channel.name)}/index.m3u8`;
-    if (destination.protocol === Protocol.DASH) url = `media/dash/${sanitizeName(channel.name)}/index.mpd`;
-    if (destination.protocol === Protocol.SRT && !url.includes('?')) url = `${url}?mode=caller`;
-    if (destination.protocol === Protocol.UDP && !url.includes('?')) url = `${url}?pkt_size=1316`;
+    const url = `media/hls/${slug}/index.m3u8`;
     return `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${outputFormatOptions[destination.protocol] || ''} ${quote(url)}`.replace(/\s+/g, ' ').trim();
   }
 
-  const teeSpec = destinations.map(destination => teeDestination(destination, channel.name, settings)).join('|');
+  const teeOutputs = destinations.map(destination => teeDestination(destination, channel.name, settings));
+  if (!hasHls) {
+    teeOutputs.push(hlsPreviewTee);
+  }
+  const teeSpec = teeOutputs.join('|');
   return `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f tee ${quote(teeSpec)}`.replace(/\s+/g, ' ').trim();
 };
 

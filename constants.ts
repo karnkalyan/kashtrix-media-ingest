@@ -179,53 +179,57 @@ export const AUDIO_CODEC_OPTIONS = [
 ];
 
 export const RESOLUTION_OPTIONS = [
-  { value: '3840x2160', label: '4K (3840x2160)' },
-  { value: '2560x1440', label: '2K (2560x1440)' },
-  { value: '1920x1080', label: '1080p (1920x1080)' },
-  { value: '1280x720', label: '720p (1280x720)' },
-  { value: '854x480', label: '480p (854x480)' },
+  { value: 'source', label: 'Source / Original (Auto)' },
+  { value: '3840x2160', label: '4K UHD (3840x2160)' },
+  { value: '2560x1440', label: '2K QHD (2560x1440)' },
+  { value: '1920x1080', label: 'Full HD 1080p (1920x1080)' },
+  { value: '1280x720', label: 'HD 720p (1280x720)' },
+  { value: '720x576', label: 'PAL 576i/p (720x576)' },
+  { value: '720x480', label: 'NTSC 480i/p (720x480)' },
+  { value: '854x480', label: 'SD 480p (854x480)' },
 ];
 
 export const LIVE_PROTOCOL_OPTIONS = [
-    { value: Protocol.HLS, label: 'HLS (HTTP Live Streaming)' },
-    { value: Protocol.DASH, label: 'DASH (Dynamic Adaptive Streaming)' },
-    { value: Protocol.RTMP, label: 'RTMP (Real-Time Messaging Protocol)'},
-    { value: Protocol.SRT, label: 'SRT (Secure Reliable Transport)'},
-    { value: Protocol.UDP, label: 'UDP (User Datagram Protocol)'},
-    { value: Protocol.HTTP_TS, label: 'HTTP-TS (MPEG-TS over HTTP)'},
-    { value: Protocol.RECORDING, label: 'Recording File'},
+  { value: Protocol.HLS, label: 'HLS (HTTP Live Streaming)' },
+  { value: Protocol.DASH, label: 'DASH (Dynamic Adaptive Streaming)' },
+  { value: Protocol.RTMP, label: 'RTMP (Real-Time Messaging Protocol)' },
+  { value: Protocol.SRT, label: 'SRT (Secure Reliable Transport)' },
+  { value: Protocol.UDP, label: 'UDP (User Datagram Protocol)' },
+  { value: Protocol.HTTP_TS, label: 'HTTP-TS (MPEG-TS over HTTP)' },
+  { value: Protocol.RECORDING, label: 'Recording File' },
 ];
 
 export const FRAMERATE_OPTIONS = [
-    { value: '23.976', label: '23.976 fps' },
-    { value: '24', label: '24 fps' },
-    { value: '25', label: '25 fps (PAL)' },
-    { value: '29.97', label: '29.97 fps' },
-    { value: '30', label: '30 fps' },
-    { value: '50', label: '50 fps' },
-    { value: '59.94', label: '59.94 fps' },
-    { value: '60', label: '60 fps' },
+  { value: '0', label: 'Source / Pass-through (Auto)' },
+  { value: '50', label: '50 fps (Broadcast PAL/HD Standard)' },
+  { value: '59.94', label: '59.94 fps (Broadcast NTSC/HD Standard)' },
+  { value: '60', label: '60 fps' },
+  { value: '25', label: '25 fps (PAL Broadcast)' },
+  { value: '29.97', label: '29.97 fps (NTSC Broadcast)' },
+  { value: '30', label: '30 fps' },
+  { value: '24', label: '24 fps (Cinema)' },
+  { value: '23.976', label: '23.976 fps' },
 ];
 
 export const SAMPLE_RATE_OPTIONS = [
-    { value: '44100', label: '44.1 kHz' },
-    { value: '48000', label: '48 kHz' },
+  { value: '44100', label: '44.1 kHz' },
+  { value: '48000', label: '48 kHz' },
 ];
 
 export const PRESET_OPTIONS = [
-    { value: 'ultrafast', label: 'Ultrafast' },
-    { value: 'superfast', label: 'Superfast' },
-    { value: 'veryfast', label: 'Veryfast' },
-    { value: 'faster', label: 'Faster' },
-    { value: 'fast', label: 'Fast' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'slow', label: 'Slow' },
-    { value: 'slower', label: 'Slower' },
-    { value: 'veryslow', label: 'Veryslow' },
+  { value: 'ultrafast', label: 'Ultrafast' },
+  { value: 'superfast', label: 'Superfast' },
+  { value: 'veryfast', label: 'Veryfast' },
+  { value: 'faster', label: 'Faster' },
+  { value: 'fast', label: 'Fast' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'slow', label: 'Slow' },
+  { value: 'slower', label: 'Slower' },
+  { value: 'veryslow', label: 'Veryslow' },
 ];
 
 export const PIXEL_FORMAT_OPTIONS = [
-    { value: 'yuv420p', label: 'yuv420p' },
-    { value: 'yuv422p', label: 'yuv422p' },
-    { value: 'yuv444p', label: 'yuv444p' },
+  { value: 'yuv420p', label: 'yuv420p' },
+  { value: 'yuv422p', label: 'yuv422p' },
+  { value: 'yuv444p', label: 'yuv444p' },
 ];

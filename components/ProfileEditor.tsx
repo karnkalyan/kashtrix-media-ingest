@@ -76,8 +76,8 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, onSave, 
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Select label="Video Codec" value={form.videoCodec} onChange={event => setField('videoCodec', event.target.value as VideoCodec)} options={VIDEO_CODEC_OPTIONS} disabled={!!form.isAudioOnly} />
-          <Select label="Resolution" value={form.resolution} onChange={event => setField('resolution', event.target.value)} options={RESOLUTION_OPTIONS} disabled={videoDisabled} />
-          <Select label="Frame Rate" value={String(form.framerate || '')} onChange={event => setField('framerate', Number(event.target.value))} options={FRAMERATE_OPTIONS} disabled={videoDisabled} />
+          <Select label="Resolution" value={form.resolution || 'source'} onChange={event => setField('resolution', event.target.value)} options={RESOLUTION_OPTIONS} disabled={videoDisabled} />
+          <Select label="Frame Rate" value={String(form.framerate ?? 0)} onChange={event => setField('framerate', Number(event.target.value))} options={FRAMERATE_OPTIONS} disabled={videoDisabled} />
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Video Bitrate (kbps)</label>
             <input className={inputClass} type="number" value={form.videoBitrate || ''} onChange={event => setField('videoBitrate', Number(event.target.value) || undefined)} disabled={videoDisabled} />

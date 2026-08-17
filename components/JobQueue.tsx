@@ -18,6 +18,7 @@ import {
   Radio,
   Terminal,
   Copy,
+  Eye,
   X
 } from 'lucide-react';
 import StatusBadge from './ui/StatusBadge';
@@ -25,6 +26,10 @@ import ProtocolBadge from './ui/ProtocolBadge';
 import Tabs from './ui/Tabs';
 import ProfileEditor from './ProfileEditor';
 import Configurator from './Configurator';
+import DetailDrawer from './ui/DetailDrawer';
+import { MediaPreview } from './ui/MediaPreview';
+
+const sanitizeName = (value: string) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'stream';
 
 interface Props {
   channels: Channel[];
@@ -170,6 +175,7 @@ export const ChannelDashboard: React.FC<Props> = ({
   const [profileId, setProfileId] = useState(profiles[0]?.id || '');
   const [editingProfile, setEditingProfile] = useState<TranscodingProfile | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [previewChannel, setPreviewChannel] = useState<Channel | null>(null);
 
   const running = channels.filter(c => c.status === ChannelStatus.Running).length;
   const stopped = channels.length - running;
@@ -245,7 +251,7 @@ export const ChannelDashboard: React.FC<Props> = ({
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
           <span className="text-[10px] font-semibold text-[#6F6078] uppercase tracking-wider dark:text-[#B9A5CD]">Stopped</span>
-          <p className="mt-1 font-display text-[20px] font-bold text-[#6F6078] dark:text-[#B9A5CD]">{stopped}</p>
+          <p className="mt-1 font-display text-[20px] font-bold text-[#1B1024] dark:text-white">{stopped}</p>
         </div>
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
           <span className="text-[10px] font-semibold text-[#6F6078] uppercase tracking-wider dark:text-[#B9A5CD]">Profiles</span>
@@ -253,18 +259,28 @@ export const ChannelDashboard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 3. Main Content Card */}
-      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-        {/* Tab & Search Toolbar */}
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] p-3 dark:border-[#311B4E]">
-          <Tabs
-            tabs={[
-              { id: 'channels', label: 'Channels', count: channels.length },
-              { id: 'profiles', label: 'Transcoding Profiles', count: profiles.length },
-            ]}
-            activeTab={activeTab}
-            onChange={id => setActiveTab(id as 'channels' | 'profiles')}
-          />
+      {/* 3. Main Data Card with Sub-Tabs */}
+      <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs dark:bg-[#190E28] dark:border-[#311B4E] overflow-hidden">
+        {/* Navigation & Search Bar */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] p-3 dark:border-[#311B4E]">
+          <div className="flex items-center gap-1 rounded-lg bg-[#F8F7FA] p-0.5 dark:bg-[#211335]">
+            <button
+              type="button"
+              onClick={() => setActiveTab('channels')}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors ${activeTab === 'channels' ? 'bg-white text-[#351147] shadow-xs dark:bg-[#2D1845] dark:text-white' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}
+            >
+              <Tv size={13} /> Channels
+              <span className="ml-1 rounded-full bg-[#E8DFF0] px-1.5 py-0.2 text-[10px] font-bold text-[#351147] dark:bg-[#3B1F5C] dark:text-[#E2D1F9]">{channels.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('profiles')}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors ${activeTab === 'profiles' ? 'bg-white text-[#351147] shadow-xs dark:bg-[#2D1845] dark:text-white' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}
+            >
+              <Cpu size={13} /> Transcoding Profiles
+              <span className="ml-1 rounded-full bg-[#E8DFF0] px-1.5 py-0.2 text-[10px] font-bold text-[#351147] dark:bg-[#3B1F5C] dark:text-[#E2D1F9]">{profiles.length}</span>
+            </button>
+          </div>
 
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -369,6 +385,14 @@ export const ChannelDashboard: React.FC<Props> = ({
                               <Play size={12} /> Start
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setPreviewChannel(channel)}
+                            className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#6D32D9] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
+                            title="Preview Live Stream"
+                          >
+                            <Eye size={13} />
+                          </button>
                           {canViewTerminal && (
                             <button
                               type="button"
@@ -519,6 +543,61 @@ export const ChannelDashboard: React.FC<Props> = ({
           channel={selectedLogChannel}
           onClose={() => setSelectedLogChannel(null)}
         />
+      )}
+
+      {/* Channel Live Stream Preview Drawer */}
+      {previewChannel && (
+        <DetailDrawer
+          open={!!previewChannel}
+          onClose={() => setPreviewChannel(null)}
+          title={`Channel Preview — ${previewChannel.name}`}
+          subtitle={`Live confidence playback for ${previewChannel.name}`}
+          width="max-w-[620px]"
+          footer={
+            <div className="flex items-center justify-between w-full">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                Status: <b className={previewChannel.status === ChannelStatus.Running ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-400'}>{previewChannel.status}</b>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewChannel(null)}
+                className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]"
+              >
+                Close Preview
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="overflow-hidden rounded-xl bg-black shadow-inner">
+              <MediaPreview
+                url={`/media/hls/${sanitizeName(previewChannel.name)}/index.m3u8`}
+                title={previewChannel.name}
+                autoPlay
+              />
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-[#311B4E] dark:bg-[#211335]/60 space-y-2.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">Channel Stream Specifications</div>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[9px]">Input Source:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100 truncate block" title={previewChannel.inputUrl}>{previewChannel.inputUrl}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px]">Transcoding Profile:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">{profiles.find(p => p.id === previewChannel.profileId)?.name || 'Custom Profile'}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-400 block text-[9px]">HLS Preview URL:</span>
+                  <span className="font-mono text-[10px] text-[#6D32D9] dark:text-[#A78BFA] break-all">
+                    {window.location.origin}/media/hls/{sanitizeName(previewChannel.name)}/index.m3u8
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DetailDrawer>
       )}
     </div>
   );
