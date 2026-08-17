@@ -346,6 +346,22 @@ html.dark .bg-amber-50\/70 {
   border-color: #371F59 !important;
 }
 
+@keyframes hud-pop-up {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-hud-pop {
+  animation: hud-pop-up 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: bottom right;
+}
+
 /* Borders -> Deep Purple Border #311B4E */
 .dark .border-\[\#E8DFF0\],
 .dark .border-\[\#D8CBE4\],
