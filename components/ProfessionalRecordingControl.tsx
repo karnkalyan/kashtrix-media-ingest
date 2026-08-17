@@ -911,17 +911,30 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           >
             Close
           </button>
-          <button
-            type="button"
-            disabled={startDisabled}
-            onClick={async () => {
-              setRecordPreviewModalOpen(false);
-              await start();
-            }}
-            className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
-          >
-            <FiDisc className="mr-1.5 inline" /> Start Recording Now
-          </button>
+          {isRecordingActive ? (
+            <button
+              type="button"
+              onClick={async () => {
+                setRecordPreviewModalOpen(false);
+                await stopRecording();
+              }}
+              className="h-9 rounded-md bg-rose-600 px-5 text-[11px] font-semibold text-white hover:bg-rose-700 shadow-sm"
+            >
+              <FiSquare className="mr-1.5 inline fill-white" /> Stop Recording Now
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={startDisabled}
+              onClick={async () => {
+                setRecordPreviewModalOpen(false);
+                await start();
+              }}
+              className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+            >
+              <FiDisc className="mr-1.5 inline" /> Start Recording Now
+            </button>
+          )}
         </div>
       }
     >

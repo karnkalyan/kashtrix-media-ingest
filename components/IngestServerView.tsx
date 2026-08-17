@@ -498,11 +498,22 @@ export const IngestServerView: React.FC<Props> = ({
 
   const isCurrentRecordingActive = useMemo(() => {
     if (sourceType === 'device') {
-      const devName = videoDevice || audioDevice || 'device';
-      return recordings.some((r: any) => r.is_active && (r.app === 'device' || r.stream === devName));
+      const devName = videoDevice || audioDevice;
+      return recordings.some((r: any) => r.is_active && (
+        r.app === 'device' ||
+        r.source_type === 'device' ||
+        (devName && (r.stream === devName || r.file_name?.includes(devName.replace(/[^a-z0-9._-]+/gi, '-'))))
+      ));
     }
-    return !!activeRecordingKeys[selectedStreamKey] || recordings.some((r: any) => r.is_active && `${r.app}/${r.stream}` === selectedStreamKey);
-  }, [sourceType, videoDevice, audioDevice, selectedStreamKey, activeRecordingKeys, recordings]);
+    if (!selectedStreamKey) return false;
+    const [app, stream] = selectedStreamKey.includes('/') ? selectedStreamKey.split('/') : ['live', selectedStreamKey];
+    return !!(
+      activeRecordingKeys[selectedStreamKey] ||
+      activeRecordingKeys[`${app}/${stream}`] ||
+      recordingStatuses[`${app}/${stream}`] ||
+      recordings.some((r: any) => r.is_active && (r.stream === stream || `${r.app}/${r.stream}` === `${app}/${stream}` || `${r.app}/${r.stream}` === selectedStreamKey))
+    );
+  }, [sourceType, videoDevice, audioDevice, selectedStreamKey, activeRecordingKeys, recordingStatuses, recordings]);
 
   const handleStopControlRecording = async () => {
     const selected = sourceType === 'device'
