@@ -1,6 +1,34 @@
 const si = require('systeminformation');
 const os = require('os');
+const fs = require('fs');
 const { getCrossPlatformGpuInfo } = require('./gpu');
+
+/**
+ * Fast & accurate cross-platform drive capacity using Node's native fs.statfsSync.
+ */
+const getRealStorageStats = () => {
+    try {
+        const rootPath = process.platform === 'win32' ? (process.env.SystemDrive || 'C:') + '\\' : '/';
+        if (typeof fs.statfsSync === 'function') {
+            const stat = fs.statfsSync(rootPath);
+            const total = stat.bsize * stat.blocks;
+            const available = stat.bsize * stat.bavail;
+            const free = stat.bsize * stat.bfree;
+            const used = total - free;
+            const usePercent = total > 0 ? (used / total) * 100 : 0;
+            return {
+                mount: process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/',
+                size: total,
+                used: used,
+                available: available,
+                use: parseFloat(usePercent.toFixed(1))
+            };
+        }
+    } catch (err) {
+        console.warn('[SystemInfo] statfsSync error:', err.message);
+    }
+    return null;
+};
 
 // Global state to store the last network snapshot for rate calculation
 let lastNetworkStats = {}; 
@@ -293,15 +321,16 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             swapUsedFmt: formatStorageBytes(memData.swapused || 0),
         };
 
-        const primaryFs = (fsData && fsData.length > 0) ? fsData[0] : { mount: process.platform === 'win32' ? 'C:' : '/', size: 1024 * 1024 * 1024 * 500, used: 1024 * 1024 * 1024 * 150, available: 1024 * 1024 * 1024 * 350, use: 30 };
-        const diskLoad = primaryFs.use !== undefined ? primaryFs.use : 30;
+        const realStorage = getRealStorageStats();
+        const primaryFs = realStorage || ((fsData && fsData.length > 0 && fsData[0].size > 0) ? fsData[0] : { mount: process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/', size: 0, used: 0, available: 0, use: 0 });
+        const diskLoad = primaryFs.use !== undefined ? primaryFs.use : 0;
 
         const storageDetails = {
-            mount: primaryFs.mount || (process.platform === 'win32' ? 'C:' : '/'),
+            mount: primaryFs.mount || (process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/'),
             size: primaryFs.size || 0,
             used: primaryFs.used || 0,
             available: primaryFs.available || (primaryFs.size - primaryFs.used) || 0,
-            usePercent: diskLoad,
+            usePercent: parseFloat(diskLoad.toFixed(1)),
             sizeFmt: formatStorageBytes(primaryFs.size || 0),
             usedFmt: formatStorageBytes(primaryFs.used || 0),
             availableFmt: formatStorageBytes(primaryFs.available || 0),
