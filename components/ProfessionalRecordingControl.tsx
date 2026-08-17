@@ -145,9 +145,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }).catch(() => {});
   }, []);
 
-  const stopPreview = useCallback(() => {
+  const stopPreview = useCallback(async () => {
     previewGenerationRef.current += 1;
-    if (devicePreviewIdRef.current) releaseDevicePreview(devicePreviewIdRef.current);
+    const currentId = devicePreviewIdRef.current;
     devicePreviewIdRef.current = null;
     hlsRef.current?.destroy();
     hlsRef.current = null;
@@ -160,11 +160,28 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     setPreviewStarting(false);
     setPreviewing(false);
     setPreviewTime(0);
-  }, [releaseDevicePreview]);
 
-  useEffect(() => stopPreview, [stopPreview]);
+    if (currentId) {
+      const token = localStorage.getItem('kte-auth-token');
+      try {
+        await fetch(`/api/ingest/device-preview/${encodeURIComponent(currentId)}`, {
+          method: 'DELETE',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+      } catch {}
+    }
+  }, []);
+
   useEffect(() => {
-    if (previewing || previewStarting) stopPreview();
+    return () => {
+      void stopPreview();
+    };
+  }, [stopPreview]);
+
+  useEffect(() => {
+    if (previewing || previewStarting) {
+      void stopPreview();
+    }
   }, [sourceType, selectedStreamKey, videoDevice, audioDevice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startSourcePreview = async () => {
@@ -507,8 +524,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           disabled={startDisabled}
           onClick={async () => {
             if (previewing || previewStarting) {
-              stopPreview();
-              await new Promise(r => setTimeout(r, 200));
+              await stopPreview();
+              await new Promise(r => setTimeout(r, 600));
             }
             await start();
           }}
