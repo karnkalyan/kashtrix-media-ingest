@@ -306,9 +306,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </Label>
             <Label>Signal standard
               <select value={activeConfig.formatCode || ''} onChange={event => patch({ formatCode: event.target.value })} className={selectClass}>
-                <option value="">Auto from Profile ({activeConfig.resolution !== 'source' ? `${activeConfig.resolution}@${activeConfig.framerate || 50}fps` : 'Auto'})</option>
-                <option value="Hp50">1080p 50 fps (Hp50)</option>
+                <option value="">Auto Detect / Native Input Signal</option>
+                <option value="Hi50">1080i 50 fps (Hi50 - Broadcast Interlaced)</option>
+                <option value="Hp50">1080p 50 fps (Hp50 - Progressive)</option>
+                <option value="Hi60">1080i 60 fps (Hi60)</option>
                 <option value="Hp60">1080p 60 fps (Hp60)</option>
+                <option value="Hi59">1080i 59.94 fps (Hi59)</option>
                 <option value="Hp59">1080p 59.94 fps (Hp59)</option>
                 <option value="25p ">1080p 25 fps (25p)</option>
                 <option value="30p ">1080p 30 fps (30p)</option>
@@ -642,7 +645,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </div>
             <div>
               <span className="text-slate-400 block text-[9px]">Signal Standard:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || 'Auto (' + (activeConfig.resolution !== 'source' ? activeConfig.resolution : 'Source') + ')'}</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || 'Auto Detect (Native Signal)'}</span>
             </div>
             <div>
               <span className="text-slate-400 block text-[9px]">Encoding Bitrate:</span>

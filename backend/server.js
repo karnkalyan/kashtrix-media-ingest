@@ -1046,8 +1046,9 @@ const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
     }
     const dev = videoDevice || audioDevice;
     const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
-    const formatCode = options.formatCode || getDeckLinkFormatCode(options.resolution, options.framerate);
-    if (formatCode) args.push('-format_code', formatCode);
+    if (options.formatCode && options.formatCode !== 'auto' && options.formatCode !== 'unset') {
+        args.push('-format_code', options.formatCode);
+    }
     const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'hdmi';
     if (videoInput) args.push('-video_input', videoInput);
     if (options.rawFormat) args.push('-raw_format', options.rawFormat);
@@ -1349,8 +1350,9 @@ const recordingInputArgs = (inputUrl, options) => {
     }
     const dev = options.videoDevice || options.audioDevice;
     const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
-    const formatCode = options.formatCode || getDeckLinkFormatCode(options.resolution, options.framerate);
-    if (formatCode) args.push('-format_code', formatCode);
+    if (options.formatCode && options.formatCode !== 'auto' && options.formatCode !== 'unset') {
+        args.push('-format_code', options.formatCode);
+    }
     const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'hdmi';
     if (videoInput) args.push('-video_input', videoInput);
     if (options.rawFormat) args.push('-raw_format', options.rawFormat);
@@ -1363,18 +1365,26 @@ const recordingArgs = (inputUrl, filePath, options) => {
     if (options.encoder === 'copy') {
         args.push('-c', 'copy');
     } else {
-        const videoEncoder = RECORDING_ENCODERS[options.encoder][options.videoCodec];
+        const videoEncoder = RECORDING_ENCODERS[options.encoder]?.[options.videoCodec] || 'libx264';
         args.push('-c:v', videoEncoder);
         if (options.rateControl === 'crf') {
             args.push(options.encoder === 'cpu' ? '-crf' : '-cq', String(options.crf));
         } else {
             args.push('-b:v', `${options.videoBitrate}k`, '-maxrate', `${options.rateControl === 'cbr' ? options.videoBitrate : options.maxBitrate}k`, '-bufsize', `${options.maxBitrate * 2}k`);
         }
-        if (options.encoder === 'cpu') args.push('-preset', options.preset);
-        if (options.sourceType !== 'device' && options.resolution !== 'source') args.push('-vf', `scale=${options.resolution.replace('x', ':')}`);
-        if (options.sourceType !== 'device' && options.framerate) args.push('-r', String(options.framerate));
-        args.push('-g', String(options.gopSize), '-pix_fmt', options.pixelFormat);
-        args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate), '-ac', String(options.audioChannels));
+        if (options.preset) args.push('-preset', options.preset);
+        const vfFilters = [];
+        if (options.resolution && options.resolution !== 'source') {
+            vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
+        }
+        if (vfFilters.length > 0) {
+            args.push('-vf', vfFilters.join(','));
+        }
+        if (options.framerate && Number(options.framerate) > 0) {
+            args.push('-r', String(options.framerate));
+        }
+        args.push('-g', String(options.gopSize || 60), '-pix_fmt', options.pixelFormat || 'yuv420p');
+        args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
     }
     if (filePath.endsWith('.mp4') || filePath.endsWith('.mov')) args.push('-movflags', '+faststart');
     args.push(filePath);
