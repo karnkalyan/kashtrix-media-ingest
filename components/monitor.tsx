@@ -200,8 +200,12 @@ const useSystemStats = () => {
   };
 
   const processPayload = (payload: any) => {
-    const totalRx = (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.rx_sec || 0), 0);
-    const totalTx = (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.tx_sec || 0), 0);
+    const totalRx = typeof payload.lastRx === 'number'
+      ? payload.lastRx
+      : (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.rx_sec || 0), 0);
+    const totalTx = typeof payload.lastTx === 'number'
+      ? payload.lastTx
+      : (payload.networkDetails || []).reduce((sum: number, item: any) => sum + (item.tx_sec || 0), 0);
     const now = Date.now();
 
     setStats(prev => {

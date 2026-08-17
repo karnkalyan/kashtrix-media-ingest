@@ -4,6 +4,9 @@ const { getCrossPlatformGpuInfo } = require('./gpu');
 
 // Global state to store the last network snapshot for rate calculation
 let lastNetworkStats = {}; 
+let latestNetworkDetails = [];
+let cachedNetInterfaces = [];
+let lastInterfaceFetch = 0;
 
 /**
  * Converts bytes per second to a human-readable format (e.g., KB/s, MB/s).
@@ -76,22 +79,27 @@ const calculateNetworkRate = (currentStats, interfaceList = []) => {
         let txPktsRate = 0;
         let errorsRate = 0;
         let dropsRate = 0;
+
+        // 1. Use systeminformation's computed rate if available
+        if (typeof stat.rx_sec === 'number' && stat.rx_sec >= 0) {
+            rxRate = stat.rx_sec;
+        }
+        if (typeof stat.tx_sec === 'number' && stat.tx_sec >= 0) {
+            txRate = stat.tx_sec;
+        }
         
+        // 2. Fallback to manual delta computation
         if (prev && prev.timestamp) {
             const timeDiff = (now - prev.timestamp) / 1000; 
             
             if (timeDiff > 0) {
                 const rxChange = (stat.rx_bytes || 0) - (prev.rx_bytes || 0);
                 const txChange = (stat.tx_bytes || 0) - (prev.tx_bytes || 0);
-                const rxPktsChange = (stat.rx_sec || 0) - (prev.rx_packets || 0);
-                const txPktsChange = (stat.tx_sec || 0) - (prev.tx_packets || 0);
                 const errorsChange = ((stat.rx_errors || 0) + (stat.tx_errors || 0)) - (prev.errors || 0);
                 const dropsChange = ((stat.rx_dropped || 0) + (stat.tx_dropped || 0)) - (prev.drops || 0);
                 
-                rxRate = rxChange > 0 ? rxChange / timeDiff : 0; 
-                txRate = txChange > 0 ? txChange / timeDiff : 0; 
-                rxPktsRate = rxPktsChange > 0 ? Math.round(rxPktsChange / timeDiff) : 0;
-                txPktsRate = txPktsChange > 0 ? Math.round(txPktsChange / timeDiff) : 0;
+                if (rxRate === 0 && rxChange > 0) rxRate = rxChange / timeDiff; 
+                if (txRate === 0 && txChange > 0) txRate = txChange / timeDiff; 
                 errorsRate = errorsChange > 0 ? Math.round(errorsChange / timeDiff) : 0;
                 dropsRate = dropsChange > 0 ? Math.round(dropsChange / timeDiff) : 0;
             }
@@ -123,8 +131,6 @@ const calculateNetworkRate = (currentStats, interfaceList = []) => {
         lastNetworkStats[interfaceId] = {
             rx_bytes: stat.rx_bytes || 0,
             tx_bytes: stat.tx_bytes || 0,
-            rx_packets: stat.rx_sec || 0,
-            tx_packets: stat.tx_sec || 0,
             errors: (stat.rx_errors || 0) + (stat.tx_errors || 0),
             drops: (stat.rx_dropped || 0) + (stat.tx_dropped || 0),
             timestamp: now,
@@ -132,6 +138,54 @@ const calculateNetworkRate = (currentStats, interfaceList = []) => {
     }
     return rates;
 };
+
+// Continuous background network poller to keep real-time byte counters fresh
+const updateInterfaceMeta = async () => {
+    try {
+        const ifaces = await si.networkInterfaces();
+        if (Array.isArray(ifaces) && ifaces.length > 0) {
+            cachedNetInterfaces = ifaces;
+        }
+    } catch {}
+    if (cachedNetInterfaces.length === 0) {
+        try {
+            const osIfaces = os.networkInterfaces();
+            cachedNetInterfaces = Object.entries(osIfaces).map(([name, addrs]) => {
+                const ipv4 = (addrs || []).find(a => a.family === 'IPv4' || a.family === 4);
+                const ipv6 = (addrs || []).find(a => a.family === 'IPv6' || a.family === 6);
+                return {
+                    iface: name,
+                    ifaceName: name,
+                    ip4: ipv4 ? ipv4.address : '127.0.0.1',
+                    ip6: ipv6 ? ipv6.address : '',
+                    mac: ipv4 ? ipv4.mac : '',
+                    operstate: 'up',
+                    speed: 1000
+                };
+            });
+        } catch {}
+    }
+};
+
+const pollNetworkStats = async () => {
+    try {
+        if (Date.now() - lastInterfaceFetch > 30000 || cachedNetInterfaces.length === 0) {
+            lastInterfaceFetch = Date.now();
+            await updateInterfaceMeta();
+        }
+
+        const rawStats = await si.networkStats();
+        if (Array.isArray(rawStats) && rawStats.length > 0) {
+            latestNetworkDetails = calculateNetworkRate(rawStats, cachedNetInterfaces);
+        }
+    } catch (e) {}
+};
+
+// Start background network poller
+updateInterfaceMeta().then(() => {
+    pollNetworkStats();
+    setInterval(pollNetworkStats, 1000);
+});
 
 /**
  * Global cache for system stats to prevent high CPU usage from frequent hardware scans.
@@ -190,13 +244,11 @@ const _performFullSystemFetch = async (extraContext = {}) => {
         const memLoadOs = (usedMemOs / totalMemOs) * 100;
 
         // Fetch hardware metrics in parallel with strict 1200ms timeout
-        const [cpuData, procData, memData, fsData, netStats, netInterfaces, gpuInfo] = await Promise.all([
+        const [cpuData, procData, memData, fsData, gpuInfo] = await Promise.all([
             withTimeout(si.currentLoad(), 1200, { currentLoad: (cpusCount > 0 ? (os.loadavg()[0] || 0.15) * 10 : 15), cpus: [] }),
             withTimeout(si.processes(), 1200, { all: 150 }),
             withTimeout(si.mem(), 1200, { total: totalMemOs, used: usedMemOs, free: freeMemOs, available: freeMemOs, swaptotal: 0, swapused: 0 }),
             withTimeout(si.fsSize(), 1200, []),
-            withTimeout(si.networkStats(), 1200, []),
-            withTimeout(si.networkInterfaces(), 1200, []),
             withTimeout(getCrossPlatformGpuInfo(), 1500, {
                 model: 'AMD Radeon(TM) 860M Graphics',
                 vendor: 'Advanced Micro Devices, Inc.',
@@ -255,7 +307,27 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             availableFmt: formatStorageBytes(primaryFs.available || 0),
         };
 
-        const netRates = calculateNetworkRate(netStats, Array.isArray(netInterfaces) ? netInterfaces : []);
+        const netRates = (latestNetworkDetails && latestNetworkDetails.length > 0)
+            ? latestNetworkDetails
+            : (cachedNetInterfaces || []).map(iface => ({
+                iface: iface.iface || 'eth0',
+                state: 'UP',
+                ip: iface.ip4 || '127.0.0.1',
+                ip6: iface.ip6 || '',
+                rx_sec: 0,
+                tx_sec: 0,
+                rx_rate_fmt: '0 B/s',
+                tx_rate_fmt: '0 B/s',
+                rx_packets_sec: 0,
+                tx_packets_sec: 0,
+                errors_sec: 0,
+                drops_sec: 0,
+                utilization: 0,
+                speedMbps: iface.speed || 1000
+            }));
+
+        const totalRx = netRates.reduce((sum, item) => sum + (item.rx_sec || 0), 0);
+        const totalTx = netRates.reduce((sum, item) => sum + (item.tx_sec || 0), 0);
 
         const gpuDetails = gpuInfo || {
             model: 'AMD Radeon(TM) 860M Graphics',
@@ -293,6 +365,10 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             runningProcesses: procData && procData.all !== undefined ? procData.all : 0,
             cpusCount,
             networkDetails: netRates,
+            lastRx: totalRx,
+            lastTx: totalTx,
+            totalRxRateFmt: formatBytes(totalRx),
+            totalTxRateFmt: formatBytes(totalTx),
             gpuDetails,
             memoryDetails,
             storageDetails,
