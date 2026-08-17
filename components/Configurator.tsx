@@ -174,6 +174,8 @@ export const Configurator: React.FC<Props> = ({
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [videoDevice, setVideoDevice] = useState('');
   const [audioDevice, setAudioDevice] = useState('');
+  const [videoInput, setVideoInput] = useState('hdmi');
+  const [formatCode, setFormatCode] = useState('');
   const [liveStreams, setLiveStreams] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [destinations, setDestinations] = useState<ChannelDestination[]>([
@@ -198,18 +200,23 @@ export const Configurator: React.FC<Props> = ({
         cleanInputUrl = cleanInputUrl.replace(/^media\/vod\//, '');
       }
       if (resolvedType === InputType.DEVICE) {
-        const raw = cleanInputUrl.replace('device://', '');
-        if (raw.includes('+')) {
-          const parts = raw.split('+');
+        const [rawBase, rawQuery] = cleanInputUrl.replace('device://', '').split('?');
+        if (rawQuery) {
+          const params = new URLSearchParams(rawQuery);
+          if (params.get('video_input')) setVideoInput(params.get('video_input') || 'hdmi');
+          if (params.get('format_code')) setFormatCode(params.get('format_code') || '');
+        }
+        if (rawBase.includes('+')) {
+          const parts = rawBase.split('+');
           setVideoDevice(parts[0].replace(/^video=/i, '').trim());
           setAudioDevice(parts[1].replace(/^audio=/i, '').trim());
-        } else if (raw.startsWith('video=')) {
-          setVideoDevice(raw.replace(/^video=/i, '').trim());
-        } else if (raw.startsWith('audio=')) {
-          setAudioDevice(raw.replace(/^audio=/i, '').trim());
+        } else if (rawBase.startsWith('video=')) {
+          setVideoDevice(rawBase.replace(/^video=/i, '').trim());
+        } else if (rawBase.startsWith('audio=')) {
+          setAudioDevice(rawBase.replace(/^audio=/i, '').trim());
         } else {
-          setVideoDevice(raw.trim());
-          setAudioDevice(raw.trim());
+          setVideoDevice(rawBase.trim());
+          setAudioDevice(rawBase.trim());
         }
       }
       setInputUrl(cleanInputUrl);
@@ -400,12 +407,17 @@ export const Configurator: React.FC<Props> = ({
   const createChannel = async () => {
     let finalInput = inputUrl.trim();
     if (inputType === InputType.DEVICE) {
+      const qParams = [];
+      if (videoInput && videoInput !== 'unset' && videoInput !== 'auto') qParams.push(`video_input=${encodeURIComponent(videoInput)}`);
+      if (formatCode && formatCode !== 'unset' && formatCode !== 'auto') qParams.push(`format_code=${encodeURIComponent(formatCode)}`);
+      const qStr = qParams.length ? `?${qParams.join('&')}` : '';
+
       if (videoDevice && audioDevice) {
-        finalInput = `device://${videoDevice}+${audioDevice}`;
+        finalInput = `device://${videoDevice}+${audioDevice}${qStr}`;
       } else if (videoDevice) {
-        finalInput = `device://video=${videoDevice}`;
+        finalInput = `device://video=${videoDevice}${qStr}`;
       } else if (audioDevice) {
-        finalInput = `device://audio=${audioDevice}`;
+        finalInput = `device://audio=${audioDevice}${qStr}`;
       }
     } else if (inputType === InputType.LIVE) {
       const stream = Object.values(liveStreams).find((s: any) => s.streamName === inputUrl || s.appName === inputUrl || `${s.app}/${s.name}` === inputUrl);
@@ -482,9 +494,51 @@ export const Configurator: React.FC<Props> = ({
     }
     if (inputType === InputType.DEVICE) {
       return (
-        <div className="grid grid-cols-2 gap-2">
-          <Select label="Video Device" value={videoDevice} onChange={e => setVideoDevice(e.target.value)} placeholder="No video" options={videoDevices.map(name => ({ value: name, label: name }))} />
-          <Select label="Audio Device" value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="No audio" options={audioDevices.map(name => ({ value: name, label: name }))} />
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Select label="Video Device" value={videoDevice} onChange={e => setVideoDevice(e.target.value)} placeholder="No video" options={videoDevices.map(name => ({ value: name, label: name }))} />
+            <Select label="Audio Device" value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="No audio" options={audioDevices.map(name => ({ value: name, label: name }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Select
+              label="Video Input Port"
+              value={videoInput}
+              onChange={e => setVideoInput(e.target.value)}
+              options={[
+                { value: 'hdmi', label: 'HDMI' },
+                { value: 'sdi', label: 'SDI' },
+                { value: 'component', label: 'Component (YPbPr)' },
+                { value: 'composite', label: 'Composite (CVBS)' },
+                { value: 's_video', label: 'S-Video' },
+                { value: 'optical_sdi', label: 'Optical SDI' },
+                { value: 'unset', label: 'Auto / Default' },
+              ]}
+            />
+            <Select
+              label="Signal Standard"
+              value={formatCode}
+              onChange={e => setFormatCode(e.target.value)}
+              options={[
+                { value: '', label: 'Auto Detect / Native Wire Signal' },
+                { value: 'Hi50', label: '1080i 50 fps (PAL Broadcast)' },
+                { value: 'Hp50', label: '1080p 50 fps' },
+                { value: 'Hi60', label: '1080i 60 fps' },
+                { value: 'Hp60', label: '1080p 60 fps' },
+                { value: 'Hi59', label: '1080i 59.94 fps (NTSC Broadcast)' },
+                { value: 'Hp59', label: '1080p 59.94 fps' },
+                { value: '25p ', label: '1080p 25 fps' },
+                { value: '30p ', label: '1080p 30 fps' },
+                { value: '24p ', label: '1080p 24 fps' },
+                { value: 'hp50', label: '720p 50 fps' },
+                { value: 'hp60', label: '720p 60 fps' },
+                { value: 'hp59', label: '720p 59.94 fps' },
+                { value: '4k50', label: '4K UHD 50 fps' },
+                { value: '4k60', label: '4K UHD 60 fps' },
+                { value: 'pal ', label: 'PAL 576i' },
+                { value: 'ntsc', label: 'NTSC 480i' },
+              ]}
+            />
+          </div>
         </div>
       );
     }

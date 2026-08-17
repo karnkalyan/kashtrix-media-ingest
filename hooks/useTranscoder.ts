@@ -72,23 +72,31 @@ const buildVideoFlags = (profile: TranscodingProfile, destination?: ChannelDesti
   if (profile.videoCodec === VideoCodec.Copy) return '-c:v copy';
 
   const bitrate = destination?.recording?.videoBitrate || profile.videoBitrate || 2000;
-  const resolution = destination?.recording?.resolution || profile.resolution;
-  const framerate = destination?.recording?.framerate || profile.framerate;
+  const rawResolution = destination?.recording?.resolution || profile.resolution;
+  const resolution = rawResolution && !['N/A', 'source', 'auto', 'original'].includes(rawResolution.toLowerCase()) ? rawResolution : '';
+  const rawFramerate = destination?.recording?.framerate ?? profile.framerate;
+  const framerate = rawFramerate && Number(rawFramerate) > 0 ? Number(rawFramerate) : 0;
   const qualityFlags = profile.videoQualityMode === 'crf' && profile.crf
     ? `-crf ${profile.crf}`
     : [`-b:v ${bitrate}k`, profile.maxrate ? `-maxrate ${profile.maxrate}k` : '', profile.bufsize ? `-bufsize ${profile.bufsize}k` : ''].filter(Boolean).join(' ');
 
   const isAmdAmf = [VideoCodec.H264_AMF, VideoCodec.HEVC_AMF].includes(profile.videoCodec as VideoCodec);
 
+  const filters: string[] = [];
+  filters.push('yadif=0:-1:1');
+  if (resolution) {
+    filters.push(`scale=${resolution.replace('x', ':')}`);
+  }
+
   return [
     `-c:v ${profile.videoCodec}`,
     qualityFlags,
-    resolution && resolution !== 'N/A' ? `-s ${resolution}` : '',
-    framerate ? `-r ${framerate}` : '',
+    filters.length ? `-vf ${quote(filters.join(','))}` : '',
+    framerate > 0 ? `-r ${framerate}` : '',
     !isAmdAmf && profile.preset ? `-preset ${profile.preset}` : '',
     profile.tune ? `-tune ${profile.tune}` : '',
     profile.gopSize ? `-g ${profile.gopSize}` : '',
-    profile.pixelFormat ? `-pix_fmt ${profile.pixelFormat}` : '',
+    profile.pixelFormat ? `-pix_fmt ${profile.pixelFormat}` : '-pix_fmt yuv420p',
   ].filter(Boolean).join(' ');
 };
 

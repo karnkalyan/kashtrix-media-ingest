@@ -831,8 +831,8 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             await new Promise(r => setTimeout(r, 500));
 
             let devName = '';
-            const dshowMatch = finalCommand.match(/-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
-            const devUriMatch = finalCommand.match(/-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
+            const dshowMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
+            const devUriMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
             if (devUriMatch) {
                 const parts = devUriMatch[1].split('+');
                 devName = parts[0].replace(/^video=/i, '').trim();
@@ -856,6 +856,11 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
                 }
             }
         }
+
+        // Clean up any invalid scale / framerate flags e.g. -s source or -r 0
+        finalCommand = finalCommand
+            .replace(/\s+-s\s+(source|auto|original|N\/A)\b/gi, '')
+            .replace(/\s+-r\s+0(?:\.0+)?\b/g, '');
 
         // 1. Resolve VOD/file input paths to absolute paths
         const inputMatch = finalCommand.match(/-i\s+["']?([^"'\s]+)["']?/i);
@@ -1394,8 +1399,6 @@ const recordingInputArgs = (inputUrl, options) => {
             options.audioDevice ? `audio=${options.audioDevice}` : '',
         ].filter(Boolean).join(':');
         const args = ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M'];
-        if (options.videoDevice && options.framerate) args.push('-framerate', String(options.framerate));
-        if (options.videoDevice && options.resolution !== 'source') args.push('-video_size', options.resolution);
         args.push('-i', source);
         return args;
     }
@@ -1430,7 +1433,10 @@ const recordingArgs = (inputUrl, filePath, options) => {
         }
         if (options.preset) args.push('-preset', options.preset);
         const vfFilters = [];
-        if (options.resolution && options.resolution !== 'source') {
+        if (options.sourceType === 'device') {
+            vfFilters.push('yadif=0:-1:1');
+        }
+        if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
             vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
         }
         if (vfFilters.length > 0) {
