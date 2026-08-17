@@ -572,9 +572,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           <Label>Local Path
             <input
               type="text"
-              value={activeConfig.storagePath || 'recorded'}
+              value={activeConfig.storagePath || '/media/recordings'}
               onChange={e => patch({ storagePath: e.target.value })}
-              placeholder="recorded or /media/recordings"
+              placeholder="/media/recordings or C:\Recordings"
               className={inputClass}
             />
           </Label>

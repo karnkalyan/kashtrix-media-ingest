@@ -66,9 +66,8 @@ const API_PORT = 3005;
 const DATA_DIR = path.join(__dirname, 'data');
 
 const MEDIA_ROOT = path.join(process.cwd(), 'media');
+const RECORDINGS_DIR = path.join(MEDIA_ROOT, 'recordings');
 const RECORDED_DIR = path.join(process.cwd(), 'recorded');
-const RECORDINGS_DIR = RECORDED_DIR;
-const FALLBACK_RECORDINGS_DIR = path.join(MEDIA_ROOT, 'recordings');
 const RECORDING_THUMBNAILS_DIR = path.join(MEDIA_ROOT, 'recording-thumbnails');
 
 const JWT_SECRET = requireEnv('KTE_JWT_SECRET', 32);
@@ -111,8 +110,7 @@ const SYSTEM_STATS_INTERVAL_MS = 2000;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(MEDIA_ROOT)) fs.mkdirSync(MEDIA_ROOT, { recursive: true });
-if (!fs.existsSync(RECORDED_DIR)) fs.mkdirSync(RECORDED_DIR, { recursive: true });
-if (!fs.existsSync(FALLBACK_RECORDINGS_DIR)) fs.mkdirSync(FALLBACK_RECORDINGS_DIR, { recursive: true });
+if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
 if (!fs.existsSync(RECORDING_THUMBNAILS_DIR)) fs.mkdirSync(RECORDING_THUMBNAILS_DIR, { recursive: true });
 if (!fs.existsSync(VOD_DIR)) fs.mkdirSync(VOD_DIR, { recursive: true });
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
@@ -1445,7 +1443,7 @@ const recordingInputArgs = (inputUrl, options) => {
             options.videoDevice ? `video=${options.videoDevice}` : '',
             options.audioDevice ? `audio=${options.audioDevice}` : '',
         ].filter(Boolean).join(':');
-        const args = ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M'];
+        const args = ['-thread_queue_size', '2048', '-f', 'dshow', '-rtbufsize', '2048M'];
         args.push('-i', source);
         return args;
     }
@@ -1455,7 +1453,7 @@ const recordingInputArgs = (inputUrl, options) => {
         throw new Error('DeckLink video and audio must use the same capture device');
     }
     const dev = options.videoDevice || options.audioDevice;
-    const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
+    const args = ['-thread_queue_size', '2048', '-f', 'decklink'];
     if (options.formatCode && options.formatCode !== 'auto' && options.formatCode !== 'unset') {
         args.push('-format_code', options.formatCode);
     }
@@ -1468,6 +1466,7 @@ const recordingInputArgs = (inputUrl, options) => {
 
 const recordingArgs = (inputUrl, filePath, options) => {
     const isDevice = options.sourceType === 'device';
+    const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : (isDevice ? 50 : 0);
     const args = [
         '-y',
         '-hide_banner',
@@ -1476,8 +1475,11 @@ const recordingArgs = (inputUrl, filePath, options) => {
         ...recordingInputArgs(inputUrl, options),
         '-map', '0:v:0?',
         '-map', '0:a:0?',
-        '-max_muxing_queue_size', '4096'
+        '-max_muxing_queue_size', '8192'
     ];
+    if (isDevice) {
+        args.push('-fps_mode', 'cfr');
+    }
     if (options.encoder === 'copy') {
         args.push('-c', 'copy');
     } else {
@@ -1496,7 +1498,7 @@ const recordingArgs = (inputUrl, filePath, options) => {
         }
         const vfFilters = [];
         if (isDevice) {
-            vfFilters.push('yadif=0:-1:1');
+            vfFilters.push('yadif=0:-1:1', 'setpts=PTS-STARTPTS');
         }
         if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
             vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
@@ -1506,13 +1508,13 @@ const recordingArgs = (inputUrl, filePath, options) => {
         if (vfFilters.length > 0) {
             args.push('-vf', vfFilters.join(','));
         }
-        if (options.framerate && Number(options.framerate) > 0) {
-            args.push('-r', String(options.framerate));
+        if (targetFps > 0) {
+            args.push('-r', String(targetFps));
         }
         args.push('-g', String(options.gopSize || 60), '-keyint_min', '25', '-sc_threshold', '0', '-pix_fmt', options.pixelFormat || 'yuv420p');
         args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
         if (isDevice) {
-            args.push('-af', 'aresample=async=1000');
+            args.push('-af', 'asetpts=PTS-STARTPTS,aresample=async=1000:first_pts=0');
         }
     }
     if (filePath.endsWith('.mp4') || filePath.endsWith('.mov')) args.push('-movflags', '+faststart');
