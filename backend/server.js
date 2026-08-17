@@ -1244,6 +1244,22 @@ const resolveCaptureDevice = (devices, selected) => {
     return devices?.decklinkMap?.[selected] || selected;
 };
 
+const resolveFriendlyDeviceName = (devices, handle) => {
+    if (!handle) return '';
+    if (devices?.decklinkMap) {
+        for (const [friendlyName, devHandle] of Object.entries(devices.decklinkMap)) {
+            if (devHandle === handle || handle === devHandle || handle.includes(devHandle) || devHandle.includes(handle)) {
+                return friendlyName;
+            }
+        }
+    }
+    if (Array.isArray(devices?.video)) {
+        const found = devices.video.find(v => v === handle || v.replace(/\s+/g, '-') === handle || handle.includes(v.replace(/\s+/g, '-')));
+        if (found) return found;
+    }
+    return String(handle).replace(/[-_]+/g, ' ');
+};
+
 const getDeckLinkFormatCode = (resolution, framerate) => {
     const fps = Math.round(Number(framerate) || 0);
     const res = String(resolution || '').toLowerCase();
@@ -1782,6 +1798,7 @@ const listRecordings = (limit = 50) => {
             }
         } catch (e) {}
         if (!inputDevice && row.app === 'device') inputDevice = row.stream;
+        const friendlyDevice = (row.app === 'device' ? resolveFriendlyDeviceName(captureDeviceCache?.devices, inputDevice) : inputDevice) || inputDevice;
 
         const session = activeRecordings.get(getRecordingKey(row.app, row.stream));
         const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id));
@@ -1792,8 +1809,8 @@ const listRecordings = (limit = 50) => {
             const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
             return {
                 ...row,
-                input_device: inputDevice,
-                inputDevice: inputDevice,
+                input_device: friendlyDevice,
+                inputDevice: friendlyDevice,
                 size,
                 duration,
                 is_active: true,
@@ -1821,8 +1838,8 @@ const listRecordings = (limit = 50) => {
 
         return {
             ...row,
-            input_device: inputDevice,
-            inputDevice: inputDevice,
+            input_device: friendlyDevice,
+            inputDevice: friendlyDevice,
             size,
             duration,
             end_time: endTime,

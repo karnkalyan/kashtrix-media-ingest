@@ -68,13 +68,18 @@ const getRecordingDownloadUrl = (item: any): string => {
   return `/recordings/${encodeURIComponent(fileName || '')}?download=1`;
 };
 
-const formatDeviceDisplayName = (deviceStr?: string, fileName?: string) => {
-  if (!deviceStr && !fileName) return 'Intensity Pro 4K';
+const formatDeviceDisplayName = (deviceStr?: string, videoDevices: string[] = []) => {
   const raw = String(deviceStr || '').trim();
-  if (/^75:[0-9a-f:]+/i.test(raw) || raw.toLowerCase() === 'device' || !raw) {
-    if (fileName && fileName.toLowerCase().includes('intensity')) return 'Intensity Pro 4K';
-    return 'Intensity Pro 4K';
+  if (!raw || raw.toLowerCase() === 'device') {
+    return videoDevices.length > 0 ? videoDevices[0] : 'Capture Device';
   }
+  const match = videoDevices.find(d => d === raw || d.toLowerCase() === raw.toLowerCase() || d.replace(/[\s_]+/g, '-').toLowerCase() === raw.toLowerCase());
+  if (match) return match;
+
+  if (/^75:[0-9a-f:]+/i.test(raw)) {
+    return videoDevices.length > 0 ? videoDevices[0] : raw;
+  }
+
   return raw.replace(/[-_]+/g, ' ');
 };
 
@@ -660,7 +665,7 @@ export const IngestServerView: React.FC<Props> = ({
                     </td>
                     <td className="px-4 py-3 font-mono text-[11px] text-slate-700">
                       <span className="rounded bg-violet-50 px-2 py-0.5 font-semibold text-[#6D32D9] border border-violet-200">
-                        {formatDeviceDisplayName(rec.input_device || rec.stream, rec.file_name)}
+                        {formatDeviceDisplayName(rec.input_device || rec.stream, videoDevices)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
