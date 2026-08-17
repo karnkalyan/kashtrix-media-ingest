@@ -9,12 +9,13 @@ const defaultConfig: IngestRecordingOptions = {
   autoRecord: false,
   fileName: '{channel}_{date}_{time}',
   formats: ['mp4'],
-  encoder: 'copy',
+  encoder: 'cpu',
   videoBitrate: 12000,
   audioBitrate: 192,
   resolution: 'source',
   framerate: 0,
   preset: 'fast',
+  gopSize: 60,
   continuous: true,
 };
 
@@ -311,16 +312,16 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     patch({
       encoder: sourceType === 'device' && encoder === 'copy' ? 'cpu' : encoder,
       videoCodec: codec,
-      resolution: profile.resolution === 'N/A' ? 'source' : profile.resolution,
-      framerate: profile.framerate || 0,
+      resolution: sourceType === 'device' ? 'source' : (profile.resolution === 'N/A' ? 'source' : (profile.resolution || 'source')),
+      framerate: sourceType === 'device' ? 0 : (profile.framerate || 0),
       rateControl: profile.videoQualityMode === 'crf' ? 'crf' : 'cbr',
-      videoBitrate: profile.videoBitrate || activeConfig.videoBitrate,
-      maxBitrate: profile.maxrate || profile.videoBitrate || activeConfig.maxBitrate,
-      crf: profile.crf || activeConfig.crf,
-      audioBitrate: profile.audioBitrate || activeConfig.audioBitrate,
-      sampleRate: profile.sampleRate || activeConfig.sampleRate,
+      videoBitrate: profile.videoBitrate || activeConfig.videoBitrate || 4000,
+      maxBitrate: profile.maxrate || profile.videoBitrate || activeConfig.maxBitrate || 6000,
+      crf: profile.crf || activeConfig.crf || 20,
+      audioBitrate: profile.audioBitrate || activeConfig.audioBitrate || 128,
+      sampleRate: profile.sampleRate || activeConfig.sampleRate || 48000,
       preset: (['ultrafast', 'fast', 'medium', 'slow'].includes(profile.preset || '') ? profile.preset : 'fast') as any,
-      gopSize: profile.gopSize || activeConfig.gopSize,
+      gopSize: Number(profile.gopSize) || Number(activeConfig.gopSize) || 60,
       pixelFormat: (['yuv420p', 'yuv422p', 'yuv444p'].includes(profile.pixelFormat || '') ? profile.pixelFormat : 'yuv420p') as any,
     });
   };
@@ -469,7 +470,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       {advancedOpen && <div className="mt-3 grid grid-cols-1 gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 lg:grid-cols-3">
         <Label>Hardware encoder<select value={activeConfig.encoder} disabled={profileControlsHardware} onChange={event => patch({ encoder: event.target.value as IngestRecordingOptions['encoder'] })} className={selectClass}><option value="copy" disabled={sourceType === 'device'}>Stream copy (ingest only)</option><option value="cpu">CPU software</option><option value="nvidia">NVIDIA NVENC</option><option value="intel">Intel Quick Sync</option><option value="amd">AMD AMF</option></select></Label>
         {activeConfig.rateControl !== 'crf' && <Label>Maximum bitrate (Kbps)<input type="number" min="250" max="150000" value={activeConfig.maxBitrate} onChange={event => patch({ maxBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
-        <Label>GOP / keyframe interval<input type="number" min="1" max="600" value={activeConfig.gopSize} onChange={event => patch({ gopSize: Number(event.target.value) })} className={inputClass} /></Label>
+        <Label>GOP / keyframe interval<input type="number" min="1" max="600" value={activeConfig.gopSize || 60} onChange={event => patch({ gopSize: Number(event.target.value) || 60 })} className={inputClass} /></Label>
         <Label>Pixel format<select value={activeConfig.pixelFormat} onChange={event => patch({ pixelFormat: event.target.value as any })} className={selectClass}><option value="yuv420p">YUV 4:2:0</option><option value="yuv422p">YUV 4:2:2</option><option value="yuv444p">YUV 4:4:4</option></select></Label>
         <Label>Encoder preset<select value={activeConfig.preset} onChange={event => patch({ preset: event.target.value as any })} className={selectClass}><option value="ultrafast">Ultra fast</option><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow / quality</option></select></Label>
       </div>}

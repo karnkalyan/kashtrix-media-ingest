@@ -308,7 +308,7 @@ export const ChannelDashboard: React.FC<Props> = ({
                     <th className="px-4 py-2.5">Status</th>
                     <th className="px-4 py-2.5">Output Stream Destinations</th>
                     <th className="px-4 py-2.5">Bitrate</th>
-                    <th className="px-4 py-2.5">Uptime</th>
+                    <th className="px-4 py-2.5">Streaming Duration</th>
                     <th className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -316,7 +316,7 @@ export const ChannelDashboard: React.FC<Props> = ({
                   {filteredChannels.map(channel => {
                     const isRunning = channel.status === ChannelStatus.Running;
                     const profile = profiles.find(p => p.id === channel.profileId);
-                    const formattedUptime = isRunning && channel.uptime ? formatDuration(channel.uptime) : '—';
+                    const formattedUptime = isRunning && channel.uptime ? formatDuration(channel.uptime) : '00:00:00';
                     const destinationsList = channel.destinations?.length
                       ? channel.destinations
                       : [{ id: 'default', name: channel.outputProtocol || 'HLS', protocol: (channel.outputProtocol || 'hls') as any, url: channel.outputUrl }];
@@ -366,7 +366,16 @@ export const ChannelDashboard: React.FC<Props> = ({
                         <td className="px-4 py-3 text-[#6F6078] dark:text-[#B9A5CD]">
                           {profile?.videoBitrate ? `${profile.videoBitrate} Kbps` : '4000 Kbps'}
                         </td>
-                        <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{formattedUptime}</td>
+                        <td className="px-4 py-3 font-mono">
+                          {isRunning ? (
+                            <span className="inline-flex items-center gap-1.5 font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px] whitespace-nowrap dark:bg-emerald-950/50 dark:border-emerald-800 dark:text-emerald-300">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              {formattedUptime}
+                            </span>
+                          ) : (
+                            <span className="text-[#6F6078] dark:text-[#B9A5CD] text-[11px]">Stopped</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
                           {isRunning ? (
                             <button
@@ -587,6 +596,12 @@ export const ChannelDashboard: React.FC<Props> = ({
                 <div>
                   <span className="text-slate-400 block text-[9px]">Transcoding Profile:</span>
                   <span className="font-semibold text-slate-800 dark:text-slate-100">{profiles.find(p => p.id === previewChannel.profileId)?.name || 'Custom Profile'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[9px]">Streaming Duration:</span>
+                  <span className="font-semibold font-mono text-emerald-600 dark:text-emerald-400">
+                    {previewChannel.status === ChannelStatus.Running && previewChannel.uptime ? formatDuration(previewChannel.uptime) : 'Offline / Stopped'}
+                  </span>
                 </div>
                 <div className="col-span-2">
                   <span className="text-slate-400 block text-[9px]">HLS Preview URL:</span>

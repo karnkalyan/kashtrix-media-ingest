@@ -95,7 +95,7 @@ const buildVideoFlags = (profile: TranscodingProfile, destination?: ChannelDesti
     framerate > 0 ? `-r ${framerate}` : '',
     !isAmdAmf && profile.preset ? `-preset ${profile.preset}` : '',
     profile.tune ? `-tune ${profile.tune}` : '',
-    profile.gopSize ? `-g ${profile.gopSize}` : '',
+    `-g ${profile.gopSize || 60}`,
     profile.pixelFormat ? `-pix_fmt ${profile.pixelFormat}` : '-pix_fmt yuv420p',
   ].filter(Boolean).join(' ');
 };
