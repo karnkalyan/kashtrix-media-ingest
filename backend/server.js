@@ -1312,9 +1312,13 @@ const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
         throw new Error('DeckLink video and audio preview must use the same capture device');
     }
     const dev = videoDevice || audioDevice;
-    const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
-    if (options.formatCode && options.formatCode !== 'auto' && options.formatCode !== 'unset') {
-        args.push('-format_code', options.formatCode);
+    const args = ['-thread_queue_size', '2048', '-f', 'decklink'];
+    let formatCode = options.formatCode;
+    if (!formatCode || formatCode === 'auto' || formatCode === 'unset') {
+        formatCode = getDeckLinkFormatCode(options.resolution || '1080', options.framerate || 50) || 'Hp50';
+    }
+    if (formatCode && formatCode !== 'unset') {
+        args.push('-format_code', formatCode);
     }
     const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'hdmi';
     if (videoInput) args.push('-video_input', videoInput);
@@ -1617,8 +1621,12 @@ const recordingInputArgs = (inputUrl, options) => {
     }
     const dev = options.videoDevice || options.audioDevice;
     const args = ['-thread_queue_size', '2048', '-f', 'decklink'];
-    if (options.formatCode && options.formatCode !== 'auto' && options.formatCode !== 'unset') {
-        args.push('-format_code', options.formatCode);
+    let formatCode = options.formatCode;
+    if (!formatCode || formatCode === 'auto' || formatCode === 'unset') {
+        formatCode = getDeckLinkFormatCode(options.resolution || '1080', options.framerate || 50) || 'Hp50';
+    }
+    if (formatCode && formatCode !== 'unset') {
+        args.push('-format_code', formatCode);
     }
     const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'hdmi';
     if (videoInput) args.push('-video_input', videoInput);
