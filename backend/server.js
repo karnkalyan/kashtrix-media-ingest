@@ -1415,7 +1415,7 @@ const normalizeRecordingOptions = (input = {}) => {
         audioDevice: String(input.audioDevice || '').trim(),
         videoCodec: input.videoCodec === 'hevc' ? 'hevc' : 'h264',
         rateControl: ['cbr', 'vbr', 'crf'].includes(input.rateControl) ? input.rateControl : 'cbr',
-        maxBitrate: Math.min(150000, Math.max(250, Number(input.maxBitrate) || Number(input.videoBitrate) || 18000)),
+        maxBitrate: Math.min(150000, Math.max(250, Number(input.maxBitrate) || Number(input.videoBitrate) || 12000)),
         crf: Math.min(51, Math.max(0, Number(input.crf) || 20)),
         gopSize: Math.min(600, Math.max(1, Number(input.gopSize) || 60)),
         pixelFormat: ['yuv420p', 'yuv422p', 'yuv444p'].includes(input.pixelFormat) ? input.pixelFormat : 'yuv420p',
