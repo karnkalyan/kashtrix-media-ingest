@@ -828,14 +828,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
         // 0. Resolve device capture for host platform and ensure hardware lock is free
         if (finalCommand.includes('device://') || finalCommand.includes('-f dshow') || finalCommand.includes('-f decklink')) {
             // Stop any conflicting device preview so DeckLink lock is clean
-            for (const [pId, pObj] of activeDevicePreviews.entries()) {
-                try {
-                    pObj.process?.kill('SIGTERM');
-                    setTimeout(() => { try { pObj.process?.kill('SIGKILL'); } catch (e) {} }, 1000);
-                } catch (e) {}
-                activeDevicePreviews.delete(pId);
-            }
-            for (const [pId, prev] of devicePreviewProcesses.entries()) {
+            for (const [pId] of devicePreviewProcesses.entries()) {
                 stopDevicePreview(pId);
             }
             await new Promise(r => setTimeout(r, 500));
@@ -1545,17 +1538,13 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
 
     const options = normalizeRecordingOptions(rawOptions);
     if (options.sourceType === 'device') {
-        for (const [pId, pObj] of activeDevicePreviews.entries()) {
-            try { pObj.process?.kill('SIGTERM'); } catch (e) {}
-            activeDevicePreviews.delete(pId);
-        }
         for (const [pId] of devicePreviewProcesses.entries()) {
             stopDevicePreview(pId);
         }
     }
     const timestamp = Date.now();
     const startTime = new Date(timestamp).toISOString();
-    const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDED_DIR;
+    const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDINGS_DIR;
     const dir = options.sourceType === 'device' ? targetDir : path.join(targetDir, appName, stream);
     fs.mkdirSync(dir, { recursive: true });
     if (options.sourceType === 'device' && options.encoder === 'copy') options.encoder = 'cpu';
