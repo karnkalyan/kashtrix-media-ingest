@@ -327,7 +327,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
             <span className="font-medium text-[11px]">Stream Ingest (RTMP / SRT)</span>
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1 text-amber-950 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-200">
+          <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1 text-amber-950 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
             <Zap size={12} className="text-amber-600 dark:text-amber-400" />
             <span className="font-medium text-[11px]">GPU Acceleration: <strong>{systemStats?.gpuDetails?.model || 'Hardware Video Engine'}</strong></span>
           </div>
@@ -356,7 +356,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           >
             <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
               <span className="font-semibold uppercase tracking-wider">CPU Load</span>
-              <Cpu size={12} className="text-[#6D32D9]" />
+              <Cpu size={12} className="text-[#6D32D9] dark:text-[#A78BFA]" />
             </div>
             <p className="font-mono text-[16px] font-bold text-[#1B1024] dark:text-white mt-0.5">
               {systemStats ? `${systemStats.cpuLoad?.toFixed(1)}%` : '—'}
@@ -366,7 +366,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
 
           <div
             onClick={() => onNavigate?.('monitor')}
-            className="cursor-pointer rounded-lg border border-amber-200/80 bg-amber-50/40 p-2.5 hover:bg-amber-100/50 dark:bg-[#2A1D12] dark:border-amber-900/60 dark:hover:bg-[#352516] transition-colors"
+            className="cursor-pointer rounded-lg border border-amber-200/80 bg-amber-50/40 p-2.5 hover:bg-amber-100/50 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
           >
             <div className="flex items-center justify-between text-[10px] text-amber-800 dark:text-amber-300">
               <span className="font-semibold uppercase tracking-wider">GPU Engine</span>

@@ -326,17 +326,11 @@ const AreaLineChart: React.FC<{
   );
 };
 
-interface SystemHeaderProps {
+const SystemHeader: React.FC<{
   connectionStatus: string;
   lastUpdated: number | null;
   onRefresh: () => void;
-}
-
-const SystemHeader: React.FC<SystemHeaderProps> = ({
-  connectionStatus,
-  lastUpdated,
-  onRefresh,
-}) => {
+}> = ({ connectionStatus, lastUpdated, onRefresh }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const toggleFullscreen = () => {
@@ -350,26 +344,28 @@ const SystemHeader: React.FC<SystemHeaderProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
-      <div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+      <div className="space-y-0.5">
         <div className="flex items-center gap-2">
-          <h1 className="font-display text-[18px] font-bold text-[#1B1024]">System Monitor</h1>
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-            connectionStatus === 'connected' ? 'bg-[#F0FDF4] text-[#16A36A] border border-[#BBF7D0]' : 'bg-[#FEF2F2] text-[#DC3545] border border-[#FECACA]'
-          }`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-[#16A36A] animate-pulse' : 'bg-[#DC3545]'}`} />
-            {connectionStatus === 'connected' ? 'Live Telemetry Stream (WebSocket)' : 'Disconnected'}
+          <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">System Telemetry</h1>
+          <span className="rounded-md border border-[#E8DFF0] bg-[#F8F7FA] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
+            LIVE FEED
           </span>
         </div>
-        <p className="mt-0.5 text-[12px] text-[#6F6078]">
-          Real-time hardware performance telemetry streamed live over WebSocket
+        <p className="text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
+          Real-time metrics from hardware transcode and streaming engine
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 py-1.5 text-[11px] font-medium text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
+          <span className={`h-2 w-2 rounded-full ${connectionStatus === 'connected' ? 'bg-[#16A36A]' : 'bg-[#DC3545]'}`} />
+          <span className="capitalize">{connectionStatus}</span>
+        </div>
+
         <button
           onClick={onRefresh}
-          className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147]"
+          className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#2D1A45] dark:hover:text-white"
           title="Refresh Telemetry"
         >
           <RefreshCw size={15} />
@@ -377,7 +373,7 @@ const SystemHeader: React.FC<SystemHeaderProps> = ({
 
         <button
           onClick={toggleFullscreen}
-          className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147]"
+          className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] transition-colors hover:bg-[#F4EEFF] hover:text-[#351147] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#2D1A45] dark:hover:text-white"
           title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
         >
           {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -392,7 +388,7 @@ const SystemHealthBar: React.FC<{ stats: TelemetryState }> = ({ stats }) => {
   const hasWarning = stats.cpuLoad > 80 || stats.memLoad > 85 || stats.diskLoad > 90;
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-[#E8DFF0] bg-white px-4 py-3 shadow-xs md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-3 rounded-xl border border-[#E8DFF0] bg-white px-4 py-3 shadow-xs md:flex-row md:items-center md:justify-between dark:bg-[#190E28] dark:border-[#311B4E]">
       <div className="flex items-center gap-3">
         <span className="relative flex h-3 w-3 shrink-0">
           <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
@@ -404,40 +400,40 @@ const SystemHealthBar: React.FC<{ stats: TelemetryState }> = ({ stats }) => {
         </span>
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-display text-[13px] font-semibold text-[#1B1024]">
+            <span className="font-display text-[13px] font-semibold text-[#1B1024] dark:text-white">
               {isHealthy && !hasWarning ? 'All Systems Operational' : hasWarning ? 'System Under Heavy Load' : 'Telemetry Disconnected'}
             </span>
           </div>
-          <p className="text-[11px] text-[#6F6078]">
+          <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
             Streaming infrastructure is healthy and telemetry is updating normally.
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-[12px] border-t border-[#E8DFF0] pt-2 md:border-t-0 md:pt-0">
+      <div className="flex flex-wrap items-center gap-4 text-[12px] border-t border-[#E8DFF0] pt-2 md:border-t-0 md:pt-0 dark:border-[#311B4E]">
         <div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Uptime</span>
-          <p className="font-mono font-semibold text-[#1B1024]">{stats.uptimeFmt || '—'}</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Uptime</span>
+          <p className="font-mono font-semibold text-[#1B1024] dark:text-white">{stats.uptimeFmt || '—'}</p>
         </div>
-        <div className="h-6 w-px bg-[#E8DFF0]" />
+        <div className="h-6 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Processes</span>
-          <p className="font-mono font-semibold text-[#1B1024]">{stats.runningProcesses || '—'}</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Processes</span>
+          <p className="font-mono font-semibold text-[#1B1024] dark:text-white">{stats.runningProcesses || '—'}</p>
         </div>
-        <div className="h-6 w-px bg-[#E8DFF0]" />
+        <div className="h-6 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">CPU Cores</span>
-          <p className="font-mono font-semibold text-[#1B1024]">{stats.cpusCount || stats.coreLoads.length || 1}</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">CPU Cores</span>
+          <p className="font-mono font-semibold text-[#1B1024] dark:text-white">{stats.cpusCount || stats.coreLoads.length || 1}</p>
         </div>
-        <div className="h-6 w-px bg-[#E8DFF0]" />
+        <div className="h-6 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Interfaces</span>
-          <p className="font-mono font-semibold text-[#1B1024]">{stats.networkDetails.length || 1}</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Interfaces</span>
+          <p className="font-mono font-semibold text-[#1B1024] dark:text-white">{stats.networkDetails.length || 1}</p>
         </div>
-        <div className="h-6 w-px bg-[#E8DFF0]" />
+        <div className="h-6 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Updated</span>
-          <p className="font-mono font-semibold text-[#16A36A]">{formatRelativeTime(stats.lastUpdatedTime)}</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Updated</span>
+          <p className="font-mono font-semibold text-[#16A36A] dark:text-[#34D399]">{formatRelativeTime(stats.lastUpdatedTime)}</p>
         </div>
       </div>
     </div>
@@ -453,17 +449,17 @@ const KpiCard: React.FC<{
   statusColor?: string;
 }> = ({ label, mainValue, secondaryText, icon, chartOrProgress, statusColor = '#6D32D9' }) => {
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs transition-shadow hover:shadow-sm">
+    <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs transition-shadow hover:shadow-sm dark:bg-[#190E28] dark:border-[#311B4E]">
       <div>
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">{label}</span>
-          <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#F8F7FA] text-[#4A1B7A]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">{label}</span>
+          <div className="grid h-7 w-7 place-items-center rounded-lg bg-[#F8F7FA] text-[#4A1B7A] dark:bg-[#211335] dark:text-[#A78BFA]">
             {icon}
           </div>
         </div>
 
         <div className="mt-2">
-          <span className="font-mono text-[22px] font-bold tracking-tight text-[#1B1024]">
+          <span className="font-mono text-[22px] font-bold tracking-tight text-[#1B1024] dark:text-white">
             {mainValue}
           </span>
         </div>
@@ -471,7 +467,7 @@ const KpiCard: React.FC<{
 
       <div className="mt-3 space-y-1.5">
         {chartOrProgress}
-        <p className="text-[11px] text-[#6F6078]">{secondaryText}</p>
+        <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">{secondaryText}</p>
       </div>
     </div>
   );
@@ -561,56 +557,56 @@ const NetworkThroughputSection: React.FC<{ stats: TelemetryState }> = ({ stats }
   const peakTotal = Math.max(...historyRx.map((r, i) => r + (historyTx[i] || 0)), 1);
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
+    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
       <div>
-        <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3">
+        <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
           <div>
-            <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">Network Throughput</h3>
-            <p className="text-[11px] text-[#6F6078]">Real-time interface traffic</p>
+            <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Network Throughput</h3>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Real-time interface traffic</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="rounded-md border border-[#E8DFF0] bg-[#F8F7FA] px-2 py-1 font-mono text-[10px] font-semibold text-[#6F6078]">
+            <span className="rounded-md border border-[#E8DFF0] bg-[#F8F7FA] px-2 py-1 font-mono text-[10px] font-semibold text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
               All Interfaces
             </span>
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Incoming / RX</span>
-            <p className="font-mono text-[15px] font-bold text-[#2563EB]">{formatSpeedRate(stats.lastRx)}</p>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Incoming / RX</span>
+            <p className="font-mono text-[15px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{formatSpeedRate(stats.lastRx)}</p>
           </div>
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Outgoing / TX</span>
-            <p className="font-mono text-[15px] font-bold text-[#16A36A]">{formatSpeedRate(stats.lastTx)}</p>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Outgoing / TX</span>
+            <p className="font-mono text-[15px] font-bold text-[#16A36A] dark:text-[#34D399]">{formatSpeedRate(stats.lastTx)}</p>
           </div>
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Total</span>
-            <p className="font-mono text-[15px] font-bold text-[#1B1024]">{formatSpeedRate(stats.lastRx + stats.lastTx)}</p>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Total</span>
+            <p className="font-mono text-[15px] font-bold text-[#1B1024] dark:text-white">{formatSpeedRate(stats.lastRx + stats.lastTx)}</p>
           </div>
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Peak</span>
-            <p className="font-mono text-[15px] font-bold text-[#4A1B7A]">{formatSpeedRate(peakTotal)}</p>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Peak</span>
+            <p className="font-mono text-[15px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{formatSpeedRate(peakTotal)}</p>
           </div>
         </div>
 
         <div className="mt-4 space-y-3">
           <div>
             <div className="mb-1 flex items-center justify-between text-[11px]">
-              <span className="flex items-center gap-1 font-medium text-[#2563EB]">
+              <span className="flex items-center gap-1 font-medium text-[#2563EB] dark:text-[#60A5FA]">
                 <ArrowDownLeft size={13} /> Incoming
               </span>
-              <span className="font-mono font-bold text-[#1B1024]">{formatSpeedRate(stats.lastRx)}</span>
+              <span className="font-mono font-bold text-[#1B1024] dark:text-white">{formatSpeedRate(stats.lastRx)}</span>
             </div>
             <AreaLineChart data={historyRx} color="#2563EB" height={44} />
           </div>
 
           <div>
             <div className="mb-1 flex items-center justify-between text-[11px]">
-              <span className="flex items-center gap-1 font-medium text-[#16A36A]">
+              <span className="flex items-center gap-1 font-medium text-[#16A36A] dark:text-[#34D399]">
                 <ArrowUpRight size={13} /> Outgoing
               </span>
-              <span className="font-mono font-bold text-[#1B1024]">{formatSpeedRate(stats.lastTx)}</span>
+              <span className="font-mono font-bold text-[#1B1024] dark:text-white">{formatSpeedRate(stats.lastTx)}</span>
             </div>
             <AreaLineChart data={historyTx} color="#16A36A" height={44} />
           </div>
@@ -625,41 +621,41 @@ const CpuProcessingMatrix: React.FC<{ stats: TelemetryState }> = ({ stats }) => 
   const loadAvg = stats.loadAvg || [0, 0, 0];
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
+    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
       <div>
-        <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3">
+        <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
           <div>
-            <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">CPU Processing</h3>
-            <p className="text-[11px] text-[#6F6078]">Per-core matrix and thread allocation</p>
+            <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">CPU Processing</h3>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Per-core matrix and thread allocation</p>
           </div>
-          <Cpu size={18} className="text-[#6D32D9]" />
+          <Cpu size={18} className="text-[#6D32D9] dark:text-[#A78BFA]" />
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2">
-            <span className="text-[9px] font-semibold uppercase text-[#6F6078]">Processes</span>
-            <p className="font-mono font-bold text-[#1B1024]">{stats.runningProcesses || '—'}</p>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Processes</span>
+            <p className="font-mono font-bold text-[#1B1024] dark:text-white">{stats.runningProcesses || '—'}</p>
           </div>
-          <div className="col-span-2 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2">
-            <span className="text-[9px] font-semibold uppercase text-[#6F6078]">Load Average</span>
-            <p className="font-mono font-bold text-[#1B1024]">
+          <div className="col-span-2 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Load Average</span>
+            <p className="font-mono font-bold text-[#1B1024] dark:text-white">
               {loadAvg.map(l => (typeof l === 'number' ? l.toFixed(2) : l)).join(' / ')}
             </p>
           </div>
         </div>
 
         <div className="mt-3">
-          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">
             Cores ({cores.length || stats.cpusCount || 1})
           </span>
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-4">
             {(cores.length ? cores : Array(stats.cpusCount || 4).fill(0)).map((load, idx) => {
               const coreNum = String(idx + 1).padStart(2, '0');
               return (
-                <div key={idx} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 text-center">
+                <div key={idx} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 text-center dark:bg-[#211335] dark:border-[#371F59]">
                   <div className="flex items-center justify-between text-[10px]">
-                    <span className="font-mono font-semibold text-[#6F6078]">Core {coreNum}</span>
-                    <span className="font-mono font-bold text-[#1B1024]">{load.toFixed(0)}%</span>
+                    <span className="font-mono font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Core {coreNum}</span>
+                    <span className="font-mono font-bold text-[#1B1024] dark:text-white">{load.toFixed(0)}%</span>
                   </div>
                   <div className="mt-1.5">
                     <CompactProgressBar value={load} color={load > 85 ? '#DC3545' : '#6D32D9'} className="h-1" />
@@ -689,51 +685,51 @@ const GpuAccelerationMatrix: React.FC<{ stats: TelemetryState }> = ({ stats }) =
   const vramLoad = gpu.memoryLoad || 0;
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
+    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
       <div>
-        <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3">
+        <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
           <div>
-            <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">GPU Acceleration & Graphics</h3>
-            <p className="text-[11px] text-[#6F6078]">Hardware transcode engine and graphical processing</p>
+            <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">GPU Acceleration & Graphics</h3>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Hardware transcode engine and graphical processing</p>
           </div>
           <Zap size={18} className="text-amber-500" />
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 text-[11px]">
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-            <span className="text-[9px] font-semibold uppercase text-[#6F6078]">Primary GPU Adapter</span>
-            <p className="font-mono font-bold text-[#1B1024] truncate" title={gpu.model}>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Primary GPU Adapter</span>
+            <p className="font-mono font-bold text-[#1B1024] dark:text-white truncate" title={gpu.model}>
               {gpu.model || 'Hardware Graphics Adapter'}
             </p>
-            <p className="text-[10px] text-[#6F6078] mt-0.5 truncate">{gpu.vendor || 'Hardware Engine'}</p>
+            <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] mt-0.5 truncate">{gpu.vendor || 'Hardware Engine'}</p>
           </div>
 
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-            <span className="text-[9px] font-semibold uppercase text-[#6F6078]">Acceleration Pipeline</span>
-            <p className="font-mono font-bold text-[#6D32D9] truncate" title={gpu.acceleration}>
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+            <span className="text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Acceleration Pipeline</span>
+            <p className="font-mono font-bold text-[#6D32D9] dark:text-[#A78BFA] truncate" title={gpu.acceleration}>
               {gpu.acceleration || 'DirectShow / D3D11VA Active'}
             </p>
-            <p className="text-[10px] text-[#16A36A] mt-0.5 flex items-center gap-1 font-semibold">
+            <p className="text-[10px] text-[#16A36A] dark:text-[#34D399] mt-0.5 flex items-center gap-1 font-semibold">
               <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A] animate-pulse" /> Hardware Engine Active
             </p>
           </div>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2.5">
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3">
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#1B1024]">GPU Engine Load</span>
-              <span className="font-mono font-bold text-amber-600">{gpuLoad.toFixed(1)}%</span>
+              <span className="font-semibold text-[#1B1024] dark:text-white">GPU Engine Load</span>
+              <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{gpuLoad.toFixed(1)}%</span>
             </div>
             <div className="mt-2">
               <CompactProgressBar value={gpuLoad} color={gpuLoad > 85 ? '#DC3545' : '#D97706'} />
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3">
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#1B1024]">Dedicated VRAM</span>
-              <span className="font-mono font-bold text-[#2563EB]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">Dedicated VRAM</span>
+              <span className="font-mono font-bold text-[#2563EB] dark:text-[#60A5FA]">
                 {gpu.vramFmt ? `${gpu.vramFmt} (${vramLoad.toFixed(0)}%)` : `${vramLoad.toFixed(1)}%`}
               </span>
             </div>
@@ -745,9 +741,9 @@ const GpuAccelerationMatrix: React.FC<{ stats: TelemetryState }> = ({ stats }) =
 
         {stats.history?.gpu && (
           <div className="mt-3">
-            <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078]">
+            <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
               <span>GPU Utilization History</span>
-              <span className="font-mono text-amber-600">{gpuLoad.toFixed(1)}%</span>
+              <span className="font-mono text-amber-600 dark:text-amber-400">{gpuLoad.toFixed(1)}%</span>
             </div>
             <AreaLineChart data={stats.history.gpu} color="#D97706" height={36} />
           </div>
@@ -761,52 +757,52 @@ const ResourceTrendsSection: React.FC<{ stats: TelemetryState }> = ({ stats }) =
   const gpuLoad = stats.gpuDetails?.load || 0;
 
   return (
-    <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
-      <div className="border-b border-[#E8DFF0] pb-3">
-        <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">Resource Trends</h3>
-        <p className="text-[11px] text-[#6F6078]">Synchronized CPU, GPU, Memory, and Disk utilization</p>
+    <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+      <div className="border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
+        <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Resource Trends</h3>
+        <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Synchronized CPU, GPU, Memory, and Disk utilization</p>
       </div>
 
       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-          <span className="text-[10px] font-semibold uppercase text-[#6F6078]">CPU %</span>
-          <p className="font-mono text-[16px] font-bold text-[#6D32D9]">{stats.cpuLoad.toFixed(1)}%</p>
+        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+          <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">CPU %</span>
+          <p className="font-mono text-[16px] font-bold text-[#6D32D9] dark:text-[#A78BFA]">{stats.cpuLoad.toFixed(1)}%</p>
         </div>
-        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-          <span className="text-[10px] font-semibold uppercase text-[#6F6078]">GPU %</span>
-          <p className="font-mono text-[16px] font-bold text-amber-600">{gpuLoad.toFixed(1)}%</p>
+        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+          <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">GPU %</span>
+          <p className="font-mono text-[16px] font-bold text-amber-600 dark:text-amber-400">{gpuLoad.toFixed(1)}%</p>
         </div>
-        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-          <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Memory %</span>
-          <p className="font-mono text-[16px] font-bold text-[#2563EB]">{stats.memLoad.toFixed(1)}%</p>
+        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+          <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Memory %</span>
+          <p className="font-mono text-[16px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{stats.memLoad.toFixed(1)}%</p>
         </div>
-        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-          <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Disk %</span>
-          <p className="font-mono text-[16px] font-bold text-[#16A36A]">{stats.diskLoad.toFixed(1)}%</p>
+        <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+          <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Disk %</span>
+          <p className="font-mono text-[16px] font-bold text-[#16A36A] dark:text-[#34D399]">{stats.diskLoad.toFixed(1)}%</p>
         </div>
       </div>
 
       <div className="mt-4 space-y-3">
         <div>
-          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078]">
+          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
             <span>CPU Load History</span>
-            <span className="font-mono text-[#6D32D9]">{stats.cpuLoad.toFixed(1)}%</span>
+            <span className="font-mono text-[#6D32D9] dark:text-[#A78BFA]">{stats.cpuLoad.toFixed(1)}%</span>
           </div>
           <AreaLineChart data={stats.history.cpu} color="#6D32D9" height={36} />
         </div>
 
         <div>
-          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078]">
+          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
             <span>GPU Load History</span>
-            <span className="font-mono text-amber-600">{gpuLoad.toFixed(1)}%</span>
+            <span className="font-mono text-amber-600 dark:text-amber-400">{gpuLoad.toFixed(1)}%</span>
           </div>
           <AreaLineChart data={stats.history.gpu} color="#D97706" height={36} />
         </div>
 
         <div>
-          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078]">
+          <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
             <span>Memory Usage History</span>
-            <span className="font-mono text-[#2563EB]">{stats.memLoad.toFixed(1)}%</span>
+            <span className="font-mono text-[#2563EB] dark:text-[#60A5FA]">{stats.memLoad.toFixed(1)}%</span>
           </div>
           <AreaLineChart data={stats.history.mem} color="#2563EB" height={36} />
         </div>
@@ -820,18 +816,18 @@ const StorageMemorySection: React.FC<{ stats: TelemetryState }> = ({ stats }) =>
   const disk = stats.storageDetails;
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
+    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
       <div>
-        <div className="border-b border-[#E8DFF0] pb-3">
-          <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">Storage & Memory</h3>
-          <p className="text-[11px] text-[#6F6078]">System capacity and mount statistics</p>
+        <div className="border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
+          <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Storage & Memory</h3>
+          <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">System capacity and mount statistics</p>
         </div>
 
         <div className="mt-3 space-y-3">
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3">
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#1B1024]">Memory Used</span>
-              <span className="font-mono font-bold text-[#2563EB]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">Memory Used</span>
+              <span className="font-mono font-bold text-[#2563EB] dark:text-[#60A5FA]">
                 {mem ? `${mem.usedFmt} / ${mem.totalFmt}` : '—'}
               </span>
             </div>
@@ -840,10 +836,10 @@ const StorageMemorySection: React.FC<{ stats: TelemetryState }> = ({ stats }) =>
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3">
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#1B1024]">Swap Usage</span>
-              <span className="font-mono font-bold text-[#6F6078]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">Swap Usage</span>
+              <span className="font-mono font-bold text-[#6F6078] dark:text-[#B9A5CD]">
                 {mem ? `${mem.swapUsedFmt} / ${mem.swapTotalFmt}` : '—'}
               </span>
             </div>
@@ -855,19 +851,19 @@ const StorageMemorySection: React.FC<{ stats: TelemetryState }> = ({ stats }) =>
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3">
+          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#1B1024]">Storage</span>
-              <span className="font-mono font-bold text-[#16A36A]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">Storage</span>
+              <span className="font-mono font-bold text-[#16A36A] dark:text-[#34D399]">
                 {disk ? `${disk.usedFmt} / ${disk.sizeFmt}` : '—'}
               </span>
             </div>
             <div className="mt-2">
               <CompactProgressBar value={stats.diskLoad} color="#16A36A" />
             </div>
-            <div className="mt-2 text-[10px] text-[#6F6078]">
-              <span className="text-[#6F6078]">Storage Path: </span>
-              <code className="font-mono font-semibold text-[#1B1024]">{disk?.mount || '/'}</code>
+            <div className="mt-2 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              <span>Storage Path: </span>
+              <code className="font-mono font-semibold text-[#1B1024] dark:text-white">{disk?.mount || '/'}</code>
             </div>
           </div>
         </div>
@@ -900,24 +896,24 @@ const RecentEventsSection: React.FC<{ stats: TelemetryState }> = ({ stats }) => 
   }
 
   return (
-    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
+    <div className="flex h-full flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
       <div>
-        <div className="border-b border-[#E8DFF0] pb-2.5">
-          <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">Recent Alerts & Logs</h3>
-          <p className="text-[11px] text-[#6F6078]">Real-time system telemetry alerts</p>
+        <div className="border-b border-[#E8DFF0] pb-2.5 dark:border-[#311B4E]">
+          <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Recent Alerts & Logs</h3>
+          <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Real-time system telemetry alerts</p>
         </div>
 
         <div className="mt-3 space-y-2.5">
           {dynamicEvents.map(ev => (
-            <div key={ev.id} className="flex items-center justify-between rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 text-[11px]">
+            <div key={ev.id} className="flex items-center justify-between rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 text-[11px] dark:bg-[#211335] dark:border-[#371F59]">
               <div className="flex items-center gap-2">
                 {ev.type === 'warning' ? <AlertTriangle size={14} className="text-[#D97706]" /> : ev.type === 'critical' ? <XCircle size={14} className="text-[#DC3545]" /> : <CheckCircle2 size={14} className="text-[#16A36A]" />}
                 <div>
-                  <p className="font-semibold text-[#1B1024]">{ev.title}</p>
-                  <p className="text-[10px] text-[#6F6078]">{ev.target}</p>
+                  <p className="font-semibold text-[#1B1024] dark:text-white">{ev.title}</p>
+                  <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">{ev.target}</p>
                 </div>
               </div>
-              <span className="font-mono text-[10px] text-[#6F6078]">{ev.timestamp}</span>
+              <span className="font-mono text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">{ev.timestamp}</span>
             </div>
           ))}
         </div>
@@ -928,27 +924,27 @@ const RecentEventsSection: React.FC<{ stats: TelemetryState }> = ({ stats }) => 
 
 const NetworkInterfacesTable: React.FC<{ interfaces: NetworkInterfaceItem[] }> = ({ interfaces }) => {
   return (
-    <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
-      <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3">
+    <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+      <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
         <div>
-          <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">Network Interfaces</h3>
-          <p className="text-[11px] text-[#6F6078]">Per-interface real-time throughput and packet counters</p>
+          <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Network Interfaces</h3>
+          <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Per-interface real-time throughput and packet counters</p>
         </div>
-        <Wifi size={18} className="text-[#4A1B7A]" />
+        <Wifi size={18} className="text-[#4A1B7A] dark:text-[#A78BFA]" />
       </div>
 
       <div className="mt-3 overflow-x-auto">
         {interfaces.length === 0 ? (
-          <div className="grid min-h-[100px] place-items-center rounded-lg border border-dashed border-[#E8DFF0] bg-[#F8F7FA] p-6 text-center">
+          <div className="grid min-h-[100px] place-items-center rounded-lg border border-dashed border-[#E8DFF0] bg-[#F8F7FA] p-6 text-center dark:bg-[#211335] dark:border-[#371F59]">
             <div>
-              <p className="font-display text-[13px] font-semibold text-[#1B1024]">No interfaces reporting telemetry</p>
-              <p className="mt-1 text-[11px] text-[#6F6078]">Network interface information will appear when the monitoring agent reports it.</p>
+              <p className="font-display text-[13px] font-semibold text-[#1B1024] dark:text-white">No interfaces reporting telemetry</p>
+              <p className="mt-1 text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Network interface information will appear when the monitoring agent reports it.</p>
             </div>
           </div>
         ) : (
           <table className="w-full text-left text-[12px]">
             <thead>
-              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
                 <th className="px-3 py-2.5">Interface</th>
                 <th className="px-3 py-2.5">State</th>
                 <th className="px-3 py-2.5">IP</th>
@@ -961,31 +957,31 @@ const NetworkInterfacesTable: React.FC<{ interfaces: NetworkInterfaceItem[] }> =
                 <th className="px-3 py-2.5">Utilization</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8DFF0]">
+            <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
               {interfaces.map(item => (
-                <tr key={item.iface} className="transition-colors hover:bg-[#F4EEFF]">
-                  <td className="px-3 py-2.5 font-mono font-bold text-[#1B1024]">{item.iface}</td>
+                <tr key={item.iface} className="transition-colors hover:bg-[#F4EEFF] dark:hover:bg-[#281640]">
+                  <td className="px-3 py-2.5 font-mono font-bold text-[#1B1024] dark:text-white">{item.iface}</td>
                   <td className="px-3 py-2.5">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      item.state === 'UP' ? 'bg-[#F0FDF4] text-[#16A36A]' : 'bg-[#FEF2F2] text-[#DC3545]'
+                      item.state === 'UP' ? 'bg-[#F0FDF4] text-[#16A36A] dark:bg-[#064E3B]/60 dark:text-[#34D399]' : 'bg-[#FEF2F2] text-[#DC3545] dark:bg-[#450A0A]/60 dark:text-[#FCA5A5]'
                     }`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${item.state === 'UP' ? 'bg-[#16A36A]' : 'bg-[#DC3545]'}`} />
                       {item.state}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 font-mono text-[#6F6078]">{item.ip}</td>
-                  <td className="px-3 py-2.5 font-mono font-semibold text-[#2563EB]">{item.rx_rate_fmt}</td>
-                  <td className="px-3 py-2.5 font-mono font-semibold text-[#16A36A]">{item.tx_rate_fmt}</td>
-                  <td className="px-3 py-2.5 font-mono text-[#6F6078]">{item.rx_packets_sec || 0}</td>
-                  <td className="px-3 py-2.5 font-mono text-[#6F6078]">{item.tx_packets_sec || 0}</td>
-                  <td className="px-3 py-2.5 font-mono text-[#6F6078]">{item.errors_sec || 0}</td>
-                  <td className="px-3 py-2.5 font-mono text-[#6F6078]">{item.drops_sec || 0}</td>
+                  <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{item.ip}</td>
+                  <td className="px-3 py-2.5 font-mono font-semibold text-[#2563EB] dark:text-[#60A5FA]">{item.rx_rate_fmt}</td>
+                  <td className="px-3 py-2.5 font-mono font-semibold text-[#16A36A] dark:text-[#34D399]">{item.tx_rate_fmt}</td>
+                  <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{item.rx_packets_sec || 0}</td>
+                  <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{item.tx_packets_sec || 0}</td>
+                  <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{item.errors_sec || 0}</td>
+                  <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{item.drops_sec || 0}</td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-16">
                         <CompactProgressBar value={item.utilization || 0} color="#4A1B7A" />
                       </div>
-                      <span className="font-mono text-[11px] font-semibold text-[#1B1024]">{item.utilization || 0}%</span>
+                      <span className="font-mono text-[11px] font-semibold text-[#1B1024] dark:text-white">{item.utilization || 0}%</span>
                     </div>
                   </td>
                 </tr>
@@ -1012,19 +1008,19 @@ const ServiceHealthTable: React.FC<{ services?: ServiceHealthItem[]; uptimeFmt?:
   const list = services && services.length ? services : defaultServices;
 
   return (
-    <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs">
-      <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3">
+    <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+      <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
         <div>
-          <h3 className="font-display text-[15px] font-semibold text-[#1B1024]">Service Health</h3>
-          <p className="text-[11px] text-[#6F6078]">Operational status of detected backend processes and middleware services</p>
+          <h3 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Service Health</h3>
+          <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Operational status of detected backend processes and middleware services</p>
         </div>
-        <ShieldCheck size={18} className="text-[#16A36A]" />
+        <ShieldCheck size={18} className="text-[#16A36A] dark:text-[#34D399]" />
       </div>
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-left text-[12px]">
           <thead>
-            <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+            <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
               <th className="px-3 py-2.5">Service</th>
               <th className="px-3 py-2.5">Status</th>
               <th className="px-3 py-2.5">Uptime</th>
@@ -1032,21 +1028,21 @@ const ServiceHealthTable: React.FC<{ services?: ServiceHealthItem[]; uptimeFmt?:
               <th className="px-3 py-2.5">Last Check</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E8DFF0]">
+          <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
             {list.map(svc => (
-              <tr key={svc.id} className="transition-colors hover:bg-[#F4EEFF]">
-                <td className="px-3 py-2.5 font-semibold text-[#1B1024]">{svc.name}</td>
+              <tr key={svc.id} className="transition-colors hover:bg-[#F4EEFF] dark:hover:bg-[#281640]">
+                <td className="px-3 py-2.5 font-semibold text-[#1B1024] dark:text-white">{svc.name}</td>
                 <td className="px-3 py-2.5">
                   <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                    svc.status === 'Healthy' ? 'bg-[#F0FDF4] text-[#16A36A]' : 'bg-[#FFFBEB] text-[#D97706]'
+                    svc.status === 'Healthy' ? 'bg-[#F0FDF4] text-[#16A36A] dark:bg-[#064E3B]/60 dark:text-[#34D399]' : 'bg-[#FFFBEB] text-[#D97706] dark:bg-[#451A03]/60 dark:text-[#FCD34D]'
                   }`}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A] dark:bg-[#34D399]" />
                     {svc.status}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 font-mono text-[#6F6078]">{svc.uptime}</td>
-                <td className="px-3 py-2.5 font-mono text-[#6F6078]">{svc.latency}</td>
-                <td className="px-3 py-2.5 font-mono text-[#6F6078]">{svc.lastCheck}</td>
+                <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{svc.uptime}</td>
+                <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{svc.latency}</td>
+                <td className="px-3 py-2.5 font-mono text-[#6F6078] dark:text-[#B9A5CD]">{svc.lastCheck}</td>
               </tr>
             ))}
           </tbody>
@@ -1058,34 +1054,34 @@ const ServiceHealthTable: React.FC<{ services?: ServiceHealthItem[]; uptimeFmt?:
 
 const TelemetryStatusFooter: React.FC<{ stats: TelemetryState }> = ({ stats }) => {
   return (
-    <div className="flex flex-wrap items-center justify-between rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] px-4 py-3 text-[11px]">
+    <div className="flex flex-wrap items-center justify-between rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] px-4 py-3 text-[11px] dark:bg-[#190E28] dark:border-[#311B4E]">
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-1.5">
-          <span className="text-[#6F6078]">Telemetry Agent:</span>
-          <span className="font-semibold text-[#16A36A]">Connected</span>
+          <span className="text-[#6F6078] dark:text-[#B9A5CD]">Telemetry Agent:</span>
+          <span className="font-semibold text-[#16A36A] dark:text-[#34D399]">Connected</span>
         </div>
-        <div className="h-3 w-px bg-[#E8DFF0]" />
+        <div className="h-3 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div className="flex items-center gap-1.5">
-          <span className="text-[#6F6078]">WebSocket:</span>
-          <span className="font-semibold text-[#16A36A]">
+          <span className="text-[#6F6078] dark:text-[#B9A5CD]">WebSocket:</span>
+          <span className="font-semibold text-[#16A36A] dark:text-[#34D399]">
             {stats.connectionStatus === 'connected' ? 'Connected' : 'Reconnecting...'}
           </span>
         </div>
-        <div className="h-3 w-px bg-[#E8DFF0]" />
+        <div className="h-3 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div className="flex items-center gap-1.5">
-          <span className="text-[#6F6078]">Sampling Interval:</span>
-          <span className="font-mono font-semibold text-[#1B1024]">2 seconds</span>
+          <span className="text-[#6F6078] dark:text-[#B9A5CD]">Sampling Interval:</span>
+          <span className="font-mono font-semibold text-[#1B1024] dark:text-white">2 seconds</span>
         </div>
-        <div className="h-3 w-px bg-[#E8DFF0]" />
+        <div className="h-3 w-px bg-[#E8DFF0] dark:bg-[#311B4E]" />
         <div className="flex items-center gap-1.5">
-          <span className="text-[#6F6078]">Last Sample:</span>
-          <span className="font-mono font-semibold text-[#1B1024]">
+          <span className="text-[#6F6078] dark:text-[#B9A5CD]">Last Sample:</span>
+          <span className="font-mono font-semibold text-[#1B1024] dark:text-white">
             {formatRelativeTime(stats.lastUpdatedTime)}
           </span>
         </div>
       </div>
 
-      <div className="mt-2 font-mono text-[10px] text-[#6F6078] sm:mt-0">
+      <div className="mt-2 font-mono text-[10px] text-[#6F6078] sm:mt-0 dark:text-[#B9A5CD]">
         Server Time: {stats.serverTime ? new Date(stats.serverTime).toLocaleString() : new Date().toLocaleString()}
       </div>
     </div>
