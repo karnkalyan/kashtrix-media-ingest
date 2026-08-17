@@ -15,7 +15,35 @@ import {
 } from 'lucide-react';
 import Button from './ui/Button';
 import ProtocolBadge from './ui/ProtocolBadge';
+import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
 import { subscribeRealtime } from '../services/realtime';
+
+const getRecordingFormat = (recording: any): string => {
+  if (recording?.file_name && recording.file_name.includes('.')) {
+    const parts = recording.file_name.split('.');
+    const ext = parts.pop()?.toLowerCase();
+    if (ext && ext !== recording.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
+      return ext;
+    }
+  }
+  if (recording?.format && String(recording.format).toLowerCase() !== 'file') {
+    return String(recording.format).toLowerCase();
+  }
+  return 'mp4';
+};
+
+const getRecordingUrl = (item: any): string => {
+  if (!item) return '';
+  const fmt = getRecordingFormat(item);
+  if (fmt === 'mp4' || fmt === 'webm') {
+    if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
+    const fileName = item.file_name || item.stream;
+    if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
+  }
+  if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
+  const fileName = item.file_name || item.stream;
+  return `/recording-preview/${encodeURIComponent(fileName || '')}`;
+};
 
 interface DashboardOverview {
   generatedAt: string;
@@ -494,12 +522,13 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
               </button>
             </div>
             <div className="aspect-video bg-black">
-              <video
-                controls
-                autoPlay
-                playsInline
-                className="h-full w-full object-contain"
-                src={`/recording-preview/${previewRecording.id}`}
+              <KashtrixMediaPlayer
+                src={getRecordingUrl(previewRecording)}
+                title={previewRecording.file_name}
+                isLive={false}
+                autoPlay={true}
+                showAudioMeter={true}
+                className="w-full h-full"
               />
             </div>
           </div>

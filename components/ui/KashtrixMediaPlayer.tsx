@@ -293,7 +293,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         initAudioAnalyser();
       };
       const onErr = () => {
-        setError('Unable to load video file');
+        setError('Unable to load video file (file may be empty 0 B or interrupted)');
         setLoading(false);
       };
       video.addEventListener('loadeddata', onLoaded, { once: true });
