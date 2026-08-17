@@ -24,6 +24,7 @@ function runFfmpeg(executable, args, timeoutMs = 15000) {
 function parseDeckLink(output) {
     const video = [];
     const audio = [];
+    const decklinkMap = {};
     const lines = output.split('\n');
     let readingDevices = false;
 
@@ -35,33 +36,25 @@ function parseDeckLink(output) {
 
         if (!readingDevices) continue;
 
-        // FFmpeg 8 examples:
-        // 75:05326625:00000000 [Intensity Pro 4K] (none)
-        // * 75:xxxxxxxx:00000000 [DeckLink Device] (video, audio)
-        //
-        // Do not require "(video, audio)" because some DeckLink SDK /
-        // driver combinations report "(none)" even though the device
-        // is correctly enumerated.
         const match = line.match(
             /^\s*\*?\s*(\S+)\s+\[([^\]\r\n]+)\]\s+\(([^)]*)\)\s*$/
         );
 
         if (!match) continue;
 
+        const handle = match[1].trim();
         const displayName = match[2].trim();
 
-        if (displayName && !video.includes(displayName)) {
-            video.push(displayName);
-        }
+        if (!handle || !displayName) continue;
 
-        if (displayName && !audio.includes(displayName)) {
-            audio.push(displayName);
-        }
+        decklinkMap[displayName] = handle;
+
+        if (!video.includes(displayName)) video.push(displayName);
+        if (!audio.includes(displayName)) audio.push(displayName);
     }
 
-    return { video, audio };
+    return { video, audio, decklinkMap };
 }
-
 /**
  * Parse FFmpeg DirectShow device listing output on Windows into structured video/audio device arrays.
  */

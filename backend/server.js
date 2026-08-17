@@ -951,6 +951,11 @@ app.get('/api/ffmpeg/devices', authMiddleware, async (req, res) => {
     catch (error) { res.status(500).json({ error: error.message || 'Unable to detect capture devices' }); }
 });
 
+const resolveCaptureDevice = (devices, selected) => {
+    if (!selected || process.platform === 'win32') return selected;
+    return devices?.decklinkMap?.[selected] || selected;
+};
+
 const getDeckLinkFormatCode = (resolution, framerate) => {
     const fps = Math.round(Number(framerate) || 0);
     const res = String(resolution || '').toLowerCase();
@@ -1060,8 +1065,12 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
         const devices = await scanCaptureDevices({ refresh: true });
         if (videoDevice && !devices.video.includes(videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
         if (audioDevice && !devices.audio.includes(audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
+
+        const ffmpegVideoDevice = resolveCaptureDevice(devices, videoDevice);
+        const ffmpegAudioDevice = resolveCaptureDevice(devices, audioDevice);
+
         let inputArgs;
-        try { inputArgs = devicePreviewInputArgs(videoDevice, audioDevice, { resolution, framerate, formatCode, videoInput, rawFormat }); }
+        try { inputArgs = devicePreviewInputArgs(ffmpegVideoDevice, ffmpegAudioDevice, { resolution, framerate, formatCode, videoInput, rawFormat }); }
         catch (error) { return res.status(400).json({ error: error.message }); }
 
         for (const [previewId, preview] of devicePreviewProcesses) {
@@ -2145,6 +2154,13 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         ? { ...requestedOptions, sourceType: 'ingest', videoDevice: '', audioDevice: '' }
         : requestedOptions;
     if (options.sourceType !== 'device' && !activeSessions.has(getRecordingKey(appName, stream))) return res.status(409).json({ error: 'The selected ingest stream is not live' });
+    if (options.sourceType === 'device') {
+        const devices = await scanCaptureDevices();
+        if (options.videoDevice && !devices.video.includes(options.videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
+        if (options.audioDevice && !devices.audio.includes(options.audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
+        if (options.videoDevice) options.videoDevice = resolveCaptureDevice(devices, options.videoDevice);
+        if (options.audioDevice) options.audioDevice = resolveCaptureDevice(devices, options.audioDevice);
+    }
     try {
         const active = beginRecording(appName, stream, options);
         await new Promise(resolve => setTimeout(resolve, 1800));

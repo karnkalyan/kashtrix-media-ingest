@@ -25,6 +25,12 @@ Auto-detected sources for decklink:
             'DeckLink Duo 2 (3)',
             'DeckLink Duo 2 (4)',
         ],
+        decklinkMap: {
+            'DeckLink Duo 2 (1)': '75:05326625:00000000',
+            'DeckLink Duo 2 (2)': '75:05326625:00000001',
+            'DeckLink Duo 2 (3)': '75:05326625:00000002',
+            'DeckLink Duo 2 (4)': '75:05326625:00000003',
+        },
     });
 });
 
@@ -42,6 +48,10 @@ ffmpeg version 8.0
     assert.deepEqual(parseDeckLink(output), {
         video: ['DeckLink 8K Pro (1)', 'DeckLink 8K Pro (2)'],
         audio: ['DeckLink 8K Pro (1)', 'DeckLink 8K Pro (2)'],
+        decklinkMap: {
+            'DeckLink 8K Pro (1)': '75:05326625:00000000',
+            'DeckLink 8K Pro (2)': '75:05326625:00000001',
+        },
     });
 });
 
@@ -50,5 +60,5 @@ test('does not parse device-shaped text without the DeckLink sources header', ()
  * 75:05326625:00000000 [DeckLink Duo 2 (1)] (video, audio)
 `;
 
-    assert.deepEqual(parseDeckLink(output), { video: [], audio: [] });
+    assert.deepEqual(parseDeckLink(output), { video: [], audio: [], decklinkMap: {} });
 });
