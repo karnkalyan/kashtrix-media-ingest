@@ -283,9 +283,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     .replace(/\{time\}/gi, 'HH-MM-SS')
     .replace(/\{timestamp\}/gi, String(Date.now()));
 
-  const releaseDevicePreview = useCallback((previewId: string) => {
+  const releaseDevicePreview = useCallback((previewId?: string) => {
     const token = localStorage.getItem('kte-auth-token');
-    fetch(`/api/ingest/device-preview/${encodeURIComponent(previewId)}`, {
+    const url = previewId ? `/api/ingest/device-preview/${encodeURIComponent(previewId)}` : '/api/ingest/device-preview/all';
+    fetch(url, {
       method: 'DELETE',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       keepalive: true,
@@ -318,16 +319,50 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     setPreviewError('');
     setPreviewTime(0);
 
-    if (notifyServer && currentId) {
+    if (notifyServer) {
       const token = localStorage.getItem('kte-auth-token');
       try {
-        await fetch(`/api/ingest/device-preview/${encodeURIComponent(currentId)}`, {
-          method: 'DELETE',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        await fetch('/api/ingest/device-preview/stop', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            previewId: currentId || undefined,
+            videoDevice: videoDevice || undefined,
+            force: true,
+          }),
         });
       } catch {}
     }
-  }, []);
+  }, [videoDevice]);
+
+  // Check preview status on mount to recover active preview and stop button after page refresh
+  useEffect(() => {
+    let isMounted = true;
+    const checkPreviewStatus = async () => {
+      if (sourceType !== 'device') return;
+      const token = localStorage.getItem('kte-auth-token');
+      try {
+        const res = await fetch('/api/ingest/device-preview/status', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const data = await res.json().catch(() => ({}));
+        if (isMounted && data.active && data.previewId) {
+          if (!videoDevice || data.videoDevice === videoDevice) {
+            devicePreviewIdRef.current = data.previewId;
+            setActiveHlsUrl(data.hlsUrl || `/hls/device-preview/${data.previewId}/index.m3u8`);
+            setPreviewing(true);
+            if (data.detectedResolution) setDetectedResolution(data.detectedResolution);
+            if (data.detectedFramerate) setDetectedFramerate(data.detectedFramerate);
+          }
+        }
+      } catch {}
+    };
+    checkPreviewStatus();
+    return () => { isMounted = false; };
+  }, [sourceType, videoDevice]);
 
   // Listen for device preview state updates over WebSocket
   useEffect(() => {
@@ -339,7 +374,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         if (msg.payload.detectedFramerate) {
           setDetectedFramerate(msg.payload.detectedFramerate);
         }
-        if (!msg.payload.active && devicePreviewIdRef.current === msg.payload?.previewId) {
+        if (msg.payload.active && msg.payload.previewId) {
+          if (sourceType === 'device' && (!videoDevice || msg.payload.videoDevice === videoDevice)) {
+            devicePreviewIdRef.current = msg.payload.previewId;
+            setActiveHlsUrl(msg.payload.hlsUrl || `/hls/device-preview/${msg.payload.previewId}/index.m3u8`);
+            setPreviewing(true);
+          }
+        } else if (!msg.payload.active) {
           devicePreviewIdRef.current = null;
           setActiveHlsUrl('');
           setPreviewing(false);

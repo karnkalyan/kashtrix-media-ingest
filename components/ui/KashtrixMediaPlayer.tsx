@@ -73,6 +73,12 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   const [detectedFramerate, setDetectedFramerate] = useState('');
   const [audioMeterVisible, setAudioMeterVisible] = useState(showAudioMeter);
 
+  useEffect(() => {
+    if (showAudioMeter !== undefined) {
+      setAudioMeterVisible(showAudioMeter);
+    }
+  }, [showAudioMeter]);
+
   const isLiveStream = isLive !== undefined ? isLive : (src ? src.includes('.m3u8') : false);
 
   // Audio level meters (0 to 100)
@@ -495,33 +501,43 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         </div>
       </div>
 
-      {/* Realtime Stereo Audio Level VU Meter (Right Side - Full Height) */}
+      {/* Realtime Stereo Audio Level VU Meter (Right Side - Attached within player) */}
       {audioMeterVisible && (
-        <div className="absolute right-3.5 top-12 bottom-12 z-20 flex flex-col items-center justify-between rounded-xl bg-black/85 px-2 py-2.5 border border-purple-500/25 backdrop-blur-md shadow-2xl pointer-events-none select-none">
+        <div className="absolute right-2.5 top-11 bottom-11 z-20 flex flex-col items-center justify-between rounded-lg bg-black/85 px-1.5 py-2 border border-[#7C3AED]/30 backdrop-blur-md shadow-2xl pointer-events-none select-none">
           <div className="flex items-center gap-1">
-            <span className="text-[9px] font-mono font-extrabold tracking-wider text-purple-300">VU</span>
+            <span className="text-[8px] font-mono font-black tracking-wider text-purple-300">AUDIO</span>
             {audioPeak && <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />}
           </div>
 
-          <div className="flex items-end gap-1.5 flex-1 w-7 my-1.5 min-h-[140px]">
+          <div className="flex items-stretch gap-1 flex-1 my-1">
+            {/* Decibel scale labels */}
+            <div className="flex flex-col justify-between text-[7px] font-mono text-slate-400 select-none py-0.5 leading-none">
+              <span>0dB</span>
+              <span>-6</span>
+              <span>-12</span>
+              <span>-24</span>
+              <span>-∞</span>
+            </div>
+
             {/* Left Channel Bar */}
-            <div className="relative flex-1 h-full bg-slate-950 rounded-xs overflow-hidden flex flex-col-reverse p-0.5 border border-white/10 shadow-inner">
+            <div className="relative w-2 h-full bg-slate-950 rounded-xs overflow-hidden flex flex-col-reverse p-[1px] border border-white/10 shadow-inner">
               <div
                 className={`w-full rounded-xs transition-all duration-75 ${
                   audioLeft > 85 ? 'bg-gradient-to-t from-emerald-500 via-amber-400 to-rose-500' :
                   audioLeft > 60 ? 'bg-gradient-to-t from-emerald-500 to-amber-400' : 'bg-emerald-500'
                 }`}
-                style={{ height: `${Math.max(4, audioLeft)}%` }}
+                style={{ height: `${Math.max(3, audioLeft)}%` }}
               />
             </div>
+
             {/* Right Channel Bar */}
-            <div className="relative flex-1 h-full bg-slate-950 rounded-xs overflow-hidden flex flex-col-reverse p-0.5 border border-white/10 shadow-inner">
+            <div className="relative w-2 h-full bg-slate-950 rounded-xs overflow-hidden flex flex-col-reverse p-[1px] border border-white/10 shadow-inner">
               <div
                 className={`w-full rounded-xs transition-all duration-75 ${
                   audioRight > 85 ? 'bg-gradient-to-t from-emerald-500 via-amber-400 to-rose-500' :
                   audioRight > 60 ? 'bg-gradient-to-t from-emerald-500 to-amber-400' : 'bg-emerald-500'
                 }`}
-                style={{ height: `${Math.max(4, audioRight)}%` }}
+                style={{ height: `${Math.max(3, audioRight)}%` }}
               />
             </div>
           </div>

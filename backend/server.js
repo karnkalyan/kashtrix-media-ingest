@@ -1912,17 +1912,63 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
     }
 });
 
-app.delete('/api/ingest/device-preview/:previewId', authMiddleware, (req, res) => {
-    const preview = devicePreviewProcesses.get(req.params.previewId);
-    if (!preview) {
-        activeDevicePreviewState = { active: false };
-        broadcastDevicePreviewState(activeDevicePreviewState);
-        return res.json({ success: true });
+app.get('/api/ingest/device-preview/status', authMiddleware, (req, res) => {
+    for (const [pId, prev] of devicePreviewProcesses.entries()) {
+        if (!prev.closed && prev.proc && !prev.proc.killed) {
+            return res.json({
+                active: true,
+                previewId: pId,
+                hlsUrl: `/hls/device-preview/${pId}/index.m3u8`,
+                videoDevice: prev.videoDevice,
+                audioDevice: prev.audioDevice,
+                detectedResolution: prev.detectedResolution,
+                detectedFramerate: prev.detectedFramerate,
+                hasSignal: true,
+            });
+        }
     }
-    stopDevicePreview(req.params.previewId);
+    activeDevicePreviewState = { active: false };
+    res.json({ active: false });
+});
+
+app.post('/api/ingest/device-preview/stop', authMiddleware, (req, res) => {
+    const { previewId, videoDevice, force } = req.body || {};
+    let stoppedCount = 0;
+    if (previewId && previewId !== 'all' && previewId !== 'current') {
+        if (stopDevicePreview(previewId, force === true)) stoppedCount++;
+    } else if (videoDevice) {
+        for (const [pId, prev] of devicePreviewProcesses.entries()) {
+            if (prev.videoDevice === videoDevice) {
+                if (stopDevicePreview(pId, force === true)) stoppedCount++;
+            }
+        }
+    } else {
+        for (const pId of Array.from(devicePreviewProcesses.keys())) {
+            if (stopDevicePreview(pId, force === true)) stoppedCount++;
+        }
+    }
     activeDevicePreviewState = { active: false };
     broadcastDevicePreviewState(activeDevicePreviewState);
-    res.json({ success: true });
+    res.json({ success: true, stoppedCount, message: 'Device preview stopped and hardware released' });
+});
+
+app.delete(['/api/ingest/device-preview/:previewId', '/api/ingest/device-preview'], authMiddleware, (req, res) => {
+    const targetId = req.params.previewId || req.query.previewId;
+    const force = req.query.force === 'true' || req.body?.force === true;
+
+    if (targetId && targetId !== 'all' && targetId !== 'current') {
+        const preview = devicePreviewProcesses.get(targetId);
+        if (preview) {
+            stopDevicePreview(targetId, force);
+        }
+    } else {
+        for (const pId of Array.from(devicePreviewProcesses.keys())) {
+            stopDevicePreview(pId, force);
+        }
+    }
+    activeDevicePreviewState = { active: false };
+    broadcastDevicePreviewState(activeDevicePreviewState);
+    res.json({ success: true, message: 'Device preview stopped and hardware released' });
 });
 
 app.use(authMiddleware);
