@@ -21,6 +21,7 @@ import { AppSettings } from '../types';
 import ProtocolBadge from './ui/ProtocolBadge';
 import CodeField from './ui/CodeField';
 import ConfirmDialog from './ui/ConfirmDialog';
+import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
 
 interface Props {
   realtimeRecordings: any[];
@@ -70,6 +71,27 @@ const getRecordingFormat = (recording: any): string => {
     return String(recording.format).toLowerCase();
   }
   return 'mp4';
+};
+
+const getRecordingUrl = (item: any): string => {
+  if (!item) return '';
+  const fmt = getRecordingFormat(item);
+  if (fmt === 'mp4' || fmt === 'webm') {
+    if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
+    const fileName = item.file_name || item.stream;
+    if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
+  }
+  if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
+  const fileName = item.file_name || item.stream;
+  return `/recording-preview/${encodeURIComponent(fileName || '')}`;
+};
+
+const getRecordingDownloadUrl = (item: any): string => {
+  if (!item) return '';
+  if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/download?download=1`;
+  const fileName = item.file_name || item.stream;
+  if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}?download=1`;
+  return `/recordings/${encodeURIComponent(fileName || '')}?download=1`;
 };
 
 export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording }) => {
@@ -461,23 +483,23 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
       {/* Preview Modal */}
       {preview && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
           onClick={e => { if (e.target === e.currentTarget) setPreview(null); }}
         >
-          <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E8DFF0] bg-white shadow-xl dark:bg-[#190E28] dark:border-[#311B4E]">
+          <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E8DFF0] bg-white shadow-2xl dark:bg-[#190E28] dark:border-[#311B4E]">
             <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
               <div className="min-w-0">
                 <h3 className="truncate font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">
-                  {preview.file_name}
+                  {preview.file_name || preview.stream}
                 </h3>
                 <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                  {preview.app}/{preview.stream} • {new Date(preview.start_time).toLocaleString()}
+                  {preview.app || 'device'}/{preview.stream || preview.file_name} • {new Date(preview.start_time).toLocaleString()}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={`${mediaBase}/recordings/${preview.app}/${preview.stream}/${preview.file_name}`}
-                  download={preview.file_name}
+                  href={getRecordingDownloadUrl(preview)}
+                  download={preview.file_name || 'recording.mp4'}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F4EEFF] px-3 py-1.5 text-[12px] font-semibold text-[#4A1B7A] hover:bg-[#E8DFF0] dark:bg-[#311754] dark:border-[#4A1B7A] dark:text-[#A78BFA]"
@@ -489,6 +511,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                   type="button"
                   onClick={() => setPreview(null)}
                   className="rounded-lg p-1.5 text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#B9A5CD] dark:hover:bg-[#211335]"
+                  title="Close preview"
                 >
                   <X size={16} />
                 </button>
@@ -496,12 +519,15 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
             </div>
 
             <div className="aspect-video bg-black">
-              <video
-                controls
-                autoPlay
-                playsInline
-                className="h-full w-full object-contain"
-                src={`${mediaBase}/recording-preview/${preview.id}`}
+              <KashtrixMediaPlayer
+                src={getRecordingUrl(preview)}
+                title={preview.file_name || preview.stream}
+                isLive={false}
+                autoPlay={true}
+                showAudioMeter={true}
+                resolution={preview.resolution || undefined}
+                framerate={preview.framerate ? `${preview.framerate} fps` : undefined}
+                className="w-full h-full"
               />
             </div>
           </div>

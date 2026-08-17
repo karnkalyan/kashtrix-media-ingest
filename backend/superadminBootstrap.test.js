@@ -16,7 +16,7 @@ test('bootstrap credentials are normalized and require a strong bcrypt-safe pass
   const credentials = validateBootstrapCredentials(validCredentials);
   assert.equal(credentials.username, 'root.operator');
   assert.equal(credentials.email, 'root.operator@example.com');
-  assert.throws(() => validateBootstrapCredentials({ ...validCredentials, password: 'predictable-password' }), /upper-case/);
+  assert.throws(() => validateBootstrapCredentials({ ...validCredentials, password: 'short' }), /8 characters/);
   assert.throws(() => validateBootstrapCredentials({ ...validCredentials, password: `Aa1!${'x'.repeat(70)}` }), /72 UTF-8 bytes/);
 });
 

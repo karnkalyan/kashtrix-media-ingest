@@ -1326,3 +1326,38 @@ table tbody tr:hover {
     min-height: 0;
   }
 }
+
+/* ═══════════════════════════════════════════
+   FULLSCREEN MEDIA PLAYER OPTIMIZATION
+   ═══════════════════════════════════════════ */
+:fullscreen,
+:-webkit-full-screen {
+  background-color: #000000 !important;
+}
+
+:fullscreen .aspect-video,
+:-webkit-full-screen .aspect-video,
+.source-preview .aspect-video:fullscreen,
+.source-preview .aspect-video:-webkit-full-screen,
+.aspect-video:fullscreen,
+.aspect-video:-webkit-full-screen {
+  max-height: 100vh !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  border-radius: 0 !important;
+  border: none !important;
+  aspect-ratio: auto !important;
+}
+
+:fullscreen video,
+:-webkit-full-screen video,
+.aspect-video:fullscreen video,
+.aspect-video:-webkit-full-screen video,
+.source-preview:fullscreen video {
+  max-height: 100vh !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  object-fit: contain !important;
+}

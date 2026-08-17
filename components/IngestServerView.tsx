@@ -54,10 +54,15 @@ const getRecordingFormat = (item: any): string => {
 
 const getRecordingUrl = (item: any): string => {
   if (!item) return '';
-  if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
+  const fmt = getRecordingFormat(item);
+  if (fmt === 'mp4' || fmt === 'webm') {
+    if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
+    const fileName = item.file_name || item.stream;
+    if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
+  }
+  if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
   const fileName = item.file_name || item.stream;
-  if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
-  return `/recordings/${encodeURIComponent(fileName || '')}`;
+  return `/recording-preview/${encodeURIComponent(fileName || '')}`;
 };
 
 const getRecordingDownloadUrl = (item: any): string => {
@@ -535,15 +540,15 @@ export const IngestServerView: React.FC<Props> = ({
     return (
       <div className="ingest-workspace page-stack space-y-4">
         {/* Ingest Server Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-display text-[18px] font-bold text-[#1B1024]">Ingest Server & Capture</h1>
-              <span className="rounded-full bg-[#F4EEFF] border border-[#D8C6E8] px-2.5 py-0.5 text-[11px] font-semibold text-[#4A1B7A]">
+              <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">Ingest Server & Capture</h1>
+              <span className="rounded-full bg-[#F4EEFF] border border-[#D8C6E8] px-2.5 py-0.5 text-[11px] font-semibold text-[#4A1B7A] dark:bg-[#2A1744] dark:border-[#4A267A] dark:text-[#C4B5FD]">
                 {videoDevices.length} Video Device{videoDevices.length !== 1 ? 's' : ''} Detected
               </span>
             </div>
-            <p className="mt-0.5 text-[12px] text-[#6F6078]">
+            <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
               Hardware device capture, professional recording profiles, and recording archives
             </p>
           </div>
@@ -552,7 +557,7 @@ export const IngestServerView: React.FC<Props> = ({
             <button
               type="button"
               onClick={refreshDevices}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2D1845]"
             >
               <RefreshCw size={14} className={devicesLoading ? 'animate-spin' : ''} /> Detect Devices
             </button>
@@ -571,21 +576,21 @@ export const IngestServerView: React.FC<Props> = ({
 
         {/* Ingest Summary KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Video Devices</span>
-            <p className="font-mono text-[20px] font-bold text-[#1B1024]">{videoDevices.length}</p>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Video Devices</span>
+            <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{videoDevices.length}</p>
           </div>
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Audio Devices</span>
-            <p className="font-mono text-[20px] font-bold text-[#2563EB]">{audioDevices.length}</p>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Audio Devices</span>
+            <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{audioDevices.length}</p>
           </div>
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Total Recordings</span>
-            <p className="font-mono text-[20px] font-bold text-[#E11D72]">{recordings.length}</p>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Total Recordings</span>
+            <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{recordings.length}</p>
           </div>
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">Storage Used</span>
-            <p className="font-mono text-[20px] font-bold text-[#4A1B7A]">{formatBytes(totalRecordingBytes)}</p>
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Storage Used</span>
+            <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{formatBytes(totalRecordingBytes)}</p>
           </div>
         </div>
 
@@ -616,11 +621,11 @@ export const IngestServerView: React.FC<Props> = ({
         />
 
         {/* Recording Archives & Items Table */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
-          <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
+          <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#311B4E]">
             <div>
-              <h2 className="font-display text-[15px] font-semibold text-[#1B1024]">Recording Archives ({filteredRecordings.length})</h2>
-              <p className="text-[11px] text-[#6F6078]">Completed and active stream recording items</p>
+              <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Recording Archives ({filteredRecordings.length})</h2>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Completed and active stream recording items</p>
             </div>
 
             <div className="relative">
@@ -629,16 +634,16 @@ export const IngestServerView: React.FC<Props> = ({
                 value={recSearch}
                 onChange={e => setRecSearch(e.target.value)}
                 placeholder="Search recordings..."
-                className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A]"
+                className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:placeholder-[#8E78A6]"
               />
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078]" />
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#8E78A6]" />
             </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px]">
               <thead>
-                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
+                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#211335]/70 dark:border-[#311B4E] dark:text-[#B9A5CD]">
                   <th className="px-4 py-3">File Name</th>
                   <th className="px-4 py-3">Input Device / Source</th>
                   <th className="px-4 py-3">Format</th>
@@ -649,49 +654,49 @@ export const IngestServerView: React.FC<Props> = ({
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFF0]">
+              <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
                 {filteredRecordings.slice((recPage - 1) * recPerPage, recPage * recPerPage).map((rec: any) => (
-                  <tr key={rec.id} className="transition-colors hover:bg-[#F4EEFF]/50">
-                    <td className="px-4 py-3 font-semibold text-[#1B1024]">
+                  <tr key={rec.id} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#281640]/50">
+                    <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">
                       <div className="flex items-center gap-2">
-                        <Film size={14} className="text-[#6D32D9]" />
-                        <span>{rec.file_name || rec.stream || `recording_${rec.id}`}</span>
+                        <Film size={14} className="text-[#6D32D9] dark:text-[#A78BFA]" />
+                        <span className="truncate max-w-[220px]" title={rec.file_name || rec.stream || `recording_${rec.id}`}>{rec.file_name || rec.stream || `recording_${rec.id}`}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-slate-700">
-                      <span className="rounded bg-violet-50 px-2 py-0.5 font-semibold text-[#6D32D9] border border-violet-200">
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-700 dark:text-[#B9A5CD]">
+                      <span className="rounded bg-violet-50 px-2 py-0.5 font-semibold text-[#6D32D9] border border-violet-200 dark:bg-violet-950/50 dark:border-violet-800/40 dark:text-violet-300">
                         {formatDeviceDisplayName(rec.input_device || rec.stream, videoDevices)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <ProtocolBadge protocol={getRecordingFormat(rec).toUpperCase()} />
                     </td>
-                    <td className="px-4 py-3 font-mono text-[#6F6078] uppercase">
+                    <td className="px-4 py-3 font-mono text-[#6F6078] uppercase dark:text-[#B9A5CD]">
                       {rec.encoder || 'CPU'}
                     </td>
-                    <td className="px-4 py-3 font-mono text-[#6F6078]">
+                    <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
                       {rec.resolution || '1920x1080'}
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {rec.is_active ? (
-                        <span className="inline-flex items-center gap-1.5 font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px] whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px] whitespace-nowrap dark:bg-rose-950/50 dark:border-rose-900/60 dark:text-rose-400">
                           <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
                           REC {formatRecordingDuration(rec.duration || (rec.start_time ? (Date.now() - new Date(rec.start_time).getTime()) / 1000 : 0))}
                         </span>
                       ) : (
-                        <span className="text-[#6F6078] text-[11px]">
+                        <span className="text-[#6F6078] text-[11px] dark:text-[#8E78A6]">
                           {formatRecordingDuration(rec.duration || (rec.start_time && rec.end_time ? (new Date(rec.end_time).getTime() - new Date(rec.start_time).getTime()) / 1000 : 0))}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono font-semibold text-[#1B1024]">
+                    <td className="px-4 py-3 font-mono font-semibold text-[#1B1024] dark:text-white">
                       {formatBytes(rec.size || 0)}
                     </td>
                     <td className="px-4 py-3 text-right space-x-1">
                       <button
                         type="button"
                         onClick={() => setRecPreview(rec)}
-                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
                       >
                         <Play size={12} /> Preview
                       </button>
@@ -701,7 +706,7 @@ export const IngestServerView: React.FC<Props> = ({
                         download={rec.file_name || 'recording.mp4'}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF]"
+                        className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45]"
                         title="Download recording file to computer"
                       >
                         <Download size={12} /> Download
@@ -711,17 +716,17 @@ export const IngestServerView: React.FC<Props> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleRecord(rec.app || 'live', rec.stream || rec.file_name)}
-                          className="inline-flex items-center gap-1 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-semibold text-[#DC3545] hover:bg-[#FEE2E2]"
+                          className="inline-flex items-center gap-1 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[11px] font-semibold text-[#DC3545] hover:bg-[#FEE2E2] dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/70"
                           title="Stop active recording"
                         >
-                          <Square size={12} className="fill-[#DC3545]" /> Stop Recording
+                          <Square size={12} className="fill-[#DC3545] dark:fill-rose-400" /> Stop Recording
                         </button>
                       )}
 
                       <button
                         type="button"
                         onClick={() => setDeletingRec(rec)}
-                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#451220] dark:hover:text-[#F87171]"
+                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#451220] dark:hover:text-[#F87171]"
                         title="Delete recording archive"
                       >
                         <Trash2 size={12} />
@@ -732,7 +737,7 @@ export const IngestServerView: React.FC<Props> = ({
 
                 {filteredRecordings.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-[#6F6078]">
+                    <td colSpan={8} className="py-8 text-center text-[#6F6078] dark:text-[#8E78A6]">
                       No recording archives found. Start a recording above to capture live feeds or device inputs.
                     </td>
                   </tr>
@@ -742,23 +747,23 @@ export const IngestServerView: React.FC<Props> = ({
           </div>
 
           {/* Pagination Controls Bar */}
-          <div className="flex flex-col gap-3 border-t border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between bg-[#F8F7FA]/60">
-            <div className="flex items-center gap-2 text-[12px] text-[#6F6078]">
+          <div className="flex flex-col gap-3 border-t border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between bg-[#F8F7FA]/60 dark:bg-[#211335]/50 dark:border-[#311B4E]">
+            <div className="flex items-center gap-2 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
               <span>Showing</span>
-              <span className="font-semibold text-[#1B1024]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">
                 {filteredRecordings.length === 0 ? 0 : (recPage - 1) * recPerPage + 1}
               </span>
               <span>to</span>
-              <span className="font-semibold text-[#1B1024]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">
                 {Math.min(recPage * recPerPage, filteredRecordings.length)}
               </span>
               <span>of</span>
-              <span className="font-semibold text-[#1B1024]">{filteredRecordings.length}</span>
+              <span className="font-semibold text-[#1B1024] dark:text-white">{filteredRecordings.length}</span>
               <span>recordings</span>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-[12px] text-[#6F6078]">
+              <div className="flex items-center gap-1.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
                 <span>Rows:</span>
                 <select
                   value={recPerPage}
@@ -766,7 +771,7 @@ export const IngestServerView: React.FC<Props> = ({
                     setRecPerPage(Number(e.target.value));
                     setRecPage(1);
                   }}
-                  className="h-7 rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] outline-none"
+                  className="h-7 rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] outline-none dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -780,13 +785,13 @@ export const IngestServerView: React.FC<Props> = ({
                   type="button"
                   disabled={recPage <= 1}
                   onClick={() => setRecPage(p => Math.max(1, p - 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] disabled:opacity-40 disabled:hover:bg-white"
+                  className="flex h-7 w-7 items-center justify-center rounded border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] disabled:opacity-40 disabled:hover:bg-white dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2D1A45] dark:disabled:hover:bg-[#211335]"
                   title="Previous Page"
                 >
                   <ChevronLeft size={14} />
                 </button>
 
-                <span className="px-2 text-[11px] font-medium text-[#6F6078]">
+                <span className="px-2 text-[11px] font-medium text-[#6F6078] dark:text-[#B9A5CD]">
                   Page {recPage} of {Math.max(1, Math.ceil(filteredRecordings.length / recPerPage))}
                 </span>
 
@@ -794,7 +799,7 @@ export const IngestServerView: React.FC<Props> = ({
                   type="button"
                   disabled={recPage >= Math.max(1, Math.ceil(filteredRecordings.length / recPerPage))}
                   onClick={() => setRecPage(p => Math.min(Math.max(1, Math.ceil(filteredRecordings.length / recPerPage)), p + 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] disabled:opacity-40 disabled:hover:bg-white"
+                  className="flex h-7 w-7 items-center justify-center rounded border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] disabled:opacity-40 disabled:hover:bg-white dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2D1A45] dark:disabled:hover:bg-[#211335]"
                   title="Next Page"
                 >
                   <ChevronRight size={14} />
@@ -818,13 +823,14 @@ export const IngestServerView: React.FC<Props> = ({
                 url={getRecordingUrl(recPreview)}
                 title={recPreview.file_name}
                 maxHeight={320}
+                isLive={false}
               />
 
               {!!recPreview.is_active && (
-                <div className="flex items-center justify-between rounded-lg border border-[#FECACA] bg-[#FEF2F2] p-3">
+                <div className="flex items-center justify-between rounded-lg border border-[#FECACA] bg-[#FEF2F2] p-3 dark:bg-rose-950/40 dark:border-rose-900/60">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-[#DC3545] animate-pulse" />
-                    <span className="text-[12px] font-bold text-[#DC3545]">Active Recording Session</span>
+                    <span className="h-2 w-2 rounded-full bg-[#DC3545] animate-pulse dark:bg-rose-400" />
+                    <span className="text-[12px] font-bold text-[#DC3545] dark:text-rose-300">Active Recording Session</span>
                   </div>
                   <button
                     type="button"
@@ -834,7 +840,7 @@ export const IngestServerView: React.FC<Props> = ({
                       setRecPreview(null);
                       fetchData();
                     }}
-                    className="flex items-center gap-1 rounded-md bg-[#DC3545] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#B91C1C]"
+                    className="flex items-center gap-1 rounded-md bg-[#DC3545] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#B91C1C] dark:bg-rose-600 dark:hover:bg-rose-700"
                   >
                     <Square size={12} className="fill-white" /> Stop Recording Now
                   </button>
@@ -842,13 +848,13 @@ export const IngestServerView: React.FC<Props> = ({
               )}
 
               <div className="grid grid-cols-2 gap-2 text-[12px]">
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078]">File Size</span>
-                  <p className="font-mono font-bold text-[#1B1024]">{formatBytes(recPreview.size || 0)}</p>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">File Size</span>
+                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{formatBytes(recPreview.size || 0)}</p>
                 </div>
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078]">Format</span>
-                  <p className="font-mono font-bold text-[#2563EB]">{getRecordingFormat(recPreview).toUpperCase()}</p>
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Format</span>
+                  <p className="font-mono font-bold text-[#2563EB] dark:text-[#60A5FA]">{getRecordingFormat(recPreview).toUpperCase()}</p>
                 </div>
               </div>
               <CodeField value={`/media/recordings/${recPreview.file_name}`} label="Recording Storage Path" />

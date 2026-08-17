@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare, FiMaximize, FiMinimize } from 'react-icons/fi';
 import { IngestRecordingOptions, TranscodingProfile, VideoCodec } from '../types';
 import DetailDrawer from './ui/DetailDrawer';
+import { subscribeRealtime } from '../services/realtime';
+import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
 
 type Format = IngestRecordingOptions['formats'][number];
 
@@ -208,6 +210,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [previewing, setPreviewing] = useState(false);
   const [previewStarting, setPreviewStarting] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [activeHlsUrl, setActiveHlsUrl] = useState('');
   const [previewTime, setPreviewTime] = useState(0);
   const [detectedResolution, setDetectedResolution] = useState('');
   const [detectedFramerate, setDetectedFramerate] = useState('');
@@ -306,25 +309,16 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
-  const stopPreview = useCallback(async () => {
-    previewGenerationRef.current += 1;
+  const stopPreview = useCallback(async (notifyServer = true) => {
     const currentId = devicePreviewIdRef.current;
     devicePreviewIdRef.current = null;
-    hlsRef.current?.destroy();
-    hlsRef.current = null;
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.removeAttribute('src');
-      videoRef.current.srcObject = null;
-      videoRef.current.load();
-    }
-    setPreviewStarting(false);
+    setActiveHlsUrl('');
     setPreviewing(false);
+    setPreviewStarting(false);
+    setPreviewError('');
     setPreviewTime(0);
-    setDetectedResolution('');
-    setDetectedFramerate('');
 
-    if (currentId) {
+    if (notifyServer && currentId) {
       const token = localStorage.getItem('kte-auth-token');
       try {
         await fetch(`/api/ingest/device-preview/${encodeURIComponent(currentId)}`, {
@@ -335,57 +329,36 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }
   }, []);
 
+  // Listen for device preview state updates over WebSocket
   useEffect(() => {
-    return () => {
-      void stopPreview();
-    };
-  }, [stopPreview]);
+    const unsubscribe = subscribeRealtime((msg) => {
+      if (msg.type === 'device_preview_state' && msg.payload) {
+        if (msg.payload.detectedResolution) {
+          setDetectedResolution(msg.payload.detectedResolution);
+        }
+        if (msg.payload.detectedFramerate) {
+          setDetectedFramerate(msg.payload.detectedFramerate);
+        }
+        if (!msg.payload.active && devicePreviewIdRef.current === msg.payload?.previewId) {
+          devicePreviewIdRef.current = null;
+          setActiveHlsUrl('');
+          setPreviewing(false);
+          setPreviewStarting(false);
+        }
+      }
+    });
 
-  useEffect(() => {
-    if (previewing || previewStarting) {
-      void stopPreview();
-    }
-  }, [sourceType, selectedStreamKey, videoDevice, audioDevice]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      unsubscribe();
+    };
+  }, [sourceType, videoDevice, audioDevice]);
 
   const startSourcePreview = async () => {
-    stopPreview();
-    const generation = previewGenerationRef.current;
+    if (previewStarting) return;
     setPreviewError('');
     setPreviewStarting(true);
-
-    const attachHls = async (hlsUrl: string) => {
-      const Hls = (await import('hls.js')).default;
-      if (generation !== previewGenerationRef.current || !videoRef.current) return;
-      const video = videoRef.current;
-      if (Hls.isSupported()) {
-        const hls = new Hls({ liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 5 });
-        hls.loadSource(hlsUrl);
-        hls.attachMedia(video);
-        hlsRef.current = hls;
-        hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
-          if (hls.levels?.[0]) {
-            const lvl = hls.levels[0];
-            if (lvl.width && lvl.height) {
-              setDetectedResolution(`${lvl.width}x${lvl.height}`);
-            }
-            if (lvl.frameRate) {
-              setDetectedFramerate(`${Math.round(lvl.frameRate)} fps`);
-            }
-          }
-        });
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (!data.fatal || generation !== previewGenerationRef.current) return;
-          stopPreview();
-          setPreviewError(`Preview stream failed: ${data.details || 'HLS playback error'}`);
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = hlsUrl;
-      } else {
-        throw new Error('HLS preview playback is not supported by this browser');
-      }
-      setPreviewing(true);
-      await video.play().catch(() => {});
-    };
+    const currentVideoDev = videoDevice;
+    const currentAudioDev = audioDevice;
 
     try {
       if (sourceType === 'device') {
@@ -397,8 +370,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            videoDevice,
-            audioDevice,
+            videoDevice: currentVideoDev,
+            audioDevice: currentAudioDev,
             resolution: activeConfig.resolution,
             framerate: activeConfig.framerate,
             videoInput: activeConfig.videoInput || 'hdmi',
@@ -407,23 +380,33 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'FFmpeg could not start the device preview');
-        if (generation !== previewGenerationRef.current) {
-          if (data.previewId) releaseDevicePreview(data.previewId);
-          return;
-        }
         devicePreviewIdRef.current = data.previewId;
-        await attachHls(data.hlsUrl);
+        if (data.detectedResolution) setDetectedResolution(data.detectedResolution);
+        if (data.detectedFramerate) setDetectedFramerate(data.detectedFramerate);
+        setActiveHlsUrl(data.hlsUrl);
+        setPreviewing(true);
       } else if (selectedStreamKey) {
         const encodedStreamKey = selectedStreamKey.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-        await attachHls(`/hls/${encodedStreamKey}/index.m3u8`);
+        setActiveHlsUrl(`/hls/${encodedStreamKey}/index.m3u8`);
+        setPreviewing(true);
       }
     } catch (err: any) {
-      if (generation === previewGenerationRef.current) {
-        stopPreview();
-        setPreviewError(`Unable to preview source: ${err.message || 'Unknown error'}`);
-      }
+      setPreviewError(`Unable to preview source: ${err.message || 'Unknown error'}`);
+      setPreviewing(false);
+      setActiveHlsUrl('');
     } finally {
-      if (generation === previewGenerationRef.current) setPreviewStarting(false);
+      setPreviewStarting(false);
+    }
+  };
+
+  const handleDeviceSelectionChange = (type: 'video' | 'audio', value: string) => {
+    if (previewing || previewStarting) {
+      void stopPreview(true);
+    }
+    if (type === 'video') {
+      setVideoDevice?.(value);
+    } else {
+      setAudioDevice?.(value);
     }
   };
 
@@ -553,8 +536,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         </div>
         <div className="grid grid-cols-1 gap-3">
         {sourceType === 'device' ? <>
-          <Label>Video device<select value={videoDevice} onChange={event => setVideoDevice(event.target.value)} className={selectClass}><option value="">No video</option>{videoDevices.map(device => <option key={device} value={device}>{device}</option>)}</select>{!devicesLoading && !videoDevices.length && <span className="mt-1 block text-[10px] text-amber-600">No capture device detected.</span>}</Label>
-          <Label>Audio device<select value={audioDevice} onChange={event => setAudioDevice(event.target.value)} className={selectClass}><option value="">No audio</option>{audioDevices.map(device => <option key={device} value={device}>{device}</option>)}</select></Label>
+          <Label>Video device<select value={videoDevice} onChange={event => handleDeviceSelectionChange('video', event.target.value)} className={selectClass}><option value="">No video</option>{videoDevices.map(device => <option key={device} value={device}>{device}</option>)}</select>{!devicesLoading && !videoDevices.length && <span className="mt-1 block text-[10px] text-amber-600">No capture device detected.</span>}</Label>
+          <Label>Audio device<select value={audioDevice} onChange={event => handleDeviceSelectionChange('audio', event.target.value)} className={selectClass}><option value="">No audio</option>{audioDevices.map(device => <option key={device} value={device}>{device}</option>)}</select></Label>
           <div className="grid grid-cols-2 gap-2">
             <Label>Video input
               <select value={activeConfig.videoInput || 'hdmi'} onChange={event => patch({ videoInput: event.target.value as any })} className={selectClass}>
@@ -589,6 +572,21 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               </select>
             </Label>
           </div>
+          {sourceType === 'device' && (
+            <div className="mt-1">
+              {detectedResolution ? (
+                <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-700/50 dark:text-emerald-300">
+                  <span className="font-semibold text-[10px] uppercase tracking-wider">Detected Source:</span>
+                  <span className="font-mono font-bold">{detectedResolution} {detectedFramerate ? `• ${detectedFramerate}` : ''}</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] text-slate-500 dark:bg-[#211335] dark:border-[#371F59] dark:text-slate-400">
+                  <span>Hardware Auto-Detect:</span>
+                  <span className="font-mono font-medium">Ready (Click Start preview)</span>
+                </div>
+              )}
+            </div>
+          )}
         </> : <>
           <Label>Active RTMP/SRT ingest<select value={selectedStreamKey} onChange={event => setSelectedStreamKey(event.target.value)} className={selectClass}><option value="">Select active ingest</option>{Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || 'live'})</option>)}</select>{!Object.keys(streams).length && <span className="mt-1 block text-[10px] text-amber-600">No ingest is publishing right now. Capture devices are still available in the other tab.</span>}</Label>
         </>}
@@ -602,71 +600,54 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           </div>
         </div>
       </div>
-        <button type="button" onClick={previewing ? stopPreview : startSourcePreview} disabled={startDisabled || previewStarting} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">{previewing ? <FiEyeOff size={13} /> : <FiEye size={13} />}{previewStarting ? 'Starting preview…' : previewing ? 'Close preview' : 'Preview source'}</button>
-      </section>
+      <button
+        type="button"
+        onClick={() => {
+          if (previewing) {
+            void stopPreview(true);
+          } else {
+            void startSourcePreview();
+          }
+        }}
+        disabled={startDisabled || previewStarting}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {previewStarting ? (
+          <>
+            <FiRefreshCw size={13} className="animate-spin" />
+            <span>Starting preview…</span>
+          </>
+        ) : previewing ? (
+          <>
+            <FiEyeOff size={13} />
+            <span>Stop preview</span>
+          </>
+        ) : (
+          <>
+            <FiEye size={13} />
+            <span>Start preview</span>
+          </>
+        )}
+      </button>
+    </section>
 
-      <section className="source-preview app-panel min-w-0 overflow-hidden bg-slate-950">
-        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.1em]">Source preview</p><p className="mt-0.5 text-[10px] text-slate-400">Live confidence monitor</p></div>
-          <div className="flex items-center gap-2">
-            {previewing && (
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[10px] font-medium text-white hover:bg-white/20 transition-colors"
-                title={isFullscreen ? 'Exit full screen' : 'Full screen preview'}
-              >
-                {isFullscreen ? <FiMinimize size={12} /> : <FiMaximize size={12} />}
-                <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
-              </button>
-            )}
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2 py-1 text-[9px] font-bold"><span className="h-1.5 w-1.5 rounded-full bg-pink-400" />LIVE</span>
-          </div>
-        </div>
-        <div ref={previewContainerRef} className="relative aspect-video min-h-[180px] w-full bg-[#090d17]">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            onLoadedMetadata={event => {
-              const v = event.currentTarget;
-              if (v.videoWidth && v.videoHeight) {
-                setDetectedResolution(`${v.videoWidth}x${v.videoHeight}`);
-              }
-            }}
-            onTimeUpdate={event => {
-              const v = event.currentTarget;
-              setPreviewTime(v.currentTime);
-              if (v.videoWidth && v.videoHeight && !detectedResolution) {
-                setDetectedResolution(`${v.videoWidth}x${v.videoHeight}`);
-              }
-            }}
-            className={`h-full w-full object-contain ${previewing ? 'block' : 'hidden'}`}
-          />
-          {!previewing && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-violet-200/50"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.05]"><FiEye size={23} /></span><span className="text-xs font-medium">Select a source and start preview</span></div>}
-          {previewing && (
-            <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-md bg-indigo-600 px-2.5 py-1.5 text-[9px] font-bold text-white shadow-lg">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              LIVE PREVIEW {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}
-            </div>
-          )}
-          {previewing && (
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white backdrop-blur hover:bg-black/80 transition-colors"
-              title={isFullscreen ? 'Exit full screen' : 'Full screen preview'}
-            >
-              {isFullscreen ? <FiMinimize size={13} /> : <FiMaximize size={13} />}
-            </button>
-          )}
-          <div className="pointer-events-none absolute bottom-4 left-4 flex max-w-[calc(100%-2rem)] items-center divide-x divide-white/15 rounded-xl border border-white/10 bg-slate-950/75 px-1 py-2 text-white backdrop-blur-md">
-            <span className="px-3"><b className="block text-[11px]">{detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : '1920x1080')}</b><small className="text-[8px] text-slate-400">Resolution</small></span>
-            <span className="px-3"><b className="block text-[11px]">{detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : '50 fps')}</b><small className="text-[8px] text-slate-400">Frame rate</small></span>
-            <span className="px-3"><b className="block text-[11px]">{activeConfig.videoBitrate} Kbps</b><small className="text-[8px] text-slate-400">Bitrate</small></span>
-          </div>
-        </div>
-        {previewError && <p className="border-t border-amber-400/20 bg-amber-400/10 px-4 py-2 text-[10px] text-amber-200">{previewError}</p>}
+      <section className="source-preview app-panel min-w-0 overflow-hidden bg-slate-950 p-2">
+        <KashtrixMediaPlayer
+          src={previewing ? (activeHlsUrl || (devicePreviewIdRef.current ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8` : undefined)) : undefined}
+          title={sourceName}
+          isLive={true}
+          showAudioMeter={true}
+          hasSignal={previewing && !previewError}
+          signalLabel={sourceType === 'device' ? 'Received Signal' : 'Stream Active'}
+          resolution={detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : undefined)}
+          framerate={detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : undefined)}
+          onResolutionDetected={(res, fps) => {
+            if (res) setDetectedResolution(res);
+            if (fps) setDetectedFramerate(fps);
+          }}
+          onRefresh={() => { void startSourcePreview(); }}
+        />
+        {previewError && <p className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-1.5 text-[10px] text-amber-200">{previewError}</p>}
       </section>
     </div>
 
@@ -819,7 +800,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       </div>
     </section>
 
-    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-[#E8DFF0] bg-white/95 p-3 shadow-md dark:bg-[#190E28] dark:border-[#311B4E] sm:flex-row sm:items-center sm:justify-end">
+    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-[#E8DFF0] bg-white p-3 shadow-md dark:bg-[#1E1130] dark:border-[#371F59] sm:flex-row sm:items-center sm:justify-end">
       <span className="mr-auto text-[10px] text-slate-500 dark:text-[#B9A5CD]">Save configuration before starting recording sessions.</span>
       <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[11px] font-semibold text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] hover:bg-[#F4EEFF] dark:hover:bg-[#2D1A45] disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
 
@@ -835,9 +816,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           <button
             type="button"
             onClick={stopRecording}
-            className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+            className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/70 transition-colors"
           >
-            <FiSquare className="mr-1.5 inline fill-rose-700" /> Stop recording
+            <FiSquare className="mr-1.5 inline fill-rose-700 dark:fill-rose-400" /> Stop recording
           </button>
         </div>
       ) : (
@@ -849,7 +830,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               setRecordPreviewModalOpen(true);
               await startSourcePreview();
             }}
-            className="h-9 rounded-md border border-[#6D32D9] bg-white px-3 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            className="h-9 rounded-md border border-[#6D32D9] bg-white px-3 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#7C3AED] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
             title="Open live preview modal to verify video before recording"
           >
             <FiEye className="mr-1.5 inline" /> Preview & Start
@@ -859,10 +840,6 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             type="button"
             disabled={startDisabled}
             onClick={async () => {
-              if (previewing || previewStarting) {
-                await stopPreview();
-                await new Promise(r => setTimeout(r, 600));
-              }
               await start();
             }}
             className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
@@ -876,20 +853,18 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     {/* Recording Pre-Flight Confidence Monitor Modal */}
     <DetailDrawer
       open={recordPreviewModalOpen}
-      onClose={async () => {
+      onClose={() => {
         setRecordPreviewModalOpen(false);
-        await stopPreview();
       }}
       title="Recording Confidence Monitor"
       subtitle="Verify live capture feed before beginning recording session"
-      width="max-w-[580px]"
+      width="max-w-[640px]"
       footer={
         <div className="flex items-center justify-end gap-2.5">
           <button
             type="button"
-            onClick={async () => {
+            onClick={() => {
               setRecordPreviewModalOpen(false);
-              await stopPreview();
             }}
             className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]"
           >
@@ -900,8 +875,6 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             disabled={startDisabled}
             onClick={async () => {
               setRecordPreviewModalOpen(false);
-              await stopPreview();
-              await new Promise(r => setTimeout(r, 600));
               await start();
             }}
             className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
@@ -912,37 +885,15 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       }
     >
       <div className="space-y-4">
-        <div className="relative aspect-video min-h-[220px] w-full overflow-hidden rounded-xl bg-black shadow-inner">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            onTimeUpdate={event => setPreviewTime(event.currentTarget.currentTime)}
-            className={`h-full w-full object-contain ${previewing ? 'block' : 'hidden'}`}
-          />
-          {!previewing && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-violet-200/60 p-4 text-center">
-              {previewStarting ? (
-                <>
-                  <FiRefreshCw className="h-7 w-7 animate-spin text-[#7C3AED]" />
-                  <p className="text-xs font-medium text-white">Opening capture source…</p>
-                </>
-              ) : (
-                <>
-                  <FiEye size={26} />
-                  <p className="text-xs font-medium text-white">Live preview offline</p>
-                </>
-              )}
-            </div>
-          )}
-          {previewing && (
-            <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-md bg-rose-600 px-2 py-1 text-[9px] font-bold text-white shadow">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
-              LIVE {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}
-            </div>
-          )}
-        </div>
-
+        <KashtrixMediaPlayer
+          src={previewing ? (activeHlsUrl || (devicePreviewIdRef.current ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8` : undefined)) : undefined}
+          title={sourceName}
+          isLive={true}
+          showAudioMeter={true}
+          resolution={detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : undefined)}
+          framerate={detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : undefined)}
+          onRefresh={() => { void startSourcePreview(); }}
+        />
         {previewError && (
           <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-300">
             {previewError}
@@ -972,7 +923,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         </div>
 
         <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] leading-relaxed">
-          Verify live picture framing above. When you click <b>Start Recording Now</b>, the preview monitor will be released and the capture hardware will seamlessly begin encoding your recording archive.
+          Verify live picture framing above. Click <b>Start Recording Now</b> to record live while preview continues simultaneously.
         </p>
       </div>
     </DetailDrawer>

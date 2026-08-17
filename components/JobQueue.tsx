@@ -580,7 +580,7 @@ export const ChannelDashboard: React.FC<Props> = ({
           <div className="space-y-4">
             <div className="overflow-hidden rounded-xl bg-black shadow-inner">
               <MediaPreview
-                url={`/media/hls/${sanitizeName(previewChannel.name)}/index.m3u8`}
+                url={`/hls/${sanitizeName(previewChannel.name)}/index.m3u8`}
                 title={previewChannel.name}
                 autoPlay
               />
@@ -606,7 +606,7 @@ export const ChannelDashboard: React.FC<Props> = ({
                 <div className="col-span-2">
                   <span className="text-slate-400 block text-[9px]">HLS Preview URL:</span>
                   <span className="font-mono text-[10px] text-[#6D32D9] dark:text-[#A78BFA] break-all">
-                    {window.location.origin}/media/hls/{sanitizeName(previewChannel.name)}/index.m3u8
+                    {window.location.origin}/hls/{sanitizeName(previewChannel.name)}/index.m3u8
                   </span>
                 </div>
               </div>

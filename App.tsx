@@ -1010,15 +1010,49 @@ const TopHeader: React.FC<{
   );
 };
 
+const getInitialActiveView = (): ActiveView => {
+  try {
+    const hash = window.location.hash.replace('#', '') as ActiveView;
+    const validViews: ActiveView[] = ['dashboard', 'channels', 'live-server', 'monitor', 'ingest', 'recordings', 'events', 'users', 'settings', 'license', 'account'];
+    if (hash && validViews.includes(hash)) return hash;
+    const saved = localStorage.getItem('kashtrix-active-view') as ActiveView;
+    if (saved && validViews.includes(saved)) return saved;
+  } catch {}
+  return 'dashboard';
+};
+
 /* ═══════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════ */
 const App: React.FC = () => {
   const engine = useEngine();
-  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
+  const [activeView, setActiveViewState] = useState<ActiveView>(getInitialActiveView);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('kashtrix-theme') as ThemeMode) || 'light');
+
+  const setActiveView = (view: ActiveView) => {
+    setActiveViewState(view);
+    try {
+      localStorage.setItem('kashtrix-active-view', view);
+      if (window.location.hash !== `#${view}`) {
+        window.location.hash = view;
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash.replace('#', '') as ActiveView;
+      const validViews: ActiveView[] = ['dashboard', 'channels', 'live-server', 'monitor', 'ingest', 'recordings', 'events', 'users', 'settings', 'license', 'account'];
+      if (hash && validViews.includes(hash)) {
+        setActiveViewState(hash);
+        localStorage.setItem('kashtrix-active-view', hash);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('kashtrix-theme', themeMode);

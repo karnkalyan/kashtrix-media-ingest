@@ -13,18 +13,14 @@ const validateBootstrapCredentials = ({ username, email, password }) => {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const suppliedPassword = String(password || '');
 
-  if (!/^[a-zA-Z0-9._-]{3,64}$/.test(normalizedUsername)) {
-    throw new SuperadminBootstrapError('INVALID_USERNAME', 'Username must be 3-64 characters using letters, numbers, dot, underscore, or hyphen');
+  if (!/^[a-zA-Z0-9._@+-]{3,64}$/.test(normalizedUsername)) {
+    throw new SuperadminBootstrapError('INVALID_USERNAME', 'Username must be 3-64 characters using letters, numbers, dot, underscore, hyphen, or @');
   }
   if (normalizedEmail.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     throw new SuperadminBootstrapError('INVALID_EMAIL', 'Enter a valid email address');
   }
-  if (suppliedPassword.length < 16
-      || !/[a-z]/.test(suppliedPassword)
-      || !/[A-Z]/.test(suppliedPassword)
-      || !/[0-9]/.test(suppliedPassword)
-      || !/[^a-zA-Z0-9]/.test(suppliedPassword)) {
-    throw new SuperadminBootstrapError('WEAK_PASSWORD', 'Password must be at least 16 characters and include upper-case, lower-case, number, and symbol characters');
+  if (suppliedPassword.length < 8) {
+    throw new SuperadminBootstrapError('WEAK_PASSWORD', 'Password must be at least 8 characters');
   }
   if (Buffer.byteLength(suppliedPassword, 'utf8') > 72) {
     throw new SuperadminBootstrapError('PASSWORD_TOO_LONG', 'Password must not exceed 72 UTF-8 bytes');

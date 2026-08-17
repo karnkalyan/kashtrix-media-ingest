@@ -103,6 +103,8 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
       return `udp://224.1.1.2:3000`;
     case Protocol.HTTP_TS:
       return `${WEB_ORIGIN}/ts/${slug}.ts`;
+    case Protocol.DECKLINK:
+      return `decklink://DeckLink Device`;
     case Protocol.RECORDING:
       return `media/recordings/${slug}.mp4`;
     default:
@@ -291,6 +293,21 @@ export const Configurator: React.FC<Props> = ({
     setAudioDevices(message.payload?.audio || []);
   }), []);
 
+  // HTTP fallback for device list
+  const fetchDevicesHttp = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ffmpeg/devices', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.video?.length) setVideoDevices(prev => Array.from(new Set([...prev, ...data.video])));
+        if (data.audio?.length) setAudioDevices(prev => Array.from(new Set([...prev, ...data.audio])));
+      }
+    } catch {}
+  }, []);
+
   const refreshLive = useCallback(async () => {
     setLoading(true);
     try {
@@ -305,9 +322,9 @@ export const Configurator: React.FC<Props> = ({
 
   useEffect(() => {
     if (inputType === InputType.VOD) refreshVod();
-    if (inputType === InputType.DEVICE) refreshDevices();
+    if (inputType === InputType.DEVICE) { refreshDevices(); fetchDevicesHttp(); }
     if (inputType === InputType.LIVE) refreshLive();
-  }, [inputType, refreshDevices, refreshVod, refreshLive]);
+  }, [inputType, refreshDevices, refreshVod, refreshLive, fetchDevicesHttp]);
 
   useEffect(() => {
     setDestinations(prev => prev.map(dest => {
@@ -725,6 +742,33 @@ export const Configurator: React.FC<Props> = ({
                   readOnly={false}
                   onChange={url => setDestination(dest.id, { url })}
                 />
+
+                {dest.protocol === Protocol.DECKLINK && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select
+                      label="DeckLink Output Port"
+                      value={dest.decklinkPort || 'hdmi'}
+                      onChange={e => setDestination(dest.id, { decklinkPort: e.target.value as any })}
+                      options={[
+                        { value: 'hdmi', label: 'HDMI' },
+                        { value: 'sdi', label: 'SDI' },
+                        { value: 'optical_sdi', label: 'Optical SDI' },
+                        { value: 'component', label: 'Component (YPbPr)' },
+                        { value: 'composite', label: 'Composite (CVBS)' },
+                      ]}
+                    />
+                    <Select
+                      label="DeckLink Device"
+                      value={dest.decklinkDevice || ''}
+                      onChange={e => {
+                        const devName = e.target.value;
+                        setDestination(dest.id, { decklinkDevice: devName, url: `decklink://${devName || 'DeckLink Device'}` });
+                      }}
+                      placeholder="Select output device"
+                      options={videoDevices.map(d => ({ value: d, label: d }))}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>

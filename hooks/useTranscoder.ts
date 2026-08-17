@@ -67,10 +67,20 @@ const sanitizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`;
 
+const normalizeVideoEncoder = (codec?: string): string => {
+  const c = String(codec || '').toLowerCase();
+  if (c === 'h264' || c === 'avc') return 'libx264';
+  if (c === 'hevc' || c === 'h265') return 'libx265';
+  if (c === 'vp9') return 'libvpx-vp9';
+  if (c === 'av1') return 'libaom-av1';
+  return codec || 'libx264';
+};
+
 const buildVideoFlags = (profile: TranscodingProfile, destination?: ChannelDestination) => {
   if (profile.isAudioOnly) return '-vn';
   if (profile.videoCodec === VideoCodec.Copy) return '-c:v copy';
 
+  const encoder = normalizeVideoEncoder(profile.videoCodec);
   const bitrate = destination?.recording?.videoBitrate || profile.videoBitrate || 2000;
   const rawResolution = destination?.recording?.resolution || profile.resolution;
   const resolution = rawResolution && !['N/A', 'source', 'auto', 'original'].includes(rawResolution.toLowerCase()) ? rawResolution : '';
@@ -89,7 +99,7 @@ const buildVideoFlags = (profile: TranscodingProfile, destination?: ChannelDesti
   }
 
   return [
-    `-c:v ${profile.videoCodec}`,
+    `-c:v ${encoder}`,
     qualityFlags,
     filters.length ? `-vf ${quote(filters.join(','))}` : '',
     framerate > 0 ? `-r ${framerate}` : '',
@@ -156,6 +166,11 @@ const teeDestination = (destination: ChannelDestination, channelName: string, se
       return `[f=mpegts]${teeEscape(url)}`;
     case Protocol.HTTP_TS:
       return `[f=mpegts]${teeEscape(url)}`;
+    case Protocol.DECKLINK: {
+      const port = (destination as any).decklinkPort || 'hdmi';
+      // DeckLink output via ffmpeg -f decklink
+      return `[f=decklink:video_input=${port}]${teeEscape(url)}`;
+    }
     case Protocol.RECORDING: {
       const format = destination.recording?.format || 'mp4';
       const muxer = format === 'ts' ? 'mpegts' : format;
@@ -179,21 +194,30 @@ export const generateCommand = (
 
   if (channel.inputType === InputType.DEVICE) {
     const [rawBase, rawQuery] = (channel.inputUrl || '').replace('device://', '').split('?');
-    let videoInput = 'hdmi';
-    let formatCode = 'Hp50';
+    let videoInput = '';
+    let formatCode = '';
     if (rawQuery) {
       const params = new URLSearchParams(rawQuery);
-      if (params.get('video_input')) videoInput = params.get('video_input') || 'hdmi';
-      if (params.get('format_code')) formatCode = params.get('format_code') || 'Hp50';
+      if (params.get('video_input')) videoInput = params.get('video_input') || '';
+      if (params.get('format_code')) formatCode = params.get('format_code') || '';
     }
     const parts = rawBase.split('+');
     const vDev = (parts[0] || '').replace(/^video=/i, '').trim();
     const aDev = (parts[1] || vDev).replace(/^audio=/i, '').trim();
 
-    const dev = vDev || aDev || 'Intensity Pro 4K';
-    const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '-format_code Hp50 ';
-    const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-    inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(dev)}`;
+    const dev = vDev || aDev;
+    if (!dev) {
+      inputFlags = '-i pipe:0'; // placeholder — server will resolve actual device
+    } else if (isWindows) {
+      const vSpec = vDev ? `video=${vDev}` : `video=${dev}`;
+      const aSpec = aDev ? `audio=${aDev}` : '';
+      const srcSpec = aSpec && aSpec !== vSpec ? `${vSpec}:${aSpec}` : vSpec;
+      inputFlags = `-thread_queue_size 2048 -f dshow -rtbufsize 2048M -i ${quote(srcSpec)}`;
+    } else {
+      const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '';
+      const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '';
+      inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(dev)}`;
+    }
   } else if (channel.inputType === InputType.VOD) {
     inputFlags = `-re -i ${quote(`${VOD_BASE_PATH}${channel.inputUrl}`)}`;
   } else if (channel.inputType === InputType.LIVE) {
@@ -210,7 +234,7 @@ export const generateCommand = (
   }
 
   const youtubePrefix = channel.inputType === InputType.YOUTUBE
-    ? `yt-dlp.exe --no-update -f b -o - ${quote(channel.inputUrl)} | `
+    ? `yt-dlp --no-update -f b -o - ${quote(channel.inputUrl)} | `
     : '';
 
   const mapOptions: string[] = [];
@@ -219,6 +243,8 @@ export const generateCommand = (
   if (mapOptions.length === 0) {
     if (channel.programId && channel.inputType === InputType.URL) {
       mapOptions.push(`-map 0:p:${channel.programId}`);
+    } else if (channel.inputType === InputType.DEVICE) {
+      mapOptions.push('-map 0:v:0?', '-map 0:a:0?');
     } else {
       mapOptions.push('-map 0');
     }

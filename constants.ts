@@ -196,6 +196,7 @@ export const LIVE_PROTOCOL_OPTIONS = [
   { value: Protocol.SRT, label: 'SRT (Secure Reliable Transport)' },
   { value: Protocol.UDP, label: 'UDP (User Datagram Protocol)' },
   { value: Protocol.HTTP_TS, label: 'HTTP-TS (MPEG-TS over HTTP)' },
+  { value: Protocol.DECKLINK, label: 'DeckLink Card Output' },
   { value: Protocol.RECORDING, label: 'Recording File' },
 ];
 

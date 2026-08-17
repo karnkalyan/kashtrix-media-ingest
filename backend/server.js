@@ -57,6 +57,40 @@ const ffmpegPath = process.env.FFMPEG_PATH || bundledFfmpegPath;
 const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
 const { getFFmpegDevices } = require('./getDevices');
 
+// yt-dlp cross-platform binary resolution
+const resolveYtDlpPath = () => {
+    if (process.platform === 'win32') return 'yt-dlp.exe';
+    const candidates = [
+        '/usr/local/bin/yt-dlp',
+        '/usr/bin/yt-dlp',
+        path.join(os.homedir(), '.local', 'bin', 'yt-dlp'),
+    ];
+    for (const p of candidates) {
+        if (fs.existsSync(p)) return p;
+    }
+    return 'yt-dlp'; // fallback to PATH
+};
+const ytdlpPath = resolveYtDlpPath();
+
+// URL sanitization for security
+const ALLOWED_INPUT_PROTOCOLS = /^(rtmp|rtmps|srt|udp|rtp|rtsp|http|https|device|pipe|decklink):\/\//i;
+const SHELL_INJECTION_PATTERN = /[;&|`$(){}\[\]<>\n\r]/;
+const sanitizeInputUrl = (url) => {
+    if (!url || typeof url !== 'string') return '';
+    const trimmed = url.trim().slice(0, 2048);
+    // Allow relative paths for VOD files
+    if (!trimmed.includes('://') && !trimmed.startsWith('pipe:')) return trimmed;
+    if (!ALLOWED_INPUT_PROTOCOLS.test(trimmed) && !trimmed.startsWith('pipe:')) return '';
+    return trimmed;
+};
+const sanitizeStreamName = (name) => {
+    return String(name || '').trim().replace(/[^a-zA-Z0-9._\-\/]/g, '-').replace(/-+/g, '-').slice(0, 128);
+};
+const validatePort = (port) => {
+    const num = Number(port);
+    return Number.isInteger(num) && num >= 1024 && num <= 65535;
+};
+
 // --- CONFIGURATION ---
 
 const MEDIA_PORT = 8080;
@@ -447,16 +481,17 @@ app.use(cors());
 app.use(express.json());
 
 const hlsStaticOptions = {
+    acceptRanges: false,
     setHeaders: (res, filePath) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', '*');
         if (filePath.endsWith('.m3u8')) {
-            res.setHeader('Content-Type', 'application/x-mpegURL');
+            res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         } else if (filePath.endsWith('.ts')) {
             res.setHeader('Content-Type', 'video/MP2T');
-            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         } else if (filePath.endsWith('.mpd')) {
             res.setHeader('Content-Type', 'application/dash+xml');
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -470,13 +505,15 @@ app.use('/live', express.static(LIVE_DIR, hlsStaticOptions));
 app.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
+app.use('/media/hls', express.static(HLS_DIR, hlsStaticOptions));
+app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
 const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
     if (!targetPath || !fs.existsSync(targetPath)) {
         return res.status(404).send('Recording file not found on disk');
     }
     const stat = fs.statSync(targetPath);
-    const fileSize = stat.size;
+    let fileSize = stat.size;
     const range = req.headers.range;
     const ext = path.extname(targetPath).slice(1).toLowerCase();
     const mimeTypes = {
@@ -490,6 +527,20 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
     const isDownload = req.query.download === '1' || req.query.download === 'true';
     const fileName = customFileName || path.basename(targetPath);
 
+    // If MP4 was unclosed/interrupted, check if counterpart MKV exists and auto-remux
+    if (ext === 'mp4' && fs.existsSync(targetPath.replace(/\.mp4$/i, '.mkv'))) {
+        const mkvPath = targetPath.replace(/\.mp4$/i, '.mkv');
+        try {
+            const mp4Stat = fs.existsSync(targetPath) ? fs.statSync(targetPath) : { size: 0 };
+            const mkvStat = fs.statSync(mkvPath);
+            if (mkvStat.size > 0 && mp4Stat.size < 1000) {
+                const { execFileSync } = require('child_process');
+                execFileSync(ffmpegPath, ['-y', '-i', mkvPath, '-c', 'copy', '-movflags', '+faststart', targetPath], { windowsHide: true, timeout: 10000 });
+                fileSize = fs.statSync(targetPath).size;
+            }
+        } catch (e) {}
+    }
+
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
@@ -501,11 +552,20 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
         res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
     }
 
+    if (req.method === 'HEAD') {
+        res.writeHead(200, {
+            'Content-Length': fileSize,
+            'Content-Type': contentType,
+            'Accept-Ranges': 'bytes',
+        });
+        return res.end();
+    }
+
     if (range) {
         const parts = range.replace(/bytes=/, '').split('-');
         const start = parseInt(parts[0], 10);
         const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-        if (start >= fileSize || end >= fileSize || start > end) {
+        if (isNaN(start) || start >= fileSize || (parts[1] && end >= fileSize) || start > end) {
             res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
             return res.end();
         }
@@ -522,6 +582,7 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
         res.writeHead(200, {
             'Content-Length': fileSize,
             'Content-Type': contentType,
+            'Accept-Ranges': 'bytes',
         });
         fs.createReadStream(targetPath).pipe(res);
     }
@@ -573,6 +634,99 @@ app.use('/media/recorded', serveRecordingFile);
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Direct dedicated recording stream & download routes
+const streamRecordingPreviewHandler = (req, res) => {
+    const rawId = req.params.id;
+    let recording = null;
+    let targetPath = null;
+    let fileName = null;
+    try {
+        recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(rawId);
+        if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
+            targetPath = recording.file_path;
+            fileName = recording.file_name;
+        }
+    } catch (e) {}
+
+    if (!targetPath) {
+        try {
+            const decoded = decodeURIComponent(rawId);
+            recording = db.prepare('SELECT * FROM stream_recordings WHERE file_name = ? ORDER BY id DESC LIMIT 1').get(decoded);
+            if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
+                targetPath = recording.file_path;
+                fileName = recording.file_name;
+            }
+        } catch (e) {}
+    }
+
+    if (!targetPath) {
+        const decoded = decodeURIComponent(rawId);
+        const candidates = [
+            path.join(RECORDINGS_DIR, decoded),
+            path.join(RECORDED_DIR, decoded),
+            path.join(MEDIA_ROOT, decoded),
+        ];
+        for (const c of candidates) {
+            if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+                targetPath = c;
+                fileName = path.basename(c);
+                break;
+            }
+        }
+    }
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).json({ error: 'Recording file not found' });
+    }
+
+    const ext = path.extname(targetPath).toLowerCase();
+    // If it's a native MP4/WebM file, serve directly with byte-range streaming for instant seek and zero transcoding delay
+    if (ext === '.mp4' || ext === '.webm') {
+        return streamOrDownloadFile(req, res, targetPath, fileName || path.basename(targetPath));
+    }
+
+    // For non-native formats (MKV, TS, FLV, MOV, AVI), transcode on-the-fly to fragmented MP4
+    const requestedStart = Number(req.query.start || 0);
+    const previewStart = Number.isFinite(requestedStart) ? Math.max(0, Math.min(requestedStart, 604800)) : 0;
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', `inline; filename="preview-${recording?.id || 'rec'}.mp4"`);
+
+    const args = [
+        '-hide_banner', '-loglevel', 'error',
+        ...(previewStart > 0 ? ['-ss', String(previewStart)] : []),
+        '-i', targetPath,
+        '-map', '0:v:0?', '-map', '0:a:0?',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+        '-pix_fmt', 'yuv420p', '-g', '30',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+        '-f', 'mp4', 'pipe:1',
+    ];
+    const preview = spawn(ffmpegPath, args, { windowsHide: true });
+    let stderr = '';
+    preview.stderr.on('data', data => { stderr = `${stderr}${data}`.slice(-2000); });
+    preview.stdout.pipe(res);
+    preview.on('error', error => {
+        console.error(`[Preview] Failed to start recording preview:`, error);
+        if (!res.headersSent) res.status(500).end();
+        else res.end();
+    });
+    preview.on('close', code => {
+        if (code && stderr) console.error(`[Preview] Recording preview: ${stderr.trim()}`);
+        if (!res.writableEnded) res.end();
+    });
+    req.on('close', () => {
+        try { if (!preview.killed) preview.kill('SIGTERM'); } catch (e) {}
+    });
+};
+
+app.get('/recording-preview/:id', streamRecordingPreviewHandler);
+app.get('/api/ingest/recordings/:id/preview', streamRecordingPreviewHandler);
+
 app.get(['/api/ingest/recordings/:id/file', '/api/ingest/recordings/:id/download'], (req, res) => {
     const { id } = req.params;
     let targetPath = null;
@@ -746,7 +900,7 @@ app.get('/api/license/hwid', authMiddleware, (req, res) => {
 });
 
 app.post('/api/_hidden/license/generate', authMiddleware, requireSuperadmin, (req, res) => {
-    const { customerName, customerEmail, expiresAt, days, features, hardwareId } = req.body || {};
+    const { customerName, customerEmail, expiresAt, days, features, hardwareId, maxRecordingDevices } = req.body || {};
     const expiryMs = expiresAt ? new Date(expiresAt).getTime() : Date.now() + (Number(days || 365) * 24 * 60 * 60 * 1000);
     if (!customerName || Number.isNaN(expiryMs) || expiryMs <= Date.now()) {
         return res.status(400).json({ error: 'Customer name and a future expiry are required' });
@@ -757,11 +911,13 @@ app.post('/api/_hidden/license/generate', authMiddleware, requireSuperadmin, (re
     }
     const requestedFeatures = Array.isArray(features) ? features.filter(feature => LICENSE_MODULES.includes(feature)) : [];
     if (!requestedFeatures.length) return res.status(400).json({ error: 'Select at least one licensed module' });
+    const deviceLimit = Math.min(100, Math.max(1, Number(maxRecordingDevices) || 5));
     const payload = {
         customerName,
         customerEmail: customerEmail || '',
         hardwareId: normalizedHardwareId,
         features: requestedFeatures,
+        maxRecordingDevices: deviceLimit,
         exp: Math.floor(expiryMs / 1000),
         iat: Math.floor(Date.now() / 1000),
         iss: 'professional-media-server',
@@ -813,6 +969,7 @@ app.post('/api/license/activate', authMiddleware, (req, res) => {
             hardwareId: normalizeHwid(payload.hardwareId),
             expiresAt: new Date(payload.exp * 1000).toISOString(),
             features: payload.features || ['streaming', 'recording', 'multi-destination'],
+            maxRecordingDevices: payload.maxRecordingDevices || 5,
         };
         setJsonSetting('license', license);
         res.json(license);
@@ -883,65 +1040,76 @@ app.delete('/api/profiles/:id', authMiddleware, (req, res) => {
     res.json({ ok: true });
 });
 
+const resolveDeviceInputFlags = (cmd, devices) => {
+    let videoDev = '';
+    let audioDev = '';
+    let videoInput = 'hdmi';
+    let formatCode = '';
+
+    const devUriMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
+    const dshowMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s]+(?:\s+[^\s-]+)*)+)/i);
+    const decklinkMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s]+)+)/i);
+
+    let matchStr = '';
+    if (devUriMatch) {
+        matchStr = devUriMatch[0];
+        const [baseUri, queryStr] = devUriMatch[1].split('?');
+        if (queryStr) {
+            const params = new URLSearchParams(queryStr);
+            if (params.get('video_input')) videoInput = params.get('video_input');
+            if (params.get('format_code')) formatCode = params.get('format_code');
+        }
+        const parts = baseUri.split('+');
+        videoDev = parts[0].replace(/^video=/i, '').trim();
+        audioDev = (parts[1] || videoDev).replace(/^audio=/i, '').trim();
+    } else if (dshowMatch) {
+        matchStr = dshowMatch[0];
+        const rawInput = dshowMatch[1].replace(/^["']|["']$/g, '').trim();
+        const vMatch = rawInput.match(/video=(?:"([^"]+)"|'([^']+)'|([^:]+))/i);
+        const aMatch = rawInput.match(/audio=(?:"([^"]+)"|'([^']+)'|(.+))/i);
+        if (vMatch) videoDev = (vMatch[1] || vMatch[2] || vMatch[3] || '').trim();
+        if (aMatch) audioDev = (aMatch[1] || aMatch[2] || aMatch[3] || '').trim();
+        if (!videoDev && !audioDev) {
+            videoDev = rawInput.replace(/^video=/i, '').trim();
+        }
+    } else if (decklinkMatch) {
+        matchStr = decklinkMatch[0];
+        const rawInput = decklinkMatch[1].replace(/^["']|["']$/g, '').trim();
+        videoDev = rawInput;
+        audioDev = rawInput;
+    }
+
+    if (!matchStr) return cmd;
+
+    if (videoDev.includes('?')) videoDev = videoDev.split('?')[0].trim();
+    if (audioDev.includes('?')) audioDev = audioDev.split('?')[0].trim();
+
+    const resolvedVideo = resolveCaptureDevice(devices, videoDev) || videoDev;
+    const resolvedAudio = resolveCaptureDevice(devices, audioDev) || audioDev;
+
+    if (process.platform !== 'win32') {
+        const formatCodeResolved = (formatCode && formatCode !== 'auto' && formatCode !== 'unset') ? formatCode : (getDeckLinkFormatCode('1080', 50) || 'Hp50');
+        const formatFlag = `-format_code ${formatCodeResolved} `;
+        const vInputFlag = (videoInput && videoInput !== 'unset' && videoInput !== 'auto') ? `-video_input ${videoInput} ` : '-video_input hdmi ';
+        const targetHandle = resolvedVideo || resolvedAudio || '75:05326625:00000000';
+        const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${targetHandle}"`;
+        return cmd.replace(matchStr, linuxDeviceFlags);
+    } else {
+        const srcSpec = resolvedAudio && resolvedAudio !== resolvedVideo
+            ? `video=${resolvedVideo}:audio=${resolvedAudio}`
+            : `video=${resolvedVideo || 'video'}`;
+        const winDeviceFlags = `-thread_queue_size 2048 -f dshow -rtbufsize 1024M -i "${srcSpec}"`;
+        return cmd.replace(matchStr, winDeviceFlags);
+    }
+};
+
 const normalizeChannelForSave = async (channel) => {
     if (!channel) return channel;
     const sanitized = sanitizeChannelForStorage(channel);
     try {
         const devices = await scanCaptureDevices().catch(() => ({ video: [], audio: [] }));
         if (sanitized.command && (sanitized.command.includes('device://') || sanitized.command.includes('-f dshow') || sanitized.command.includes('-f decklink'))) {
-            let cmd = sanitized.command;
-            let videoDev = '';
-            let audioDev = '';
-            let videoInput = 'hdmi';
-            let formatCode = '';
-
-            const devUriMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
-            const dshowMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
-            const decklinkMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+["']?([^"']+)["']?/i);
-
-            if (devUriMatch) {
-                const [baseUri, queryStr] = devUriMatch[1].split('?');
-                if (queryStr) {
-                    const params = new URLSearchParams(queryStr);
-                    if (params.get('video_input')) videoInput = params.get('video_input');
-                    if (params.get('format_code')) formatCode = params.get('format_code');
-                }
-                const parts = baseUri.split('+');
-                videoDev = parts[0].replace(/^video=/i, '').trim();
-                audioDev = (parts[1] || videoDev).replace(/^audio=/i, '').trim();
-            } else if (dshowMatch) {
-                const [baseUri, queryStr] = dshowMatch[1].split('?');
-                if (queryStr) {
-                    const params = new URLSearchParams(queryStr);
-                    if (params.get('video_input')) videoInput = params.get('video_input');
-                    if (params.get('format_code')) formatCode = params.get('format_code');
-                }
-                const parts = baseUri.split(':');
-                const vPart = parts.find(p => p.startsWith('video=')) || parts[0];
-                const aPart = parts.find(p => p.startsWith('audio=')) || vPart;
-                videoDev = vPart.replace(/^video=/i, '').replace(/["']/g, '').trim();
-                audioDev = aPart.replace(/^audio=/i, '').replace(/["']/g, '').trim();
-            } else if (decklinkMatch) {
-                videoDev = decklinkMatch[1].replace(/["']/g, '').trim();
-                audioDev = videoDev;
-            }
-
-            if (videoDev.includes('?')) videoDev = videoDev.split('?')[0].trim();
-            if (audioDev.includes('?')) audioDev = audioDev.split('?')[0].trim();
-
-            const resolvedVideo = resolveCaptureDevice(devices, videoDev) || videoDev;
-            const resolvedAudio = resolveCaptureDevice(devices, audioDev) || audioDev;
-
-            if (process.platform !== 'win32') {
-                const formatCodeResolved = (formatCode && formatCode !== 'auto' && formatCode !== 'unset') ? formatCode : (getDeckLinkFormatCode('1080', 50) || 'Hp50');
-                const formatFlag = `-format_code ${formatCodeResolved} `;
-                const vInputFlag = (videoInput && videoInput !== 'unset' && videoInput !== 'auto') ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-                const targetHandle = resolvedVideo || resolvedAudio || '75:05326625:00000000';
-                const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${targetHandle}"`;
-                if (devUriMatch) cmd = cmd.replace(devUriMatch[0], linuxDeviceFlags);
-                else if (dshowMatch) cmd = cmd.replace(dshowMatch[0], linuxDeviceFlags);
-                else if (decklinkMatch) cmd = cmd.replace(decklinkMatch[0], linuxDeviceFlags);
-            }
+            let cmd = resolveDeviceInputFlags(sanitized.command, devices);
             sanitized.command = cmd.replace(/\s+-s\s+(source|auto|original|N\/A)\b/gi, '').replace(/\s+-r\s+0(?:\.0+)?\b/g, '');
         }
     } catch (e) {}
@@ -1007,6 +1175,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
 
     let finalCommand = req.body.command;
     if (!finalCommand) {
+        // Try lookup by ID first
         let channelRow = db.prepare('SELECT data FROM channels WHERE id = ?').get(channelId);
         let channelData = null;
         if (channelRow && channelRow.data) {
@@ -1015,93 +1184,53 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             } catch (e) {}
         }
 
+        // Fallback: search by channel name across all stored channels
         if (!channelData) {
-            return res.status(404).json({ error: 'Channel not found' });
+            const allRows = db.prepare('SELECT data FROM channels').all();
+            for (const row of allRows) {
+                try {
+                    const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                    if (parsed && (parsed.name === channelId || parsed.id === channelId)) {
+                        channelData = parsed;
+                        break;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        if (!channelData) {
+            return res.status(404).json({ error: `Channel not found: "${channelId}". Ensure the channel is saved before starting.` });
         }
         finalCommand = channelData.command;
     }
     if (!finalCommand) {
         return res.status(400).json({ error: 'No FFmpeg command configured for this channel' });
     }
+
+    // Replace yt-dlp.exe with cross-platform path
+    if (finalCommand.includes('yt-dlp')) {
+        finalCommand = finalCommand.replace(/yt-dlp\.exe/g, ytdlpPath).replace(/\byt-dlp\b(?!\.exe)/g, ytdlpPath);
+    }
     try {
         // 0. Resolve device capture for host platform and ensure hardware lock is free
         if (finalCommand.includes('device://') || finalCommand.includes('-f dshow') || finalCommand.includes('-f decklink')) {
-            // Stop any conflicting device preview so DeckLink lock is clean
+            // Stop any conflicting device preview so DeckLink/DirectShow lock is clean
             for (const [pId] of devicePreviewProcesses.entries()) {
                 stopDevicePreview(pId);
             }
-            await new Promise(r => setTimeout(r, 500));
-
-            let videoDev = '';
-            let audioDev = '';
-            let videoInput = 'hdmi';
-            let formatCode = '';
-
-            const devUriMatch = finalCommand.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
-            const dshowMatch = finalCommand.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
-            const decklinkMatch = finalCommand.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+["']?([^"']+)["']?/i);
-
-            if (devUriMatch) {
-                const [baseUri, queryStr] = devUriMatch[1].split('?');
-                if (queryStr) {
-                    const params = new URLSearchParams(queryStr);
-                    if (params.get('video_input')) videoInput = params.get('video_input');
-                    if (params.get('format_code')) formatCode = params.get('format_code');
-                }
-                const parts = baseUri.split('+');
-                videoDev = parts[0].replace(/^video=/i, '').trim();
-                audioDev = (parts[1] || videoDev).replace(/^audio=/i, '').trim();
-            } else if (dshowMatch) {
-                const [baseUri, queryStr] = dshowMatch[1].split('?');
-                if (queryStr) {
-                    const params = new URLSearchParams(queryStr);
-                    if (params.get('video_input')) videoInput = params.get('video_input');
-                    if (params.get('format_code')) formatCode = params.get('format_code');
-                }
-                const parts = baseUri.split(':');
-                const vPart = parts.find(p => p.startsWith('video=')) || parts[0];
-                const aPart = parts.find(p => p.startsWith('audio=')) || vPart;
-                videoDev = vPart.replace(/^video=/i, '').replace(/["']/g, '').trim();
-                audioDev = aPart.replace(/^audio=/i, '').replace(/["']/g, '').trim();
-            } else if (decklinkMatch) {
-                videoDev = decklinkMatch[1].replace(/["']/g, '').trim();
-                audioDev = videoDev;
-            }
-
-            if (videoDev.includes('?')) videoDev = videoDev.split('?')[0].trim();
-            if (audioDev.includes('?')) audioDev = audioDev.split('?')[0].trim();
+            await new Promise(r => setTimeout(r, 1000));
 
             const devices = await scanCaptureDevices().catch(() => ({ video: [], audio: [] }));
-            const resolvedVideo = resolveCaptureDevice(devices, videoDev) || videoDev;
-            const resolvedAudio = resolveCaptureDevice(devices, audioDev) || audioDev;
-
-            if (process.platform !== 'win32') {
-                const formatCodeResolved = (formatCode && formatCode !== 'auto' && formatCode !== 'unset') ? formatCode : (getDeckLinkFormatCode('1080', 50) || 'Hp50');
-                const formatFlag = `-format_code ${formatCodeResolved} `;
-                const vInputFlag = (videoInput && videoInput !== 'unset' && videoInput !== 'auto') ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-                const targetHandle = resolvedVideo || resolvedAudio || '75:05326625:00000000';
-                const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${targetHandle}"`;
-                if (devUriMatch) {
-                    finalCommand = finalCommand.replace(devUriMatch[0], linuxDeviceFlags);
-                } else if (dshowMatch) {
-                    finalCommand = finalCommand.replace(dshowMatch[0], linuxDeviceFlags);
-                } else if (decklinkMatch) {
-                    finalCommand = finalCommand.replace(decklinkMatch[0], linuxDeviceFlags);
-                }
-            } else {
-                const winDeviceFlags = `-framerate 50 -thread_queue_size 2048 -f dshow -rtbufsize 2048M -i video="${resolvedVideo || 'video'}":audio="${resolvedAudio || resolvedVideo || 'audio'}"`;
-                if (devUriMatch) {
-                    finalCommand = finalCommand.replace(devUriMatch[0], winDeviceFlags);
-                } else if (dshowMatch) {
-                    finalCommand = finalCommand.replace(dshowMatch[0], winDeviceFlags);
-                }
-            }
+            finalCommand = resolveDeviceInputFlags(finalCommand, devices);
         }
 
-        // Clean up any invalid scale / framerate flags e.g. -s source or -r 0
+        // Clean up any invalid scale / framerate flags e.g. -s source or -r 0, and fix codec names
         finalCommand = finalCommand
             .replace(/\s+-s\s+(source|auto|original|N\/A)\b/gi, '')
-            .replace(/\s+-r\s+0(?:\.0+)?\b/g, '');
+            .replace(/\s+-r\s+0(?:\.0+)?\b/g, '')
+            .replace(/-c:v\s+h264\b/gi, '-c:v libx264')
+            .replace(/-c:v\s+hevc\b/gi, '-c:v libx265')
+            .replace(/-c:v\s+h265\b/gi, '-c:v libx265');
 
         // 1. Resolve VOD/file input paths to absolute paths
         const inputMatch = finalCommand.match(/-i\s+["']?([^"'\s]+)["']?/i);
@@ -1164,6 +1293,11 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
         }
     } catch (e) { console.warn('Command sanitization failed:', e); }
 
+    // Replace yt-dlp references with resolved path for cross-platform support
+    if (finalCommand.includes('yt-dlp')) {
+        finalCommand = finalCommand.replace(/yt-dlp\.exe/g, ytdlpPath).replace(/\byt-dlp\b(?!\.)/g, ytdlpPath);
+    }
+
     const [executable, ...args] = parseCommand(finalCommand);
     const useShell = finalCommand.includes('|');
     const spawnExec = useShell ? finalCommand.replace(/\bffmpeg(\.exe)?\b/gi, `"${ffmpegPath.replace(/\\/g, '/')}"`) : (executable?.toLowerCase().includes('ffmpeg') ? ffmpegPath : executable);
@@ -1178,6 +1312,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
 
     proc.stderr.on('data', data => {
         const log = data.toString();
+        console.log(`[FFmpeg ${channelId}] ${log.trim()}`);
         const match = log.match(/time=(\S+)\sbitrate=(\S+)\sspeed=(\S+)x/);
         if (match) {
             broadcastStats(channelId, { uptime, time: match[1], bitrate: parseFloat(match[2]), speed: parseFloat(match[3]), log: log.trim() });
@@ -1204,23 +1339,126 @@ app.post('/api/channels/stop', authMiddleware, (req, res) => {
     res.json({ success: true });
 });
 
-app.post('/api/ffprobe-ts-programs', authMiddleware, (req, res) => {
+const probeDeviceCapabilities = (videoDevice, audioDevice) => {
+    return new Promise((resolve) => {
+        if (!videoDevice && !audioDevice) {
+            return resolve({
+                name: 'Hardware Capture Feed',
+                streams: [
+                    { index: '0:v:0', type: 'video', codec: process.platform === 'win32' ? 'dshow' : 'decklink', resolution: 'Auto / Native' },
+                    { index: '0:a:0', type: 'audio', codec: 'pcm (auto)', lang: 'Main' },
+                ]
+            });
+        }
+
+        if (process.platform === 'win32') {
+            if (!videoDevice) {
+                return resolve({
+                    name: audioDevice || 'Audio Capture Feed',
+                    streams: [
+                        { index: '0:a:0', type: 'audio', codec: 'DirectShow Audio', lang: 'Main' }
+                    ]
+                });
+            }
+
+            const proc = spawn(ffmpegPath, ['-hide_banner', '-f', 'dshow', '-list_options', 'true', '-i', `video=${videoDevice}`], { windowsHide: true });
+            let output = '';
+            proc.stderr.on('data', d => { output += d.toString(); });
+            const timer = setTimeout(() => {
+                try { if (!proc.killed) proc.kill('SIGKILL'); } catch (e) {}
+            }, 3000);
+
+            proc.on('close', () => {
+                clearTimeout(timer);
+                const resMatches = [...output.matchAll(/(?:min|max)\s+s=(\d{3,5}x\d{3,5})/gi)].map(m => m[1]);
+                const fpsMatches = [...output.matchAll(/fps=(\d+(?:\.\d+)?)/gi)].map(m => parseFloat(m[1]));
+                const pixMatches = [...output.matchAll(/pixel_format=([a-z0-9_]+)/gi)].map(m => m[1]);
+
+                let bestRes = '1920x1080';
+                if (resMatches.length > 0) {
+                    const sortedRes = [...new Set(resMatches)].sort((a, b) => {
+                        const [wA, hA] = a.split('x').map(Number);
+                        const [wB, hB] = b.split('x').map(Number);
+                        return (wB * hB) - (wA * hA);
+                    });
+                    bestRes = sortedRes[0];
+                }
+
+                const maxFps = fpsMatches.length > 0 ? Math.max(...fpsMatches) : 30;
+                const pixFmt = pixMatches[0] || 'yuyv422';
+
+                const streams = [
+                    {
+                        index: '0:v:0',
+                        type: 'video',
+                        codec: `${pixFmt} (DirectShow)`,
+                        resolution: `${bestRes} @ ${maxFps}fps`
+                    }
+                ];
+
+                if (audioDevice) {
+                    streams.push({
+                        index: '0:a:0',
+                        type: 'audio',
+                        codec: 'DirectShow Audio',
+                        lang: 'Main'
+                    });
+                }
+
+                resolve({
+                    name: videoDevice,
+                    streams
+                });
+            });
+            proc.on('error', () => {
+                clearTimeout(timer);
+                resolve({
+                    name: videoDevice,
+                    streams: [
+                        { index: '0:v:0', type: 'video', codec: 'DirectShow Video', resolution: 'Auto / Native' }
+                    ]
+                });
+            });
+        } else {
+            resolve({
+                name: videoDevice || audioDevice || 'DeckLink SDI/HDMI Feed',
+                streams: [
+                    { index: '0:v:0', type: 'video', codec: 'DeckLink SDI/HDMI', resolution: 'Auto / Native' },
+                    ...(audioDevice ? [{ index: '0:a:0', type: 'audio', codec: 'DeckLink Embedded Audio', lang: 'Main' }] : [])
+                ]
+            });
+        }
+    });
+};
+
+app.post('/api/ffprobe-ts-programs', authMiddleware, async (req, res) => {
     const { input } = req.body;
     if (!input) return res.status(400).json({ error: 'input required' });
 
     if (input.startsWith('device://')) {
         const raw = input.replace('device://', '');
         const parts = raw.split('+');
-        const devName = parts[0].replace(/^video=/i, '').trim();
-        const programs = [{
-            id: 0,
-            name: devName || 'DeckLink Live Capture Feed',
-            streams: [
-                { index: '0:v:0', type: 'video', codec: 'rawvideo / decklink', resolution: '1920x1080' },
-                { index: '0:a:0', type: 'audio', codec: 'pcm_s16le', lang: 'Main' },
-            ],
-        }];
-        return res.json(programs);
+        const videoPart = parts.find(p => p.startsWith('video=')) || parts[0] || '';
+        const audioPart = parts.find(p => p.startsWith('audio=')) || (parts[1] && parts[1].startsWith('audio=') ? parts[1] : '') || '';
+        const videoDevice = videoPart.replace(/^video=/i, '').trim();
+        const audioDevice = audioPart.replace(/^audio=/i, '').trim();
+
+        try {
+            const probed = await probeDeviceCapabilities(videoDevice, audioDevice);
+            return res.json([{
+                id: 0,
+                name: probed.name,
+                streams: probed.streams,
+            }]);
+        } catch (e) {
+            return res.json([{
+                id: 0,
+                name: videoDevice || audioDevice || 'Capture Device',
+                streams: [
+                    { index: '0:v:0', type: 'video', codec: process.platform === 'win32' ? 'dshow' : 'decklink', resolution: 'Auto / Native' }
+                ]
+            }]);
+        }
     }
 
     const isNetwork = /^(udp|srt|rtp|rtsp|http|https|rtmp|rtmps):\/\//i.test(input);
@@ -1375,6 +1613,52 @@ const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
     return args;
 };
 
+let activeDevicePreviewState = { active: false };
+
+const formatUserFriendlyFfmpegError = (errorMsg) => {
+    const raw = String(errorMsg || '');
+    if (!raw) return 'Unable to start capture stream';
+    if (/nvcuda\.dll|Cannot load nvcuda|nvenc|cuda/i.test(raw)) {
+        return 'NVIDIA NVENC hardware encoder is not supported on this machine (nvcuda.dll not found). Please select AMD AMF or CPU encoder in recording settings.';
+    }
+    if (/qsv|mfx/i.test(raw)) {
+        return 'Intel QuickSync (QSV) hardware encoder is not supported on this machine. Please select AMD AMF or CPU encoder.';
+    }
+    if (/amf/i.test(raw)) {
+        return 'AMD AMF hardware encoder is not supported or driver is missing. Please select CPU encoder.';
+    }
+    if (/frames left in the queue|exiting normally|clean exit|conversion failed/i.test(raw)) {
+        return 'Capture stream stopped.';
+    }
+    if (/fps_mode|unrecognized option|option not found/i.test(raw)) {
+        return 'Encoder parameter error. Video streaming profile adjusted for host FFmpeg compatibility.';
+    }
+    if (/dshow|access is denied|already in use|device busy|I\/O error|Could not set video options/i.test(raw)) {
+        return 'Selected capture device is currently busy, locked by another app, or using an unsupported resolution.';
+    }
+    if (/decklink/i.test(raw)) {
+        return 'DeckLink hardware signal not detected. Please verify input video cable.';
+    }
+    if (/timed out/i.test(raw)) {
+        return 'Timed out waiting for video signal from capture device.';
+    }
+    const cleanLines = raw.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith('[') && !l.startsWith('ffmpeg') && !l.startsWith('built with') && !l.startsWith('configuration:'));
+    if (cleanLines.length > 0) {
+        return cleanLines[0].slice(0, 140);
+    }
+    return 'Unable to establish video signal from the selected device.';
+};
+
+const broadcastDevicePreviewState = (state) => {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'device_preview_state', payload: state }));
+        }
+    });
+};
+
 const scheduleDevicePreviewCleanup = (outputDir) => {
     setTimeout(() => {
         const resolvedRoot = path.resolve(DEVICE_PREVIEW_DIR);
@@ -1384,10 +1668,30 @@ const scheduleDevicePreviewCleanup = (outputDir) => {
     }, 1500).unref?.();
 };
 
-const stopDevicePreview = (previewId) => {
+const stopDevicePreview = (previewId, force = false) => {
     const preview = devicePreviewProcesses.get(previewId);
     if (!preview) return false;
+
+    const isUsedByActiveRecording = Array.from(activeRecordings.values()).some(rec =>
+        rec.options?.sourceType === 'device' &&
+        (!rec.options.videoDevice || rec.options.videoDevice === preview.videoDevice) &&
+        (!rec.options.audioDevice || rec.options.audioDevice === preview.audioDevice)
+    );
+
+    if (isUsedByActiveRecording && !force) {
+        preview.closedByUI = true;
+        if (activeDevicePreviewState?.previewId === previewId) {
+            activeDevicePreviewState = { active: false };
+            broadcastDevicePreviewState(activeDevicePreviewState);
+        }
+        return true;
+    }
+
     devicePreviewProcesses.delete(previewId);
+    if (activeDevicePreviewState?.previewId === previewId) {
+        activeDevicePreviewState = { active: false };
+        broadcastDevicePreviewState(activeDevicePreviewState);
+    }
     if (preview.expiryTimer) clearTimeout(preview.expiryTimer);
     try {
         if (!preview.proc.killed) {
@@ -1405,11 +1709,43 @@ const waitForDevicePreview = (preview, playlistPath, timeoutMs = 10000) => new P
     const startedAt = Date.now();
     const inspect = () => {
         if (fs.existsSync(playlistPath)) return resolve();
-        if (preview.closed) return reject(new Error(preview.lastError || 'FFmpeg could not open the selected capture device'));
-        if (Date.now() - startedAt >= timeoutMs) return reject(new Error(preview.lastError || 'Timed out waiting for capture device signal'));
+        if (preview.closed) return reject(new Error(formatUserFriendlyFfmpegError(preview.lastError)));
+        if (Date.now() - startedAt >= timeoutMs) return reject(new Error(formatUserFriendlyFfmpegError(preview.lastError || 'Timed out waiting for capture device signal')));
         setTimeout(inspect, 100);
     };
     inspect();
+});
+
+app.get('/api/ingest/device-preview/status', authMiddleware, (req, res) => {
+    const videoDevice = String(req.query?.videoDevice || '').trim();
+    const audioDevice = String(req.query?.audioDevice || '').trim();
+
+    // If specific device queried, check if that device is running
+    if (videoDevice || audioDevice) {
+        for (const [previewId, preview] of devicePreviewProcesses) {
+            if (!preview.closed &&
+                (!videoDevice || preview.videoDevice === videoDevice) &&
+                (!audioDevice || preview.audioDevice === audioDevice)) {
+                return res.json({
+                    success: true,
+                    active: true,
+                    previewId,
+                    hlsUrl: `/hls/device-preview/${previewId}/index.m3u8`,
+                    videoDevice: preview.videoDevice,
+                    audioDevice: preview.audioDevice
+                });
+            }
+        }
+    }
+
+    if (activeDevicePreviewState && activeDevicePreviewState.active) {
+        const preview = devicePreviewProcesses.get(activeDevicePreviewState.previewId);
+        if (preview && !preview.closed) {
+            return res.json({ success: true, ...activeDevicePreviewState });
+        }
+        activeDevicePreviewState = { active: false };
+    }
+    res.json({ success: true, active: false });
 });
 
 app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) => {
@@ -1422,8 +1758,6 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
     const rawFormat = String(req.body?.rawFormat || '').trim().slice(0, 32);
     if (!videoDevice && !audioDevice) return res.status(400).json({ error: 'Select at least one capture device' });
 
-    let previewId = '';
-    let outputDir = '';
     try {
         const devices = await scanCaptureDevices({ refresh: true });
         if (videoDevice && !devices.video.includes(videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
@@ -1432,58 +1766,111 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
         const ffmpegVideoDevice = resolveCaptureDevice(devices, videoDevice);
         const ffmpegAudioDevice = resolveCaptureDevice(devices, audioDevice);
 
-        let inputArgs;
-        try { inputArgs = devicePreviewInputArgs(ffmpegVideoDevice, ffmpegAudioDevice, { resolution, framerate, formatCode, videoInput, rawFormat }); }
-        catch (error) { return res.status(400).json({ error: error.message }); }
-
-        let stoppedAnyPreview = false;
-        for (const [pId, prev] of devicePreviewProcesses) {
-            if (prev.owner === req.user.sub || prev.videoDevice === videoDevice || prev.audioDevice === audioDevice ||
-                resolveCaptureDevice(devices, prev.videoDevice) === ffmpegVideoDevice ||
-                resolveCaptureDevice(devices, prev.audioDevice) === ffmpegAudioDevice) {
-                stopDevicePreview(pId);
-                stoppedAnyPreview = true;
+        // Check if an identical device preview is already running on the server
+        for (const [pId, existing] of devicePreviewProcesses) {
+            if (!existing.closed &&
+                (!videoDevice || existing.videoDevice === videoDevice) &&
+                (!audioDevice || existing.audioDevice === audioDevice)) {
+                return res.json({
+                    success: true,
+                    previewId: pId,
+                    hlsUrl: `/hls/device-preview/${pId}/index.m3u8`,
+                    videoDevice: existing.videoDevice,
+                    audioDevice: existing.audioDevice,
+                    alreadyRunning: true
+                });
             }
         }
-        if (stoppedAnyPreview) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+
+        let inputArgs;
+        try { inputArgs = devicePreviewInputArgs(ffmpegVideoDevice, ffmpegAudioDevice, { resolution, framerate, formatCode, videoInput, rawFormat }); }
+        catch (error) { return res.status(400).json({ error: formatUserFriendlyFfmpegError(error.message) }); }
+
+        // Only stop preview if the same hardware device was already running
+        for (const [pId, prev] of devicePreviewProcesses) {
+            if ((videoDevice && prev.videoDevice === videoDevice) || (audioDevice && prev.audioDevice === audioDevice)) {
+                stopDevicePreview(pId);
+            }
         }
 
-        previewId = crypto.randomUUID();
-        outputDir = path.join(DEVICE_PREVIEW_DIR, previewId);
+        const previewId = crypto.randomUUID();
+        const outputDir = path.join(DEVICE_PREVIEW_DIR, previewId);
         const playlistPath = path.join(outputDir, 'index.m3u8');
         const segmentPattern = path.join(outputDir, 'segment-%06d.ts');
         fs.mkdirSync(outputDir, { recursive: true });
 
         const args = [
-            '-y', '-hide_banner', '-loglevel', 'warning',
+            '-y', '-hide_banner', '-loglevel', 'info',
             ...inputArgs,
             '-map', '0:v:0?', '-map', '0:a:0?',
             '-vf', 'yadif=0:-1:1,scale=trunc(iw/2)*2:trunc(ih/2)*2',
             '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p', '-g', '25', '-keyint_min', '25', '-sc_threshold', '0',
-            '-c:a', 'aac', '-b:a', '128k', '-ar', '48000',
+            '-flags', '+low_delay', '-flush_packets', '1',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
             '-max_muxing_queue_size', '4096',
-            '-f', 'hls', '-hls_time', '1', '-hls_list_size', '3',
-            '-hls_flags', 'delete_segments+append_list+omit_endlist+independent_segments',
+            '-f', 'hls', '-hls_time', '1', '-hls_list_size', '8',
+            '-hls_flags', 'delete_segments+omit_endlist+independent_segments',
             '-hls_segment_filename', segmentPattern,
             playlistPath,
         ];
         const proc = spawn(ffmpegPath, args, { windowsHide: true });
-        const preview = { proc, owner: req.user.sub, videoDevice, audioDevice, outputDir, lastError: '', closed: false };
-        preview.expiryTimer = setTimeout(() => stopDevicePreview(previewId), 30 * 60 * 1000);
+        const preview = {
+            proc,
+            owner: req.user.sub,
+            videoDevice,
+            audioDevice,
+            outputDir,
+            lastError: '',
+            closed: false,
+            detectedResolution: '',
+            detectedFramerate: '',
+            hasSignal: false,
+        };
+        preview.expiryTimer = setTimeout(() => stopDevicePreview(previewId), 60 * 60 * 1000);
         preview.expiryTimer.unref?.();
         devicePreviewProcesses.set(previewId, preview);
 
         proc.stderr.on('data', data => {
-            const message = data.toString().trim();
-            if (message) preview.lastError = message.slice(-2000);
+            const rawStr = data.toString();
+            const message = rawStr.trim();
+            if (message) {
+                preview.lastError = message.slice(-2000);
+                const resMatch = rawStr.match(/Video:.*?,\s*(\d{3,5}x\d{3,5})/i);
+                const fpsMatch = rawStr.match(/,\s*(\d+(?:\.\d+)?)\s*(?:fps|tbr)/i);
+                let changed = false;
+                if (resMatch && resMatch[1] && !preview.detectedResolution) {
+                    preview.detectedResolution = resMatch[1];
+                    changed = true;
+                }
+                if (fpsMatch && fpsMatch[1] && !preview.detectedFramerate) {
+                    preview.detectedFramerate = `${Math.round(parseFloat(fpsMatch[1]))} fps`;
+                    changed = true;
+                }
+                if (/frame=\s*\d+/i.test(rawStr)) {
+                    if (!preview.hasSignal) {
+                        preview.hasSignal = true;
+                        changed = true;
+                    }
+                }
+                if (changed && activeDevicePreviewState?.previewId === previewId) {
+                    activeDevicePreviewState.detectedResolution = preview.detectedResolution;
+                    activeDevicePreviewState.detectedFramerate = preview.detectedFramerate;
+                    activeDevicePreviewState.hasSignal = preview.hasSignal;
+                    broadcastDevicePreviewState(activeDevicePreviewState);
+                }
+            }
         });
-        proc.on('error', error => { preview.lastError = error.message; });
+        proc.on('error', error => { preview.lastError = error.message; preview.hasSignal = false; });
         proc.on('close', () => {
             preview.closed = true;
+            preview.hasSignal = false;
             if (preview.expiryTimer) clearTimeout(preview.expiryTimer);
             if (devicePreviewProcesses.get(previewId) === preview) devicePreviewProcesses.delete(previewId);
+            if (activeDevicePreviewState?.previewId === previewId) {
+                activeDevicePreviewState = { active: false, hasSignal: false };
+                broadcastDevicePreviewState(activeDevicePreviewState);
+            }
             scheduleDevicePreviewCleanup(outputDir);
         });
 
@@ -1491,22 +1878,50 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
             await waitForDevicePreview(preview, playlistPath);
         } catch (error) {
             stopDevicePreview(previewId);
-            return res.status(422).json({ error: error.message || 'Unable to start capture device preview' });
+            return res.status(422).json({ error: formatUserFriendlyFfmpegError(error.message) });
         }
 
-        res.json({ success: true, previewId, hlsUrl: `/hls/device-preview/${previewId}/index.m3u8` });
+        const hlsUrl = `/hls/device-preview/${previewId}/index.m3u8`;
+        activeDevicePreviewState = {
+            active: true,
+            previewId,
+            videoDevice,
+            audioDevice,
+            hlsUrl,
+            startedAt: Date.now(),
+            resolution: preview.detectedResolution || resolution,
+            framerate: preview.detectedFramerate ? parseInt(preview.detectedFramerate) : framerate,
+            detectedResolution: preview.detectedResolution,
+            detectedFramerate: preview.detectedFramerate,
+            hasSignal: true,
+        };
+        broadcastDevicePreviewState(activeDevicePreviewState);
+
+        res.json({
+            success: true,
+            previewId,
+            hlsUrl,
+            videoDevice,
+            audioDevice,
+            detectedResolution: preview.detectedResolution,
+            detectedFramerate: preview.detectedFramerate,
+            hasSignal: true,
+        });
     } catch (error) {
-        if (previewId) stopDevicePreview(previewId);
-        else if (outputDir) scheduleDevicePreviewCleanup(outputDir);
-        res.status(500).json({ error: error.message || 'Unable to start capture device preview' });
+        res.status(500).json({ error: formatUserFriendlyFfmpegError(error.message) });
     }
 });
 
 app.delete('/api/ingest/device-preview/:previewId', authMiddleware, (req, res) => {
     const preview = devicePreviewProcesses.get(req.params.previewId);
-    if (!preview) return res.json({ success: true });
-    if (preview.owner !== req.user.sub) return res.status(403).json({ error: 'This preview belongs to another user' });
+    if (!preview) {
+        activeDevicePreviewState = { active: false };
+        broadcastDevicePreviewState(activeDevicePreviewState);
+        return res.json({ success: true });
+    }
     stopDevicePreview(req.params.previewId);
+    activeDevicePreviewState = { active: false };
+    broadcastDevicePreviewState(activeDevicePreviewState);
     res.json({ success: true });
 });
 
@@ -1650,15 +2065,20 @@ const normalizeRecordingOptions = (input = {}) => {
 };
 
 const recordingInputArgs = (inputUrl, options) => {
+    if (inputUrl && (inputUrl.endsWith('.m3u8') || inputUrl.includes('index.m3u8') || inputUrl.startsWith('rtmp://') || inputUrl.startsWith('http://') || inputUrl.startsWith('https://') || inputUrl.startsWith('srt://'))) {
+        if (inputUrl.includes('.m3u8')) {
+            return ['-live_start_index', '-2', '-i', inputUrl];
+        }
+        return ['-i', inputUrl];
+    }
     if (options.sourceType !== 'device') return ['-i', inputUrl];
     if (!options.videoDevice && !options.audioDevice) throw new Error('Select at least one video or audio capture device');
-    const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : 50;
     if (process.platform === 'win32') {
         const source = [
             options.videoDevice ? `video=${options.videoDevice}` : '',
             options.audioDevice ? `audio=${options.audioDevice}` : '',
         ].filter(Boolean).join(':');
-        const args = ['-framerate', String(targetFps), '-thread_queue_size', '4096', '-f', 'dshow', '-rtbufsize', '2048M'];
+        const args = ['-thread_queue_size', '2048', '-f', 'dshow', '-rtbufsize', '1024M'];
         args.push('-i', source);
         return args;
     }
@@ -1684,13 +2104,14 @@ const recordingInputArgs = (inputUrl, options) => {
 };
 
 const recordingArgs = (inputUrl, filePath, options) => {
-    const isDevice = options.sourceType === 'device';
+    const isDeviceDirect = options.sourceType === 'device' && !inputUrl.includes('.m3u8');
+    const isHlsInput = inputUrl && inputUrl.includes('.m3u8');
     const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : 50;
     const args = [
         '-y',
         '-hide_banner',
         '-loglevel', 'warning',
-        ...(isDevice ? ['-fflags', '+genpts+discardcorrupt', '-avoid_negative_ts', 'make_zero'] : []),
+        ...(isDeviceDirect ? ['-fflags', '+genpts+discardcorrupt', '-avoid_negative_ts', 'make_zero'] : []),
         ...recordingInputArgs(inputUrl, options),
         '-map', '0:v:0?',
         '-map', '0:a:0?',
@@ -1706,33 +2127,45 @@ const recordingArgs = (inputUrl, filePath, options) => {
         } else {
             args.push('-b:v', `${options.videoBitrate}k`, '-maxrate', `${options.rateControl === 'cbr' ? options.videoBitrate : options.maxBitrate}k`, '-bufsize', `${options.maxBitrate * 2}k`);
         }
-        if (options.preset) args.push('-preset', options.preset);
-        if (videoEncoder === 'libx264') {
+        if (videoEncoder === 'libx264' || videoEncoder === 'libx265') {
+            if (options.preset) args.push('-preset', options.preset);
             args.push('-tune', 'zerolatency');
-        } else if (videoEncoder === 'h264_nvenc') {
-            args.push('-tune', 'll', '-zerolatency', '1');
+        } else if (videoEncoder === 'h264_nvenc' || videoEncoder === 'hevc_nvenc') {
+            const nvMap = { ultrafast: 'llhp', fast: 'fast', medium: 'medium', slow: 'slow', p1: 'llhp', p2: 'fast', p3: 'fast', p4: 'medium', p5: 'slow', p6: 'slow', p7: 'hq' };
+            args.push('-preset', nvMap[options.preset] || 'medium', '-zerolatency', '1');
+        } else if (videoEncoder.includes('qsv')) {
+            const qsvMap = { ultrafast: 'veryfast', fast: 'faster', medium: 'medium', slow: 'veryslow' };
+            args.push('-preset', qsvMap[options.preset] || 'medium');
+        } else if (videoEncoder.includes('amf')) {
+            args.push('-quality', options.preset === 'slow' ? 'quality' : options.preset === 'ultrafast' ? 'speed' : 'balanced');
         }
         const vfFilters = [];
-        if (isDevice) {
+        if (isDeviceDirect) {
             vfFilters.push('yadif=0:-1:1', `fps=${targetFps}`, `setpts=N/(${targetFps}*TB)`);
         }
         if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
             vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
-        } else if (isDevice) {
+        } else if (isDeviceDirect) {
             vfFilters.push('scale=trunc(iw/2)*2:trunc(ih/2)*2');
         }
         if (vfFilters.length > 0) {
             args.push('-vf', vfFilters.join(','));
         }
         args.push('-r', String(targetFps));
-        args.push('-fps_mode:v', 'cfr');
+        args.push('-vsync', '1');
         args.push('-g', String(options.gopSize || 60), '-keyint_min', '25', '-sc_threshold', '0', '-pix_fmt', options.pixelFormat || 'yuv420p');
         args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
-        if (isDevice) {
+        if (isDeviceDirect) {
             args.push('-af', 'asetpts=PTS-STARTPTS,aresample=async=1000:first_pts=0');
         }
     }
-    if (filePath.endsWith('.mp4') || filePath.endsWith('.mov')) args.push('-movflags', '+faststart');
+    if (filePath.endsWith('.mp4') || filePath.endsWith('.mov')) {
+        args.push('-movflags', '+faststart+frag_keyframe+empty_moov+default_base_moof');
+    } else if (filePath.endsWith('.ts')) {
+        args.push('-mpegts_flags', '+resend_headers', '-mpegts_copyts', '1');
+    } else if (filePath.endsWith('.flv')) {
+        args.push('-f', 'flv');
+    }
     args.push(filePath);
     return args;
 };
@@ -1746,10 +2179,40 @@ const recordingExecutionArgs = (inputUrl, outputs, options) => {
     const muxers = { mp4: 'mp4', mkv: 'matroska', mov: 'mov', ts: 'mpegts', flv: 'flv' };
     const teeSpec = outputs.map(output => {
         const safePath = output.filePath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/\|/g, '\\|');
-        return `[f=${muxers[output.format] || 'mp4'}:onfail=ignore]${safePath}`;
+        let extraMuxFlags = '';
+        if (output.format === 'mp4' || output.format === 'mov') {
+            extraMuxFlags = ':movflags=+frag_keyframe+empty_moov+default_base_moof';
+        } else if (output.format === 'ts') {
+            extraMuxFlags = ':mpegts_flags=+resend_headers:mpegts_copyts=1';
+        }
+        return `[f=${muxers[output.format] || 'mp4'}${extraMuxFlags}:onfail=ignore]${safePath}`;
     }).join('|');
     args.push('-flags', '+global_header', '-f', 'tee', teeSpec);
     return args;
+};
+
+let isNvidiaSupported = null;
+const checkNvidiaSupport = () => {
+    if (isNvidiaSupported !== null) return isNvidiaSupported;
+    try {
+        execFileSync(ffmpegPath, ['-hide_banner', '-f', 'lavfi', '-i', 'nullsrc=s=64x64:d=0.1', '-c:v', 'h264_nvenc', '-f', 'null', '-'], { stdio: 'ignore', windowsHide: true });
+        isNvidiaSupported = true;
+    } catch (e) {
+        isNvidiaSupported = false;
+    }
+    return isNvidiaSupported;
+};
+
+let isAmdSupported = null;
+const checkAmdSupport = () => {
+    if (isAmdSupported !== null) return isAmdSupported;
+    try {
+        execFileSync(ffmpegPath, ['-hide_banner', '-f', 'lavfi', '-i', 'nullsrc=s=64x64:d=0.1', '-c:v', 'h264_amf', '-f', 'null', '-'], { stdio: 'ignore', windowsHide: true });
+        isAmdSupported = true;
+    } catch (e) {
+        isAmdSupported = false;
+    }
+    return isAmdSupported;
 };
 
 const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
@@ -1759,18 +2222,39 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     if (activeRecordings.has(key)) throw new Error('Recording already active');
 
     const options = normalizeRecordingOptions(rawOptions);
-    if (options.sourceType === 'device') {
-        for (const [pId] of devicePreviewProcesses.entries()) {
-            stopDevicePreview(pId);
-        }
+    if (options.encoder === 'nvidia' && !checkNvidiaSupport()) {
+        throw new Error('NVIDIA NVENC hardware encoder is not supported on this machine (nvcuda.dll not found). Please select AMD AMF or CPU encoder in recording settings.');
     }
+    if (options.encoder === 'amd' && !checkAmdSupport()) {
+        throw new Error('AMD AMF hardware encoder is not supported or driver is not installed on this machine. Please select CPU encoder in recording settings.');
+    }
+    let inputUrl = '';
+    if (options.sourceType === 'device') {
+        let activePreview = null;
+        for (const [pId, prev] of devicePreviewProcesses.entries()) {
+            if (!prev.closed && (!options.videoDevice || prev.videoDevice === options.videoDevice) && (!options.audioDevice || prev.audioDevice === options.audioDevice)) {
+                activePreview = { pId, ...prev };
+                break;
+            }
+        }
+        if (activePreview) {
+            inputUrl = `http://127.0.0.1:${runtimeSettings.mediaPort}/hls/device-preview/${activePreview.pId}/index.m3u8`;
+            const originalPrev = devicePreviewProcesses.get(activePreview.pId);
+            if (originalPrev) {
+                originalPrev.inUseByRecording = true;
+                if (originalPrev.expiryTimer) clearTimeout(originalPrev.expiryTimer);
+            }
+        }
+    } else {
+        inputUrl = `rtmp://127.0.0.1:${getSettings().rtmpPort}/${appName}/${stream}`;
+    }
+
     const timestamp = Date.now();
     const startTime = new Date(timestamp).toISOString();
     const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDINGS_DIR;
     const dir = options.sourceType === 'device' ? targetDir : path.join(targetDir, appName, stream);
     fs.mkdirSync(dir, { recursive: true });
-    if (options.sourceType === 'device' && options.encoder === 'copy') options.encoder = 'cpu';
-    const inputUrl = options.sourceType === 'device' ? '' : `rtmp://127.0.0.1:${getSettings().rtmpPort}/${appName}/${stream}`;
+    if (options.sourceType === 'device' && !inputUrl && options.encoder === 'copy') options.encoder = 'cpu';
 
     const fileBase = recordingFileBase(options.fileName, stream, timestamp);
     const outputs = options.formats.map(format => {
@@ -1795,13 +2279,20 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
         if (message) console.error(`[Recording][${key}] ${message}`);
     });
     proc.on('close', () => {
-        for (const output of outputs) {
-            let size = 0;
-            try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
-            db.prepare('UPDATE stream_recordings SET end_time = COALESCE(end_time, ?), size = ? WHERE id = ?')
-                .run(new Date().toISOString(), size, output.recordId);
-        }
-        activeRecordings.delete(key);
+        setTimeout(() => {
+            for (const output of outputs) {
+                let size = 0;
+                try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
+                db.prepare('UPDATE stream_recordings SET end_time = COALESCE(end_time, ?), size = ? WHERE id = ?')
+                    .run(new Date().toISOString(), size, output.recordId);
+            }
+            activeRecordings.delete(key);
+            for (const [pId, prev] of devicePreviewProcesses.entries()) {
+                if (prev.closedByUI && (!options.videoDevice || prev.videoDevice === options.videoDevice)) {
+                    stopDevicePreview(pId, true);
+                }
+            }
+        }, 150);
     });
     return active;
 };
@@ -1908,13 +2399,28 @@ const finishRecording = (key, signal = 'SIGTERM', forceComplete = false) => {
     const data = activeRecordings.get(key);
     if (!data) return null;
     activeRecordings.delete(key);
-    try { if (!data.outputs[0]?.proc.killed) data.outputs[0]?.proc.kill(signal); } catch (e) { }
+
+    const proc = data.outputs[0]?.proc;
+    if (proc && !proc.killed) {
+        try {
+            if (proc.stdin && proc.stdin.writable) {
+                proc.stdin.write('q\n');
+                proc.stdin.end();
+            } else {
+                proc.kill('SIGINT');
+            }
+        } catch (e) {
+            try { proc.kill(signal); } catch (_) {}
+        }
+        setTimeout(() => {
+            try { if (!proc.killed) proc.kill('SIGKILL'); } catch (_) {}
+        }, 2500);
+    }
 
     const startTime = new Date(data.startTime).getTime();
     const now = Date.now();
     const durationMs = now - startTime;
     const minDurationMs = 1000;
-    const minSizeBytes = 0;
 
     if (forceComplete || durationMs >= minDurationMs) {
         const endTime = new Date().toISOString();
@@ -1926,6 +2432,14 @@ const finishRecording = (key, signal = 'SIGTERM', forceComplete = false) => {
         console.log(`[Recording] Completed ${key} (${data.outputs.length} format(s), duration: ${durationMs}ms)`);
     } else {
         console.log(`[Recording] Marking ${key} as interrupted (duration: ${durationMs}ms)`);
+    }
+
+    if (data.options?.sourceType === 'device') {
+        for (const [pId, prev] of devicePreviewProcesses.entries()) {
+            if (prev.closedByUI && (!data.options.videoDevice || prev.videoDevice === data.options.videoDevice)) {
+                stopDevicePreview(pId, true);
+            }
+        }
     }
 
     return data;
@@ -2652,6 +3166,19 @@ app.put('/api/ingest/record/config', authMiddleware, (req, res) => {
 app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async (req, res) => {
     const { app: appName, stream, ...requestedOptions } = req.body || {};
     if (!appName || !stream) return res.status(400).json({ error: 'app and stream are required' });
+
+    // Enforce recording device limit from license
+    const license = getLicense();
+    const maxDevices = license.maxRecordingDevices || 5;
+    const currentRecordingCount = activeRecordings.size;
+    if (currentRecordingCount >= maxDevices) {
+        return res.status(403).json({
+            error: `Recording device limit reached (${currentRecordingCount}/${maxDevices}). Upgrade your license for more simultaneous recordings.`,
+            currentCount: currentRecordingCount,
+            maxDevices,
+        });
+    }
+
     const liveIngestSelected = activeSessions.has(getRecordingKey(appName, stream));
     const options = liveIngestSelected
         ? { ...requestedOptions, sourceType: 'ingest', videoDevice: '', audioDevice: '' }
@@ -2662,20 +3189,6 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         if (options.videoDevice && !devices.video.includes(options.videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
         if (options.audioDevice && !devices.audio.includes(options.audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
 
-        // Auto-close any active device preview holding the hardware capture device and allow driver lock release
-        let stoppedAny = false;
-        for (const [previewId, preview] of devicePreviewProcesses) {
-            if (preview.videoDevice === options.videoDevice || preview.audioDevice === options.audioDevice ||
-                resolveCaptureDevice(devices, preview.videoDevice) === options.videoDevice ||
-                resolveCaptureDevice(devices, preview.audioDevice) === options.audioDevice) {
-                stopDevicePreview(previewId);
-                stoppedAny = true;
-            }
-        }
-        if (stoppedAny) {
-            await new Promise(resolve => setTimeout(resolve, 600));
-        }
-
         if (options.videoDevice) options.videoDevice = resolveCaptureDevice(devices, options.videoDevice);
         if (options.audioDevice) options.audioDevice = resolveCaptureDevice(devices, options.audioDevice);
     }
@@ -2684,7 +3197,7 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         await new Promise(resolve => setTimeout(resolve, 1800));
         const current = activeRecordings.get(getRecordingKey(active.appName, active.stream));
         if (!current || active.outputs[0]?.proc.exitCode !== null) {
-            return res.status(422).json({ error: active.lastError || 'FFmpeg could not open the selected source or encoder' });
+            return res.status(422).json({ error: formatUserFriendlyFfmpegError(active.lastError) || 'FFmpeg could not open the selected source or encoder' });
         }
         res.status(201).json({ success: true, message: 'Recording started', recordIds: active.outputs.map(item => item.recordId), recording: getActiveRecordingPayload(active.appName, active.stream) });
     } catch (error) {
@@ -2902,6 +3415,12 @@ wss.on('connection', async (ws, request) => {
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'capture_devices', payload: devices }));
             ws.send(JSON.stringify({ type: 'capture_devices_response', payload: devices }));
+            if (activeDevicePreviewState && activeDevicePreviewState.active) {
+                const preview = devicePreviewProcesses.get(activeDevicePreviewState.previewId);
+                if (preview && !preview.closed) {
+                    ws.send(JSON.stringify({ type: 'device_preview_state', payload: activeDevicePreviewState }));
+                }
+            }
         }
     }).catch(() => {});
     ws.on('message', async (data) => {
@@ -2933,7 +3452,15 @@ wss.on('connection', async (ws, request) => {
             }
             try {
                 const devices = await scanCaptureDevices({ refresh: message.payload?.refresh === true });
-                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'capture_devices', payload: devices }));
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'capture_devices', payload: devices }));
+                    if (activeDevicePreviewState && activeDevicePreviewState.active) {
+                        const preview = devicePreviewProcesses.get(activeDevicePreviewState.previewId);
+                        if (preview && !preview.closed) {
+                            ws.send(JSON.stringify({ type: 'device_preview_state', payload: activeDevicePreviewState }));
+                        }
+                    }
+                }
             } catch (error) {
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'capture_devices_error', payload: { error: error.message || 'Unable to detect capture devices' } }));
             }
@@ -3044,6 +3571,16 @@ const startIngestStatsBroadcast = () => {
                 broadcastCaptureDevices(devices);
                 broadcastDashboardOverview(buildDashboardOverview(ingest.streams || {}));
 
+                if (activeDevicePreviewState && activeDevicePreviewState.active) {
+                    const preview = devicePreviewProcesses.get(activeDevicePreviewState.previewId);
+                    if (preview && !preview.closed) {
+                        broadcastDevicePreviewState(activeDevicePreviewState);
+                    } else {
+                        activeDevicePreviewState = { active: false };
+                        broadcastDevicePreviewState(activeDevicePreviewState);
+                    }
+                }
+
                 if (Object.keys(ingest.streams || {}).length > 0) {
                     console.log(`[WS Broadcast] Sending ${Object.keys(ingest.streams).length} active streams`);
                 }
@@ -3133,44 +3670,7 @@ mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
     thumbnail.on('error', () => { if (!res.headersSent) res.status(500).end(); });
     req.on('close', () => { if (!res.writableEnded && !thumbnail.killed) thumbnail.kill('SIGTERM'); });
 });
-mediaApp.get('/recording-preview/:id', (req, res) => {
-    const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(req.params.id);
-    if (!recording || !fs.existsSync(recording.file_path)) return res.status(404).json({ error: 'Recording file not found' });
-    const requestedStart = Number(req.query.start || 0);
-    const previewStart = Number.isFinite(requestedStart) ? Math.max(0, Math.min(requestedStart, 604800)) : 0;
-
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Disposition', `inline; filename="preview-${recording.id}.mp4"`);
-
-    const args = [
-        '-hide_banner', '-loglevel', 'error',
-        ...(previewStart > 0 ? ['-ss', String(previewStart)] : []),
-        '-i', recording.file_path,
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-        '-pix_fmt', 'yuv420p', '-g', '30',
-        '-c:a', 'aac', '-b:a', '128k',
-        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-        '-f', 'mp4', 'pipe:1',
-    ];
-    const preview = spawn(ffmpegPath, args, { windowsHide: true });
-    let stderr = '';
-    preview.stderr.on('data', data => { stderr = `${stderr}${data}`.slice(-2000); });
-    preview.stdout.pipe(res);
-    preview.on('error', error => {
-        console.error(`[Preview] Failed to start recording ${recording.id}:`, error);
-        if (!res.headersSent) res.status(500).end();
-        else res.end();
-    });
-    preview.on('close', code => {
-        if (code && stderr) console.error(`[Preview] Recording ${recording.id}: ${stderr.trim()}`);
-        if (!res.writableEnded) res.end();
-    });
-    req.on('close', () => {
-        try { if (!preview.killed) preview.kill('SIGTERM'); } catch (e) { }
-    });
-});
+mediaApp.get('/recording-preview/:id', streamRecordingPreviewHandler);
 mediaApp.use('/vod', express.static(VOD_DIR));
 
 // Explicit route for /live/<stream>/index.m3u8 with fallback path search

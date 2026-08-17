@@ -272,7 +272,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
 
       {/* Active Master Recording Status Banner */}
       {overview.activeRecordingsList && overview.activeRecordingsList.length > 0 && (
-        <div className="rounded-xl border border-rose-200 bg-linear-to-r from-rose-50/90 via-white to-rose-50/50 p-4 shadow-sm dark:border-rose-900/60 dark:from-rose-950/30 dark:via-[#190E28] dark:to-rose-950/20">
+        <div className="rounded-xl border border-rose-200 bg-rose-50/90 p-4 shadow-sm dark:border-rose-900/60 dark:bg-[#1E0C22]">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-rose-100 pb-3 dark:border-rose-900/40">
             <div className="flex items-center gap-2.5">
               <span className="relative flex h-3 w-3">

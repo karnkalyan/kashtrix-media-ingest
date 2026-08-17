@@ -47,6 +47,7 @@ export enum Protocol {
   FACEBOOK = 'facebook',
   TWITCH = 'twitch',
   RECORDING = 'recording',
+  DECKLINK = 'decklink',
   CUSTOM = 'custom',
 }
 
@@ -144,6 +145,8 @@ export interface ChannelDestination {
   playbackUrl?: string;
   streamKey?: string;
   recording?: RecordingOptions;
+  decklinkPort?: 'hdmi' | 'sdi' | 'optical_sdi' | 'component' | 'composite';
+  decklinkDevice?: string;
 }
 
 export interface LicenseInfo {
@@ -156,6 +159,7 @@ export interface LicenseInfo {
   hardwareId?: string;
   hardwareBound?: boolean;
   hardwareMatch?: boolean;
+  maxRecordingDevices?: number;
 }
 
 export interface AppSettings {
