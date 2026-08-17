@@ -35,17 +35,30 @@ function parseDeckLink(output) {
 
         if (!readingDevices) continue;
 
-        // FFmpeg 8 prints: * <internal handle> [<display name>] (video, audio)
-        // The leading '*' is optional and marks FFmpeg's default device.
-        const match = line.match(/^\s*\*?\s*\S+\s+\[([^\]\r\n]+)\]\s+\(\s*video\s*,\s*audio\s*\)\s*$/i);
-        if (match) {
-            const displayName = match[1].trim();
-            if (displayName && !video.includes(displayName)) {
-                video.push(displayName);
-                audio.push(displayName);
-            }
+        // FFmpeg 8 examples:
+        // 75:05326625:00000000 [Intensity Pro 4K] (none)
+        // * 75:xxxxxxxx:00000000 [DeckLink Device] (video, audio)
+        //
+        // Do not require "(video, audio)" because some DeckLink SDK /
+        // driver combinations report "(none)" even though the device
+        // is correctly enumerated.
+        const match = line.match(
+            /^\s*\*?\s*(\S+)\s+\[([^\]\r\n]+)\]\s+\(([^)]*)\)\s*$/
+        );
+
+        if (!match) continue;
+
+        const displayName = match[2].trim();
+
+        if (displayName && !video.includes(displayName)) {
+            video.push(displayName);
+        }
+
+        if (displayName && !audio.includes(displayName)) {
+            audio.push(displayName);
         }
     }
+
     return { video, audio };
 }
 
