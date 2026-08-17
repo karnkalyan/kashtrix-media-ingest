@@ -435,13 +435,13 @@ app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
 const serveRecordingFile = (req, res, next) => {
     const rawPath = decodeURIComponent(req.path || '').replace(/^\/+/, '');
     if (!rawPath) return next();
-    const primaryPath = path.join(RECORDED_DIR, rawPath);
+    const primaryPath = path.join(RECORDINGS_DIR, rawPath);
     if (fs.existsSync(primaryPath) && fs.statSync(primaryPath).isFile()) {
         return res.sendFile(primaryPath);
     }
-    const fallbackPath = path.join(FALLBACK_RECORDINGS_DIR, rawPath);
-    if (fs.existsSync(fallbackPath) && fs.statSync(fallbackPath).isFile()) {
-        return res.sendFile(fallbackPath);
+    const secondaryPath = path.join(RECORDED_DIR, rawPath);
+    if (fs.existsSync(secondaryPath) && fs.statSync(secondaryPath).isFile()) {
+        return res.sendFile(secondaryPath);
     }
     const fileName = path.basename(rawPath);
     try {
@@ -465,16 +465,16 @@ const serveRecordingFile = (req, res, next) => {
             }
             return null;
         };
-        const found = findFile(RECORDED_DIR) || findFile(FALLBACK_RECORDINGS_DIR);
+        const found = findFile(RECORDINGS_DIR) || findFile(RECORDED_DIR);
         if (found) return res.sendFile(found);
     } catch (e) {}
     next();
 };
 
-app.use('/recorded', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/media/recorded', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/media/recordings', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/recordings', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/recorded', express.static(RECORDED_DIR, hlsStaticOptions), express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/media/recorded', express.static(RECORDED_DIR, hlsStaticOptions), express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
@@ -1459,7 +1459,7 @@ const recordingInputArgs = (inputUrl, options) => {
 
 const recordingArgs = (inputUrl, filePath, options) => {
     const isDevice = options.sourceType === 'device';
-    const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : (isDevice ? 50 : 0);
+    const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : 50;
     const args = [
         '-y',
         '-hide_banner',
@@ -1470,9 +1470,6 @@ const recordingArgs = (inputUrl, filePath, options) => {
         '-map', '0:a:0?',
         '-max_muxing_queue_size', '8192'
     ];
-    if (isDevice) {
-        args.push('-fps_mode', 'cfr');
-    }
     if (options.encoder === 'copy') {
         args.push('-c', 'copy');
     } else {
@@ -1491,7 +1488,7 @@ const recordingArgs = (inputUrl, filePath, options) => {
         }
         const vfFilters = [];
         if (isDevice) {
-            vfFilters.push('yadif=0:-1:1', 'setpts=PTS-STARTPTS');
+            vfFilters.push('yadif=0:-1:1', `fps=${targetFps}`, `setpts=N/(${targetFps}*TB)`);
         }
         if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
             vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
@@ -1501,9 +1498,8 @@ const recordingArgs = (inputUrl, filePath, options) => {
         if (vfFilters.length > 0) {
             args.push('-vf', vfFilters.join(','));
         }
-        if (targetFps > 0) {
-            args.push('-r', String(targetFps));
-        }
+        args.push('-r', String(targetFps));
+        args.push('-fps_mode:v', 'cfr');
         args.push('-g', String(options.gopSize || 60), '-keyint_min', '25', '-sc_threshold', '0', '-pix_fmt', options.pixelFormat || 'yuv420p');
         args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
         if (isDevice) {
@@ -2812,10 +2808,10 @@ mediaApp.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 mediaApp.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Serve recordings and media static paths
-mediaApp.use('/recorded', express.static(RECORDED_DIR), serveRecordingFile);
-mediaApp.use('/media/recorded', express.static(RECORDED_DIR), serveRecordingFile);
-mediaApp.use('/media/recordings', express.static(RECORDED_DIR), serveRecordingFile);
-mediaApp.use('/recordings', express.static(RECORDED_DIR), serveRecordingFile);
+mediaApp.use('/recordings', express.static(RECORDINGS_DIR), express.static(RECORDED_DIR), serveRecordingFile);
+mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR), express.static(RECORDED_DIR), serveRecordingFile);
+mediaApp.use('/recorded', express.static(RECORDED_DIR), express.static(RECORDINGS_DIR), serveRecordingFile);
+mediaApp.use('/media/recorded', express.static(RECORDED_DIR), express.static(RECORDINGS_DIR), serveRecordingFile);
 mediaApp.use('/media', express.static(MEDIA_ROOT));
 mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
     const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(req.params.id);
