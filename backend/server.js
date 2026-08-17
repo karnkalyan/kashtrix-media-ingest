@@ -153,7 +153,7 @@ const normalizeStoredChannels = async () => {
 };
 await normalizeStoredChannels();
 
-// Fix any unclosed or dangling recordings on startup
+// Fix any unclosed or dangling recordings and clean up duplicates on startup
 try {
     const unclosedRecordings = db.prepare('SELECT id, file_path, start_time, end_time, size FROM stream_recordings WHERE end_time IS NULL').all();
     for (const rec of unclosedRecordings) {
@@ -168,6 +168,45 @@ try {
         }
         db.prepare('UPDATE stream_recordings SET end_time = ?, size = ? WHERE id = ?').run(endTime, size, rec.id);
     }
+
+    const allRecs = db.prepare('SELECT * FROM stream_recordings ORDER BY id ASC').all();
+    const seenRecFiles = new Set();
+    for (const rec of allRecs) {
+        const key = rec.file_name || rec.file_path;
+        if (key && seenRecFiles.has(key)) {
+            db.prepare('DELETE FROM stream_recordings WHERE id = ?').run(rec.id);
+        } else if (key) {
+            seenRecFiles.add(key);
+        }
+    }
+
+    const syncDiskDir = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                syncDiskDir(fullPath);
+            } else if (entry.isFile() && /\.(mp4|mkv|mov|ts|flv)$/i.test(entry.name)) {
+                const existing = db.prepare('SELECT id FROM stream_recordings WHERE file_name = ? LIMIT 1').get(entry.name);
+                if (!existing) {
+                    try {
+                        const stat = fs.statSync(fullPath);
+                        const startTime = stat.birthtime ? stat.birthtime.toISOString() : stat.mtime.toISOString();
+                        const endTime = stat.mtime ? stat.mtime.toISOString() : startTime;
+                        const ext = path.extname(entry.name).slice(1).toLowerCase();
+                        const devName = entry.name.split('_')[0] || 'device';
+                        db.prepare(`INSERT INTO stream_recordings
+                            (app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                            .run('device', devName, fullPath, entry.name, startTime, endTime, ext, 50000, 192, 'nvidia', 'source', 0, 'device', stat.size, JSON.stringify({ videoDevice: devName }));
+                    } catch (e) {}
+                }
+            }
+        }
+    };
+    syncDiskDir(RECORDED_DIR);
+    syncDiskDir(RECORDINGS_DIR);
 } catch (e) {
     console.error('[DB] Error fixing unclosed recordings on startup:', e);
 }
@@ -1608,40 +1647,18 @@ const getActiveRecordingPayload = (appName, streamName) => {
 };
 
 const listRecordings = (limit = 50) => {
-    // Auto-discover existing files in the recorded and recordings folders
-    try {
-        const scanDir = (dir) => {
-            if (!fs.existsSync(dir)) return;
-            const entries = fs.readdirSync(dir, { withFileTypes: true });
-            for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    scanDir(fullPath);
-                } else if (entry.isFile() && /\.(mp4|mkv|mov|ts|flv)$/i.test(entry.name)) {
-                    const existing = db.prepare('SELECT id FROM stream_recordings WHERE file_name = ? LIMIT 1').get(entry.name);
-                    if (!existing) {
-                        try {
-                            const stat = fs.statSync(fullPath);
-                            const startTime = stat.birthtime ? stat.birthtime.toISOString() : stat.mtime.toISOString();
-                            const endTime = stat.mtime ? stat.mtime.toISOString() : startTime;
-                            const ext = path.extname(entry.name).slice(1).toLowerCase();
-                            const devName = entry.name.split('_')[0] || 'device';
-                            db.prepare(`INSERT INTO stream_recordings
-                                (app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-                                .run('device', devName, fullPath, entry.name, startTime, endTime, ext, 50000, 192, 'nvidia', 'source', 0, 'device', stat.size, JSON.stringify({ videoDevice: devName }));
-                        } catch (e) {}
-                    }
-                }
-            }
-        };
-        scanDir(RECORDED_DIR);
-        scanDir(RECORDINGS_DIR);
-    } catch (e) {}
-
     const rows = db.prepare('SELECT * FROM stream_recordings ORDER BY start_time DESC LIMIT ?').all(limit);
     const now = Date.now();
-    return rows.map(row => {
+    const seen = new Set();
+    const uniqueRows = [];
+    for (const row of rows) {
+        const fileKey = row.file_name || row.file_path || String(row.id);
+        if (seen.has(fileKey)) continue;
+        seen.add(fileKey);
+        uniqueRows.push(row);
+    }
+
+    return uniqueRows.map(row => {
         let inputDevice = row.stream || '';
         try {
             if (row.settings_json) {

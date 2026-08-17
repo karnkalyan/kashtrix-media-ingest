@@ -32,7 +32,19 @@ class PrismaStore {
       channels: channels.map(row => ({ id: row.id, data: row.data })),
       licenses: licenses.map(snakeLicense),
       sessions: sessions.map(snakeSession),
-      recordings: recordings.map(snakeRecording)
+      recordings: (() => {
+        const clean = [];
+        const seen = new Set();
+        for (const r of recordings.map(snakeRecording)) {
+          if (!r) continue;
+          const k = r.file_name || r.file_path;
+          if (k && !seen.has(k)) {
+            seen.add(k);
+            clean.push(r);
+          }
+        }
+        return clean;
+      })()
     };
   }
 
@@ -81,6 +93,8 @@ class PrismaStore {
     if (sql.includes('from kv_store')) return this.data.kv.find(row => row.key === args[0]);
     if (sql.includes('from generated_licenses where license_key')) return this.data.licenses.find(row => row.license_key === args[0]);
     if (sql.includes('from stream_recordings where id')) return this.data.recordings.find(row => Number(row.id) === Number(args[0]));
+    if (sql.includes('from stream_recordings where file_name')) return this.data.recordings.find(row => row.file_name === args[0] || (row.file_path && row.file_path.endsWith(args[0])));
+    if (sql.includes('from stream_recordings where file_path')) return this.data.recordings.find(row => row.file_path === args[0]);
     if (sql.includes('count(*)') && sql.includes('stream_recordings')) return { total: this.data.recordings.length, bytes: this.data.recordings.reduce((sum,row) => sum + Number(row.size || 0), 0) };
     if (sql.includes('count(*)') && sql.includes('stream_sessions')) return { total: this.data.sessions.length, incoming_bytes: this.data.sessions.reduce((sum,row) => sum + Number(row.total_bytes || 0), 0), outgoing_bytes: this.data.sessions.reduce((sum,row) => sum + Number(row.outgoing_bytes || 0), 0), viewers: this.data.sessions.reduce((sum,row) => sum + Number(row.max_viewers || 0), 0) };
     return undefined;
@@ -197,13 +211,24 @@ class PrismaStore {
     }
 
     if (sql.startsWith('insert into stream_recordings')) {
-      const [app, stream, file_path, file_name, start_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, settings_json] = args;
+      const isAutoInsert = sql.includes('end_time') && sql.includes('size');
+      let app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json;
+      if (isAutoInsert) {
+        [app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json] = args;
+      } else {
+        [app, stream, file_path, file_name, start_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, settings_json] = args;
+        end_time = null;
+        size = 0;
+      }
+      const existing = this.data.recordings.find(r => r.file_name === file_name || (file_path && r.file_path === file_path));
+      if (existing) return { lastInsertRowid: existing.id };
+
       const id = Math.max(0, ...this.data.recordings.map(r => Number(r.id) || 0)) + 1;
-      const row = { id, app, stream, file_path, file_name, start_time, end_time: null, size: 0, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, settings_json };
+      const row = { id, app, stream, file_path, file_name, start_time, end_time: end_time || null, size: Number(size) || 0, format, video_bitrate: Number(video_bitrate) || 50000, audio_bitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: continuous ? 1 : 0, source_type: source_type || 'device', settings_json };
       this.data.recordings.push(row);
       this.persist(() => this.prisma.streamRecording.create({
-        data: { id, app, stream, filePath: file_path, fileName: file_name, startTime: new Date(start_time), format, videoBitrate: Number(video_bitrate), audioBitrate: Number(audio_bitrate), encoder, resolution, continuous: !!continuous, sourceType: source_type, settingsJson: settings_json }
-      }));
+        data: { id, app, stream, filePath: file_path, fileName: file_name, startTime: new Date(start_time), endTime: end_time ? new Date(end_time) : null, size: BigInt(size || 0), format, videoBitrate: Number(video_bitrate) || 50000, audioBitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: !!continuous, sourceType: source_type || 'device', settingsJson: settings_json }
+      }).catch(() => {}));
       return { lastInsertRowid: id };
     }
 
