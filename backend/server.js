@@ -471,22 +471,78 @@ app.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
+const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
+    if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).send('Recording file not found on disk');
+    }
+    const stat = fs.statSync(targetPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+    const ext = path.extname(targetPath).slice(1).toLowerCase();
+    const mimeTypes = {
+        mp4: 'video/mp4',
+        mov: 'video/quicktime',
+        mkv: 'video/x-matroska',
+        ts: 'video/MP2T',
+        flv: 'video/x-flv',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const fileName = customFileName || path.basename(targetPath);
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    if (isDownload) {
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    } else {
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+    }
+
+    if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        if (start >= fileSize || end >= fileSize || start > end) {
+            res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+            return res.end();
+        }
+        const chunkSize = (end - start) + 1;
+        const fileStream = fs.createReadStream(targetPath, { start, end });
+        res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize,
+            'Content-Type': contentType,
+        });
+        fileStream.pipe(res);
+    } else {
+        res.writeHead(200, {
+            'Content-Length': fileSize,
+            'Content-Type': contentType,
+        });
+        fs.createReadStream(targetPath).pipe(res);
+    }
+};
+
 const serveRecordingFile = (req, res, next) => {
     const rawPath = decodeURIComponent(req.path || '').replace(/^\/+/, '');
     if (!rawPath) return next();
     const primaryPath = path.join(RECORDINGS_DIR, rawPath);
     if (fs.existsSync(primaryPath) && fs.statSync(primaryPath).isFile()) {
-        return res.sendFile(primaryPath);
+        return streamOrDownloadFile(req, res, primaryPath);
     }
     const secondaryPath = path.join(RECORDED_DIR, rawPath);
     if (fs.existsSync(secondaryPath) && fs.statSync(secondaryPath).isFile()) {
-        return res.sendFile(secondaryPath);
+        return streamOrDownloadFile(req, res, secondaryPath);
     }
     const fileName = path.basename(rawPath);
     try {
         const row = db.prepare('SELECT file_path FROM stream_recordings WHERE file_name = ? ORDER BY id DESC LIMIT 1').get(fileName);
         if (row && row.file_path && fs.existsSync(row.file_path)) {
-            return res.sendFile(path.resolve(row.file_path));
+            return streamOrDownloadFile(req, res, path.resolve(row.file_path));
         }
     } catch (e) {}
     try {
@@ -505,21 +561,79 @@ const serveRecordingFile = (req, res, next) => {
             return null;
         };
         const found = findFile(RECORDINGS_DIR) || findFile(RECORDED_DIR);
-        if (found) return res.sendFile(found);
+        if (found) return streamOrDownloadFile(req, res, found);
     } catch (e) {}
     next();
 };
 
-app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/recorded', express.static(RECORDED_DIR, hlsStaticOptions), express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/media/recorded', express.static(RECORDED_DIR, hlsStaticOptions), express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/recordings', serveRecordingFile);
+app.use('/media/recordings', serveRecordingFile);
+app.use('/recorded', serveRecordingFile);
+app.use('/media/recorded', serveRecordingFile);
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
+
+// Direct dedicated recording stream & download routes
+app.get(['/api/ingest/recordings/:id/file', '/api/ingest/recordings/:id/download'], (req, res) => {
+    const { id } = req.params;
+    let targetPath = null;
+    let fileName = null;
+    try {
+        const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(id);
+        if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
+            targetPath = recording.file_path;
+            fileName = recording.file_name;
+        }
+    } catch (e) {}
+
+    if (!targetPath) {
+        const candidates = [
+            path.join(RECORDINGS_DIR, id),
+            path.join(RECORDED_DIR, id),
+        ];
+        for (const c of candidates) {
+            if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+                targetPath = c;
+                fileName = path.basename(c);
+                break;
+            }
+        }
+    }
+
+    if (!targetPath) return res.status(404).send('Recording not found');
+    streamOrDownloadFile(req, res, targetPath, fileName);
+});
+
+app.get('/api/ingest/recordings/file/:fileName', (req, res) => {
+    const fileName = decodeURIComponent(req.params.fileName || '');
+    let targetPath = null;
+    try {
+        const recording = db.prepare('SELECT file_path FROM stream_recordings WHERE file_name = ? ORDER BY id DESC LIMIT 1').get(fileName);
+        if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
+            targetPath = recording.file_path;
+        }
+    } catch (e) {}
+
+    if (!targetPath) {
+        const candidates = [
+            path.join(RECORDINGS_DIR, fileName),
+            path.join(RECORDED_DIR, fileName),
+        ];
+        for (const c of candidates) {
+            if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+                targetPath = c;
+                break;
+            }
+        }
+    }
+
+    if (!targetPath) return res.status(404).send('Recording not found');
+    streamOrDownloadFile(req, res, targetPath, fileName);
+});
 
 const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
 
 const authMiddleware = async (req, res, next) => {
-    if (!req.path.startsWith('/api') || publicPaths.has(req.path) || req.path.startsWith('/api/vod')) return next();
+    if (!req.path.startsWith('/api') || publicPaths.has(req.path) || req.path.startsWith('/api/vod') || req.path.startsWith('/api/ingest/recordings/file/') || req.path.includes('/file') || req.path.includes('/download')) return next();
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     try {
@@ -2234,8 +2348,8 @@ const buildDashboardOverview = (streams = {}) => {
             startTime: active.startTime,
             duration,
             size,
-            encoder: active.options?.encoder || 'cpu',
-            videoBitrate: active.options?.videoBitrate || 12000,
+            encoder: active.options?.encoder || 'nvidia',
+            videoBitrate: active.options?.videoBitrate || 50000,
             resolution: active.options?.resolution || 'source',
             framerate: active.options?.framerate || 50,
             sourceType: active.options?.sourceType || 'device',
@@ -2429,10 +2543,31 @@ app.get('/api/ingest/recordings', authMiddleware, (req, res) => {
 });
 
 app.get('/api/ingest/record/config', authMiddleware, (req, res) => {
-    res.json(getJsonSetting('recording_config', {
-        autoRecord: false, fileName: '{channel}_{date}_{time}', formats: ['mp4'], encoder: 'copy', videoBitrate: 12000,
-        audioBitrate: 192, resolution: 'source', framerate: 0, preset: 'fast', continuous: true,
-    }));
+    const raw = getJsonSetting('recording_config', null);
+    const defaults = {
+        autoRecord: false,
+        fileName: '{channel}_{date}_{time}',
+        formats: ['mp4'],
+        encoder: 'nvidia',
+        videoCodec: 'h264',
+        rateControl: 'cbr',
+        resolution: 'source',
+        framerate: 50,
+        videoBitrate: 50000,
+        maxBitrate: 55000,
+        preset: 'fast',
+        gopSize: 60,
+        pixelFormat: 'yuv420p',
+        audioCodec: 'aac',
+        audioBitrate: 192,
+        sampleRate: 48000,
+        audioChannels: 2,
+        continuous: true,
+    };
+    if (!raw || raw.encoder === 'copy' || !raw.videoBitrate || raw.videoBitrate < 50000) {
+        return res.json({ ...defaults, ...(raw || {}), encoder: 'nvidia', videoBitrate: 50000, maxBitrate: 55000, framerate: 50 });
+    }
+    res.json({ ...defaults, ...raw });
 });
 
 app.put('/api/ingest/record/config', authMiddleware, (req, res) => {

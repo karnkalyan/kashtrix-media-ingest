@@ -54,13 +54,28 @@ const getRecordingFormat = (item: any): string => {
 
 const getRecordingUrl = (item: any): string => {
   if (!item) return '';
-  const app = item.app || 'device';
-  const stream = item.stream || 'stream';
+  if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
   const fileName = item.file_name || item.stream;
-  if (app && stream && fileName) {
-    return `/recordings/${encodeURIComponent(app)}/${encodeURIComponent(stream)}/${encodeURIComponent(fileName)}`;
-  }
+  if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
   return `/recordings/${encodeURIComponent(fileName || '')}`;
+};
+
+const getRecordingDownloadUrl = (item: any): string => {
+  if (!item) return '';
+  if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/download?download=1`;
+  const fileName = item.file_name || item.stream;
+  if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}?download=1`;
+  return `/recordings/${encodeURIComponent(fileName || '')}?download=1`;
+};
+
+const formatDeviceDisplayName = (deviceStr?: string, fileName?: string) => {
+  if (!deviceStr && !fileName) return 'Intensity Pro 4K';
+  const raw = String(deviceStr || '').trim();
+  if (/^75:[0-9a-f:]+/i.test(raw) || raw.toLowerCase() === 'device' || !raw) {
+    if (fileName && fileName.toLowerCase().includes('intensity')) return 'Intensity Pro 4K';
+    return 'Intensity Pro 4K';
+  }
+  return raw.replace(/[-_]+/g, ' ');
 };
 
 interface Props {
@@ -171,6 +186,8 @@ export const IngestServerView: React.FC<Props> = ({
 
   // Recording Library Preview & Filter state
   const [recSearch, setRecSearch] = useState('');
+  const [recPage, setRecPage] = useState(1);
+  const [recPerPage, setRecPerPage] = useState(10);
   const [recPreview, setRecPreview] = useState<any | null>(null);
   const [deletingRec, setDeletingRec] = useState<any | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -633,7 +650,7 @@ export const IngestServerView: React.FC<Props> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E8DFF0]">
-                {filteredRecordings.map((rec: any) => (
+                {filteredRecordings.slice((recPage - 1) * recPerPage, recPage * recPerPage).map((rec: any) => (
                   <tr key={rec.id} className="transition-colors hover:bg-[#F4EEFF]/50">
                     <td className="px-4 py-3 font-semibold text-[#1B1024]">
                       <div className="flex items-center gap-2">
@@ -642,8 +659,8 @@ export const IngestServerView: React.FC<Props> = ({
                       </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-[11px] text-slate-700">
-                      <span className="rounded bg-slate-100 px-2 py-0.5 font-semibold text-slate-800 border border-slate-200">
-                        {rec.input_device || rec.inputDevice || rec.stream || (rec.app === 'device' ? 'Device' : `${rec.app}/${rec.stream}`)}
+                      <span className="rounded bg-violet-50 px-2 py-0.5 font-semibold text-[#6D32D9] border border-violet-200">
+                        {formatDeviceDisplayName(rec.input_device || rec.stream, rec.file_name)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -680,7 +697,7 @@ export const IngestServerView: React.FC<Props> = ({
                       </button>
 
                       <a
-                        href={getRecordingUrl(rec)}
+                        href={getRecordingDownloadUrl(rec)}
                         download={rec.file_name || 'recording.mp4'}
                         target="_blank"
                         rel="noreferrer"
@@ -715,13 +732,75 @@ export const IngestServerView: React.FC<Props> = ({
 
                 {filteredRecordings.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-[#6F6078]">
+                    <td colSpan={8} className="py-8 text-center text-[#6F6078]">
                       No recording archives found. Start a recording above to capture live feeds or device inputs.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Controls Bar */}
+          <div className="flex flex-col gap-3 border-t border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between bg-[#F8F7FA]/60">
+            <div className="flex items-center gap-2 text-[12px] text-[#6F6078]">
+              <span>Showing</span>
+              <span className="font-semibold text-[#1B1024]">
+                {filteredRecordings.length === 0 ? 0 : (recPage - 1) * recPerPage + 1}
+              </span>
+              <span>to</span>
+              <span className="font-semibold text-[#1B1024]">
+                {Math.min(recPage * recPerPage, filteredRecordings.length)}
+              </span>
+              <span>of</span>
+              <span className="font-semibold text-[#1B1024]">{filteredRecordings.length}</span>
+              <span>recordings</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-[12px] text-[#6F6078]">
+                <span>Rows:</span>
+                <select
+                  value={recPerPage}
+                  onChange={e => {
+                    setRecPerPage(Number(e.target.value));
+                    setRecPage(1);
+                  }}
+                  className="h-7 rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] outline-none"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={recPage <= 1}
+                  onClick={() => setRecPage(p => Math.max(1, p - 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] disabled:opacity-40 disabled:hover:bg-white"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+
+                <span className="px-2 text-[11px] font-medium text-[#6F6078]">
+                  Page {recPage} of {Math.max(1, Math.ceil(filteredRecordings.length / recPerPage))}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={recPage >= Math.max(1, Math.ceil(filteredRecordings.length / recPerPage))}
+                  onClick={() => setRecPage(p => Math.min(Math.max(1, Math.ceil(filteredRecordings.length / recPerPage)), p + 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] disabled:opacity-40 disabled:hover:bg-white"
+                  title="Next Page"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
