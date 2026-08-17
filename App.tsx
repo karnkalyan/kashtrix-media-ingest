@@ -1711,8 +1711,10 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Floating Real-time Telemetry HUD accessible across ALL views */}
-      <FloatingTelemetryHud telemetry={telemetry} onNavigate={setActiveView} />
+      {/* Floating Real-time Telemetry HUD accessible across views (hidden on System Monitor page) */}
+      {activeView !== 'monitor' && (
+        <FloatingTelemetryHud telemetry={telemetry} onNavigate={setActiveView} />
+      )}
     </div>
   );
 };
