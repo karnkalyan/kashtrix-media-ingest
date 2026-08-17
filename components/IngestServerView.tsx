@@ -97,6 +97,14 @@ const formatRecordingTime = (startTimeStr?: string) => {
     : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
+const formatRecordingDuration = (seconds = 0) => {
+  const sec = Math.max(0, Math.floor(seconds || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 const formatBytes = (bytes = 0) => {
   if (!bytes) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -249,8 +257,15 @@ export const IngestServerView: React.FC<Props> = ({
       }
     );
 
-    return () => unsubscribe();
-  }, [fetchData, fetchConfig, refreshDevices]);
+    const pollInterval = setInterval(() => {
+      fetchRecordings().catch(() => {});
+    }, 2000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(pollInterval);
+    };
+  }, [fetchData, fetchConfig, refreshDevices, fetchRecordings]);
 
   const saveConfig = async () => {
     setSavingConfig(true);
@@ -603,6 +618,7 @@ export const IngestServerView: React.FC<Props> = ({
                   <th className="px-4 py-3">Format</th>
                   <th className="px-4 py-3">Encoder</th>
                   <th className="px-4 py-3">Resolution</th>
+                  <th className="px-4 py-3">Duration</th>
                   <th className="px-4 py-3">Size</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -624,6 +640,18 @@ export const IngestServerView: React.FC<Props> = ({
                     </td>
                     <td className="px-4 py-3 font-mono text-[#6F6078]">
                       {rec.resolution || '1920x1080'}
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {rec.is_active ? (
+                        <span className="inline-flex items-center gap-1.5 font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px] whitespace-nowrap">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                          REC {formatRecordingDuration(rec.duration || (rec.start_time ? (Date.now() - new Date(rec.start_time).getTime()) / 1000 : 0))}
+                        </span>
+                      ) : (
+                        <span className="text-[#6F6078] text-[11px]">
+                          {formatRecordingDuration(rec.duration || (rec.start_time && rec.end_time ? (new Date(rec.end_time).getTime() - new Date(rec.start_time).getTime()) / 1000 : 0))}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold text-[#1B1024]">
                       {formatBytes(rec.size || 0)}

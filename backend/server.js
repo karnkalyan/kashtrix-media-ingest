@@ -1515,6 +1515,8 @@ const getActiveRecordingPayload = (appName, streamName) => {
     const first = active.outputs[0];
     let size = 0;
     try { if (first && fs.existsSync(first.filePath)) size = fs.statSync(first.filePath).size; } catch (e) { }
+    const startTimeMs = new Date(active.startTime || Date.now()).getTime();
+    const duration = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
     return {
         id: first?.recordId,
         app: appName,
@@ -1524,6 +1526,7 @@ const getActiveRecordingPayload = (appName, streamName) => {
         start_time: active.startTime,
         end_time: null,
         size,
+        duration,
         is_active: true,
         formats: active.options.formats,
         encoder: active.options.encoder,
@@ -1533,13 +1536,16 @@ const getActiveRecordingPayload = (appName, streamName) => {
 
 const listRecordings = (limit = 50) => {
     const rows = db.prepare('SELECT * FROM stream_recordings ORDER BY start_time DESC LIMIT ?').all(limit);
+    const now = Date.now();
     return rows.map(row => {
         const session = activeRecordings.get(getRecordingKey(row.app, row.stream));
         const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id));
         if (session && output) {
             let size = 0;
             try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
-            return { ...row, size, is_active: true, formats: session.options.formats };
+            const startTimeMs = new Date(row.start_time || session.startTime || now).getTime();
+            const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
+            return { ...row, size, duration, is_active: true, formats: session.options.formats };
         }
 
         let size = row.size || 0;
@@ -1556,9 +1562,14 @@ const listRecordings = (limit = 50) => {
             db.prepare('UPDATE stream_recordings SET end_time = ? WHERE id = ?').run(endTime, row.id);
         }
 
+        const startMs = row.start_time ? new Date(row.start_time).getTime() : 0;
+        const endMs = endTime ? new Date(endTime).getTime() : startMs;
+        const duration = startMs && endMs ? Math.max(0, Math.floor((endMs - startMs) / 1000)) : 0;
+
         return {
             ...row,
             size,
+            duration,
             end_time: endTime,
             is_active: false
         };

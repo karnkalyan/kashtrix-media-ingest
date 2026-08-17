@@ -91,6 +91,19 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
   const [recordPreviewModalOpen, setRecordPreviewModalOpen] = useState(false);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+
+  useEffect(() => {
+    let timer: any;
+    if (isRecordingActive) {
+      timer = setInterval(() => {
+        setRecordingElapsed(prev => prev + 1);
+      }, 1000);
+    } else {
+      setRecordingElapsed(0);
+    }
+    return () => clearInterval(timer);
+  }, [isRecordingActive]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
@@ -596,13 +609,22 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[11px] font-semibold text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] hover:bg-[#F4EEFF] dark:hover:bg-[#2D1A45] disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
 
       {isRecordingActive ? (
-        <button
-          type="button"
-          onClick={stopRecording}
-          className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
-        >
-          <FiSquare className="mr-1.5 inline fill-rose-700" /> Stop active recording
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2 rounded-md bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+            <span>RECORDING IN PROGRESS</span>
+            <span className="font-mono text-[12px] bg-rose-700/80 px-2 py-0.5 rounded tracking-wider">
+              {Math.floor(recordingElapsed / 3600).toString().padStart(2, '0')}:{Math.floor((recordingElapsed % 3600) / 60).toString().padStart(2, '0')}:{Math.floor(recordingElapsed % 60).toString().padStart(2, '0')}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={stopRecording}
+            className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+          >
+            <FiSquare className="mr-1.5 inline fill-rose-700" /> Stop recording
+          </button>
+        </div>
       ) : (
         <div className="flex items-center gap-2">
           <button
