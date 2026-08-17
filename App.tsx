@@ -4,7 +4,8 @@ import {
   FiActivity, FiKey, FiList, FiSettings, FiUser, FiUsers, FiCheckCircle,
   FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown, FiChevronLeft, FiChevronRight,
   FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv, FiBell,
-  FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio, FiAward
+  FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio, FiAward,
+  FiLogIn, FiZap, FiLayers
 } from 'react-icons/fi';
 import { FaBroadcastTower } from 'react-icons/fa';
 import ChannelDashboard from './components/JobQueue';
@@ -111,7 +112,7 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
         <div className="absolute -left-20 -top-20 h-96 w-96 rounded-full bg-[#7C3AED]/25 blur-3xl pointer-events-none" />
         <div className="absolute -right-20 -bottom-20 h-96 w-96 rounded-full bg-[#E11D48]/20 blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 max-w-md text-white space-y-6">
+        <div className="relative z-10 max-w-lg text-white space-y-6">
           <div className="inline-flex rounded-2xl bg-white p-4 shadow-2xl backdrop-blur-md border border-white/20 dark:bg-[#190E28] dark:border-[#311B4E]">
             <img
               src="/sidebar-full-logo.png"
@@ -124,56 +125,126 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white font-display">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 px-3 py-1 text-[11px] font-semibold text-[#E2D1F9] backdrop-blur-xs mb-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#10B981] animate-pulse" />
+              <span>Enterprise Media Ingest & Playout</span>
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight text-white font-display">
               Live Streaming • Transcoding • Ingest
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-[#E2D1F9]">
-              Enterprise-grade IPTV management, OTT content delivery, and media infrastructure control plane.
+              Enterprise-grade IPTV management, OTT content delivery, master recording archives, and media infrastructure control plane.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Ultra-Low Latency</span>
-              <p className="text-xs font-semibold text-white mt-0.5">HLS, DASH, RTMP & SRT</p>
+          <div className="grid grid-cols-2 gap-3.5 pt-2">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs flex items-start gap-3">
+              <div className="rounded-lg bg-white/10 p-2 text-[#C4B5FD] shrink-0 mt-0.5">
+                <FaBroadcastTower size={16} />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Ultra-Low Latency</span>
+                <p className="text-xs font-semibold text-white mt-0.5">HLS, DASH, RTMP & SRT</p>
+              </div>
             </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Hardware Transcode</span>
-              <p className="text-xs font-semibold text-white mt-0.5">NVENC, QSV & CPU Copy</p>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs flex items-start gap-3">
+              <div className="rounded-lg bg-white/10 p-2 text-[#C4B5FD] shrink-0 mt-0.5">
+                <FiCpu size={16} />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Hardware Acceleration</span>
+                <p className="text-xs font-semibold text-white mt-0.5">NVENC, AMF, QSV & CPU</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs flex items-start gap-3">
+              <div className="rounded-lg bg-white/10 p-2 text-[#C4B5FD] shrink-0 mt-0.5">
+                <FiArchive size={16} />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">Master Recording</span>
+                <p className="text-xs font-semibold text-white mt-0.5">Broadcast Vault & Preview</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs flex items-start gap-3">
+              <div className="rounded-lg bg-white/10 p-2 text-[#C4B5FD] shrink-0 mt-0.5">
+                <FiShield size={16} />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#C4B5FD]">High Availability</span>
+                <p className="text-xs font-semibold text-white mt-0.5">Real-time Telemetry & Health</p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex w-full lg:w-1/2 xl:w-[45%] items-center justify-center bg-[#F8F7FA] p-6 dark:bg-[#0F0817]">
-        <div className="w-full max-w-[400px]">
-          <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <div className="inline-flex rounded-xl bg-white p-3 shadow-md border border-slate-200 dark:bg-[#190E28] dark:border-[#311B4E]">
-              <img src="/sidebar-full-logo.png" alt="KASHTRIX" className="h-8 w-auto object-contain sidebar-logo login-logo" />
+      {/* Right Login Form Container (Responsive Centered) */}
+      <div className="flex w-full lg:w-1/2 xl:w-[45%] items-center justify-center bg-[#F8F7FA] p-6 sm:p-10 dark:bg-[#0F0817]">
+        <div className="w-full max-w-[420px]">
+          {/* Responsive Centered Logo Header for Mobile & Tablet */}
+          <div className="flex flex-col items-center justify-center text-center mb-8 lg:hidden">
+            <div className="inline-flex rounded-2xl bg-white p-3.5 shadow-xl border border-slate-200 dark:bg-[#190E28] dark:border-[#311B4E] mb-4">
+              <img
+                src="/sidebar-full-logo.png"
+                alt="KASHTRIX StreamOps"
+                className="h-9 w-auto object-contain sidebar-logo login-logo"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = '/logo-full-with text.png';
+                }}
+              />
             </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#F3EEFF] border border-[#DDD6FE] px-3 py-0.5 text-[11px] font-semibold text-[#7C3AED] dark:bg-[#311754] dark:border-[#A78BFA]/30 dark:text-[#C4B5FD] mb-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A] animate-pulse" />
+              <span>StreamOps Control Plane</span>
+            </div>
+            <h2 className="text-2xl font-bold font-display text-[#1B1024] dark:text-white">Welcome back</h2>
+            <p className="mt-1 text-xs text-[#6F6078] dark:text-[#B9A5CD]">Sign in to KASHTRIX StreamOps operations console</p>
           </div>
 
-          <div className="mb-8">
+          {/* Desktop Heading */}
+          <div className="hidden lg:block mb-8">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#F3EEFF] border border-[#DDD6FE] px-3 py-0.5 text-[11px] font-semibold text-[#7C3AED] dark:bg-[#311754] dark:border-[#A78BFA]/30 dark:text-[#C4B5FD] mb-2.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A] animate-pulse" />
+              <span>StreamOps Control Plane</span>
+            </div>
             <h2 className="text-2xl font-bold font-display text-[#1B1024] dark:text-white">Welcome back</h2>
             <p className="mt-1 text-xs text-[#6F6078] dark:text-[#B9A5CD]">Sign in to KASHTRIX StreamOps operations console</p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
+            {/* Username Input with Icon */}
             <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Username</label>
-              <input
-                className={inputClass}
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="Enter your username"
-                autoComplete="username"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Password</label>
+              <label className="mb-1.5 block text-xs font-semibold text-[#1B1024] dark:text-white">
+                Username
+              </label>
               <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#94A3B8] dark:text-[#64748B]">
+                  <FiUser size={15} />
+                </div>
                 <input
-                  className={inputClass}
+                  className="h-10 w-full rounded-xl border border-[#E8DFF0] bg-white pl-9 pr-3 text-xs text-[#1B1024] shadow-2xs outline-none transition-all placeholder:text-[#94A3B8] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/15 dark:bg-[#190E28] dark:border-[#311B4E] dark:text-white dark:placeholder-[#64748B] dark:focus:border-[#A78BFA]"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="Enter your username"
+                  autoComplete="username"
+                />
+              </div>
+            </div>
+
+            {/* Password Input with Icon & Toggle */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-[#1B1024] dark:text-white">
+                Password
+              </label>
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#94A3B8] dark:text-[#64748B]">
+                  <FiLock size={15} />
+                </div>
+                <input
+                  className="h-10 w-full rounded-xl border border-[#E8DFF0] bg-white pl-9 pr-10 text-xs text-[#1B1024] shadow-2xs outline-none transition-all placeholder:text-[#94A3B8] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/15 dark:bg-[#190E28] dark:border-[#311B4E] dark:text-white dark:placeholder-[#64748B] dark:focus:border-[#A78BFA]"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
@@ -183,20 +254,51 @@ const LoginScreen: React.FC<{ onLogin: (username: string, password: string) => P
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#6F6078] hover:text-[#351147] dark:text-[#B9A5CD] dark:hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#94A3B8] hover:text-[#4A1B7A] dark:text-[#64748B] dark:hover:text-[#A78BFA] transition-colors"
+                  title={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? 'Hide' : 'Show'}
+                  {showPassword ? <FiEyeOff size={15} /> : <FiEye size={15} />}
                 </button>
               </div>
             </div>
+
+            {/* Sign In Button */}
             <button
               type="submit"
               disabled={loading}
-              className="mt-2 flex h-9 w-full items-center justify-center rounded-md bg-[#351147] text-xs font-semibold text-white transition-colors hover:bg-[#2B0D3A] dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
+              className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#451874] via-[#351147] to-[#2A0D38] text-xs font-semibold text-white shadow-md transition-all hover:from-[#582092] hover:to-[#38124b] hover:shadow-lg disabled:opacity-70 dark:from-[#7C3AED] dark:to-[#6D32D9] dark:hover:from-[#8B5CF6] dark:hover:to-[#7C3AED]"
             >
-              {loading ? 'Authenticating...' : 'Sign In'}
+              {loading ? (
+                <>
+                  <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <span>Authenticating...</span>
+                </>
+              ) : (
+                <>
+                  <FiLogIn size={15} />
+                  <span>Sign In to Console</span>
+                </>
+              )}
             </button>
           </form>
+
+          {/* Responsive Badges & Security Footer */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2 border-t border-[#E8DFF0] pt-5 text-[11px] text-[#6F6078] dark:border-[#311B4E] dark:text-[#B9A5CD]">
+            <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 shadow-2xs border border-[#E8EDF5] dark:bg-[#190E28] dark:border-[#311B4E]">
+              <FaBroadcastTower className="text-[#E11D48]" size={11} /> Live Ingest
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 shadow-2xs border border-[#E8EDF5] dark:bg-[#190E28] dark:border-[#311B4E]">
+              <FiCpu className="text-[#7C3AED]" size={11} /> GPU Transcode
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 shadow-2xs border border-[#E8EDF5] dark:bg-[#190E28] dark:border-[#311B4E]">
+              <FiShield className="text-[#059669]" size={11} /> Enterprise
+            </span>
+          </div>
+
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-[#94A3B8] dark:text-[#64748B]">
+            <FiLock size={11} />
+            <span>Encrypted Operator Session</span>
+          </div>
         </div>
       </div>
     </div>
