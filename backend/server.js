@@ -879,7 +879,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             if (process.platform !== 'win32') {
                 const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '';
                 const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-                const linuxDeviceFlags = `-thread_queue_size 1024 -f decklink ${formatFlag}${vInputFlag}-i "${resolvedVideo || resolvedAudio || 'Intensity Pro 4K'}"`;
+                const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${resolvedVideo || resolvedAudio || 'Intensity Pro 4K'}"`;
                 if (devUriMatch) {
                     finalCommand = finalCommand.replace(devUriMatch[0], linuxDeviceFlags);
                 } else if (dshowMatch) {
@@ -888,7 +888,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
                     finalCommand = finalCommand.replace(decklinkMatch[0], linuxDeviceFlags);
                 }
             } else {
-                const winDeviceFlags = `-thread_queue_size 1024 -f dshow -rtbufsize 1024M -i video="${resolvedVideo || 'video'}":audio="${resolvedAudio || resolvedVideo || 'audio'}"`;
+                const winDeviceFlags = `-framerate 50 -thread_queue_size 2048 -f dshow -rtbufsize 2048M -i video="${resolvedVideo || 'video'}":audio="${resolvedAudio || resolvedVideo || 'audio'}"`;
                 if (devUriMatch) {
                     finalCommand = finalCommand.replace(devUriMatch[0], winDeviceFlags);
                 } else if (dshowMatch) {
@@ -1415,7 +1415,7 @@ const normalizeRecordingOptions = (input = {}) => {
         audioDevice: String(input.audioDevice || '').trim(),
         videoCodec: input.videoCodec === 'hevc' ? 'hevc' : 'h264',
         rateControl: ['cbr', 'vbr', 'crf'].includes(input.rateControl) ? input.rateControl : 'cbr',
-        maxBitrate: Math.min(150000, Math.max(250, Number(input.maxBitrate) || Number(input.videoBitrate) || 12000)),
+        maxBitrate: Math.min(150000, Math.max(250, Number(input.maxBitrate) || Number(input.videoBitrate) || 15000)),
         crf: Math.min(51, Math.max(0, Number(input.crf) || 20)),
         gopSize: Math.min(600, Math.max(1, Number(input.gopSize) || 60)),
         pixelFormat: ['yuv420p', 'yuv422p', 'yuv444p'].includes(input.pixelFormat) ? input.pixelFormat : 'yuv420p',
@@ -1431,12 +1431,13 @@ const normalizeRecordingOptions = (input = {}) => {
 const recordingInputArgs = (inputUrl, options) => {
     if (options.sourceType !== 'device') return ['-i', inputUrl];
     if (!options.videoDevice && !options.audioDevice) throw new Error('Select at least one video or audio capture device');
+    const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : 50;
     if (process.platform === 'win32') {
         const source = [
             options.videoDevice ? `video=${options.videoDevice}` : '',
             options.audioDevice ? `audio=${options.audioDevice}` : '',
         ].filter(Boolean).join(':');
-        const args = ['-thread_queue_size', '2048', '-f', 'dshow', '-rtbufsize', '2048M'];
+        const args = ['-framerate', String(targetFps), '-thread_queue_size', '4096', '-f', 'dshow', '-rtbufsize', '2048M'];
         args.push('-i', source);
         return args;
     }

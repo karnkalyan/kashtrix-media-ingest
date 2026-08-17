@@ -191,13 +191,13 @@ export const generateCommand = (
     const aDev = (parts[1] || vDev).replace(/^audio=/i, '').trim();
 
     if (isWindows) {
-      inputFlags = `-thread_queue_size 1024 -f dshow -rtbufsize 1024M -i video=${quote(vDev || 'video')}:audio=${quote(aDev || 'audio')}`;
+      inputFlags = `-framerate 50 -thread_queue_size 2048 -f dshow -rtbufsize 2048M -i video=${quote(vDev || 'video')}:audio=${quote(aDev || 'audio')}`;
     } else if (isMac) {
       inputFlags = `-f avfoundation -i ${quote(vDev || '0')}`;
     } else {
       const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '';
       const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-      inputFlags = `-thread_queue_size 1024 -f decklink ${formatFlag}${vInputFlag}-i ${quote(vDev || aDev || 'Intensity Pro 4K')}`;
+      inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(vDev || aDev || 'Intensity Pro 4K')}`;
     }
   } else if (channel.inputType === InputType.VOD) {
     inputFlags = `-re -i ${quote(`${VOD_BASE_PATH}${channel.inputUrl}`)}`;
