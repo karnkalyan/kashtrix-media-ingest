@@ -5,6 +5,123 @@ import DetailDrawer from './ui/DetailDrawer';
 
 type Format = IngestRecordingOptions['formats'][number];
 
+export interface SavedRecordingPreset {
+  id: string;
+  name: string;
+  sourceType: 'device' | 'ingest';
+  videoDevice?: string;
+  audioDevice?: string;
+  selectedStreamKey?: string;
+  config: IngestRecordingOptions;
+  createdAt: string;
+}
+
+const DEFAULT_PRESETS: SavedRecordingPreset[] = [
+  {
+    id: 'preset-decklink-50mbps',
+    name: 'DeckLink Master 1080p50 (50 Mbps NVENC CBR)',
+    sourceType: 'device',
+    videoDevice: 'Intensity Pro 4K',
+    audioDevice: 'Intensity Pro 4K',
+    config: {
+      autoRecord: false,
+      fileName: '{channel}_{date}_{time}',
+      formats: ['mp4'],
+      encoder: 'nvidia',
+      videoCodec: 'h264',
+      rateControl: 'cbr',
+      resolution: 'source',
+      framerate: 50,
+      videoBitrate: 50000,
+      maxBitrate: 55000,
+      preset: 'fast',
+      gopSize: 60,
+      pixelFormat: 'yuv420p',
+      audioCodec: 'aac',
+      audioBitrate: 192,
+      sampleRate: 48000,
+      audioChannels: 2,
+      continuous: true,
+      videoInput: 'hdmi',
+      storageType: 'local',
+      storagePath: '/media/recordings',
+    },
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'preset-broadcast-15mbps',
+    name: 'Broadcast Standard 1080p50 (15 Mbps NVENC)',
+    sourceType: 'device',
+    videoDevice: 'Intensity Pro 4K',
+    audioDevice: 'Intensity Pro 4K',
+    config: {
+      autoRecord: false,
+      fileName: '{channel}_{date}_{time}',
+      formats: ['mp4'],
+      encoder: 'nvidia',
+      videoCodec: 'h264',
+      rateControl: 'cbr',
+      resolution: 'source',
+      framerate: 50,
+      videoBitrate: 15000,
+      maxBitrate: 18000,
+      preset: 'fast',
+      gopSize: 60,
+      pixelFormat: 'yuv420p',
+      audioCodec: 'aac',
+      audioBitrate: 192,
+      sampleRate: 48000,
+      audioChannels: 2,
+      continuous: true,
+      videoInput: 'hdmi',
+      storageType: 'local',
+      storagePath: '/media/recordings',
+    },
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'preset-ingest-copy',
+    name: 'Live Ingest Direct Archive (Stream Copy)',
+    sourceType: 'ingest',
+    config: {
+      autoRecord: false,
+      fileName: '{channel}_{date}_{time}',
+      formats: ['mp4'],
+      encoder: 'copy',
+      videoCodec: 'h264',
+      rateControl: 'cbr',
+      resolution: 'source',
+      framerate: 50,
+      videoBitrate: 50000,
+      maxBitrate: 55000,
+      preset: 'fast',
+      gopSize: 60,
+      pixelFormat: 'yuv420p',
+      audioCodec: 'aac',
+      audioBitrate: 192,
+      sampleRate: 48000,
+      audioChannels: 2,
+      continuous: true,
+      storageType: 'local',
+      storagePath: '/media/recordings',
+    },
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const PRESETS_STORAGE_KEY = 'kte-saved-recording-configs';
+
+const getSavedPresets = (): SavedRecordingPreset[] => {
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (!raw) return DEFAULT_PRESETS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PRESETS;
+  } catch {
+    return DEFAULT_PRESETS;
+  }
+};
+
 const defaultConfig: IngestRecordingOptions = {
   autoRecord: false,
   fileName: '{channel}_{date}_{time}',
@@ -14,8 +131,8 @@ const defaultConfig: IngestRecordingOptions = {
   rateControl: 'cbr',
   resolution: 'source',
   framerate: 50,
-  videoBitrate: 12000,
-  maxBitrate: 15000,
+  videoBitrate: 50000,
+  maxBitrate: 55000,
   preset: 'fast',
   gopSize: 60,
   pixelFormat: 'yuv420p',
@@ -310,6 +427,46 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }
   };
 
+  const [savedPresets, setSavedPresets] = useState<SavedRecordingPreset[]>(getSavedPresets);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [presetNameInput, setPresetNameInput] = useState('');
+
+  const handleLoadPreset = (presetId: string) => {
+    setSelectedPresetId(presetId);
+    if (!presetId) return;
+    const preset = savedPresets.find(p => p.id === presetId);
+    if (!preset) return;
+    if (preset.sourceType) setSourceType(preset.sourceType);
+    if (preset.videoDevice) setVideoDevice?.(preset.videoDevice);
+    if (preset.audioDevice) setAudioDevice?.(preset.audioDevice);
+    if (preset.selectedStreamKey) setSelectedStreamKey?.(preset.selectedStreamKey);
+    if (preset.config) setConfig?.(preset.config);
+  };
+
+  const handleSavePreset = () => {
+    const name = presetNameInput.trim() || `Config ${savedPresets.length + 1}`;
+    const newPreset: SavedRecordingPreset = {
+      id: `preset-${Date.now()}`,
+      name,
+      sourceType,
+      videoDevice,
+      audioDevice,
+      selectedStreamKey,
+      config: activeConfig,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [newPreset, ...savedPresets.filter(p => p.name !== name)];
+    setSavedPresets(updated);
+    try {
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
+    } catch {}
+    setSelectedPresetId(newPreset.id);
+    setSaveModalOpen(false);
+    setPresetNameInput('');
+    save?.();
+  };
+
   const applyProfile = (id: string) => {
     setProfileId(id);
     if (id === 'source-default') {
@@ -319,8 +476,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         resolution: 'source',
         framerate: 50,
         rateControl: 'cbr',
-        videoBitrate: 12000,
-        maxBitrate: 15000,
+        videoBitrate: 50000,
+        maxBitrate: 55000,
         preset: 'fast',
         gopSize: 60,
         pixelFormat: 'yuv420p',
@@ -340,12 +497,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       encoder: sourceType === 'device' && encoder === 'copy' ? 'cpu' : encoder,
       videoCodec: codec,
       resolution: sourceType === 'device' ? 'source' : (profile.resolution === 'N/A' ? 'source' : (profile.resolution || 'source')),
-      framerate: sourceType === 'device' ? 0 : (profile.framerate || 0),
+      framerate: profile.framerate || (sourceType === 'device' ? 50 : 0),
       rateControl: profile.videoQualityMode === 'crf' ? 'crf' : 'cbr',
-      videoBitrate: profile.videoBitrate || activeConfig.videoBitrate || 4000,
-      maxBitrate: profile.maxrate || profile.videoBitrate || activeConfig.maxBitrate || 6000,
+      videoBitrate: profile.videoBitrate || activeConfig.videoBitrate || 50000,
+      maxBitrate: profile.maxrate || profile.videoBitrate || activeConfig.maxBitrate || 55000,
       crf: profile.crf || activeConfig.crf || 20,
-      audioBitrate: profile.audioBitrate || activeConfig.audioBitrate || 128,
+      audioBitrate: profile.audioBitrate || activeConfig.audioBitrate || 192,
       sampleRate: profile.sampleRate || activeConfig.sampleRate || 48000,
       preset: (['ultrafast', 'fast', 'medium', 'slow'].includes(profile.preset || '') ? profile.preset : 'fast') as any,
       gopSize: Number(profile.gopSize) || Number(activeConfig.gopSize) || 60,
@@ -356,6 +513,37 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const activeFormats = activeConfig.formats || ['mp4'];
 
   return <>
+    {/* Saved Configurations & Presets Bar */}
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold text-slate-700 dark:text-[#E2D1F9]">Saved Preset:</span>
+        <select
+          value={selectedPresetId}
+          onChange={e => handleLoadPreset(e.target.value)}
+          className="h-8 rounded-md border border-slate-200 bg-[#F8F7FA] px-2.5 text-[11px] font-medium text-slate-800 dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+        >
+          <option value="">-- Load Saved Configuration --</option>
+          {savedPresets.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({p.sourceType === 'device' ? 'Hardware' : 'Ingest'})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setPresetNameInput(`${sourceName} ${activeConfig.videoBitrate}k ${activeConfig.encoder.toUpperCase()}`);
+            setSaveModalOpen(true);
+          }}
+          className="flex h-8 items-center gap-1.5 rounded-md border border-[#7C3AED] bg-[#7C3AED]/10 px-3 text-[11px] font-semibold text-[#7C3AED] hover:bg-[#7C3AED]/20 transition-colors"
+        >
+          Save Current Configuration
+        </button>
+      </div>
+    </div>
     <div className="mt-3 grid min-w-0 items-start gap-3 xl:grid-cols-[300px_minmax(0,680px)]">
       <section className="app-panel min-w-0 p-4">
         <div className="mb-4 flex items-center justify-between gap-3"><h3 className="panel-kicker"><FiVideo /> Source & capture</h3>{sourceType === 'device' && <button type="button" onClick={refreshDevices} className="rounded-lg border border-[#E8DFF0] p-2 text-[#7C3AED] transition hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45]" title="Detect devices"><FiRefreshCw className={devicesLoading ? 'animate-spin' : ''} /></button>}</div>
@@ -786,6 +974,59 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] leading-relaxed">
           Verify live picture framing above. When you click <b>Start Recording Now</b>, the preview monitor will be released and the capture hardware will seamlessly begin encoding your recording archive.
         </p>
+      </div>
+    </DetailDrawer>
+
+    {/* Save Preset Configuration Modal */}
+    <DetailDrawer
+      open={saveModalOpen}
+      onClose={() => setSaveModalOpen(false)}
+      title="Save Recording Configuration"
+      subtitle="Save complete input device, transcoding profile, and output parameters as a reusable preset"
+      width="max-w-[480px]"
+      footer={
+        <div className="flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSaveModalOpen(false)}
+            className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSavePreset}
+            className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] shadow-sm"
+          >
+            Save Preset
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <Label>Preset Name
+            <input
+              type="text"
+              value={presetNameInput}
+              onChange={e => setPresetNameInput(e.target.value)}
+              placeholder="e.g. DeckLink 1080p50 Master Record"
+              className={inputClass}
+            />
+          </Label>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-[#311B4E] dark:bg-[#211335]/60 space-y-2 text-[11px]">
+          <div className="font-bold uppercase tracking-wider text-slate-500 text-[10px]">Parameters to be saved:</div>
+          <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-200">
+            <div>• Source: <b>{sourceType === 'device' ? (videoDevice || 'Capture Device') : (selectedStreamKey || 'Ingest Feed')}</b></div>
+            <div>• Quality: <b>{activeConfig.videoBitrate} Kbps (Max: {activeConfig.maxBitrate}k)</b></div>
+            <div>• Frame Rate: <b>{activeConfig.framerate || 50} FPS</b></div>
+            <div>• Encoder: <b>{activeConfig.encoder.toUpperCase()}</b></div>
+            <div>• Resolution: <b>{activeConfig.resolution}</b></div>
+            <div>• Audio: <b>{activeConfig.audioCodec.toUpperCase()} {activeConfig.audioBitrate}k</b></div>
+          </div>
+        </div>
       </div>
     </DetailDrawer>
   </>;

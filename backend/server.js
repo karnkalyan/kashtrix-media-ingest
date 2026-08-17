@@ -1404,10 +1404,10 @@ const normalizeRecordingOptions = (input = {}) => {
         formats: formats.length ? formats : ['mp4'],
         fileName: String(input.fileName || '').trim().slice(0, 180),
         encoder,
-        videoBitrate: Math.min(100000, Math.max(250, Number(input.videoBitrate) || 12000)),
+        videoBitrate: Math.min(100000, Math.max(250, Number(input.videoBitrate) || 50000)),
         audioBitrate: Math.min(1024, Math.max(32, Number(input.audioBitrate) || 192)),
         resolution: /^(source|\d{2,5}x\d{2,5})$/.test(String(input.resolution || 'source')) ? String(input.resolution || 'source') : 'source',
-        framerate: Math.min(120, Math.max(1, Number(input.framerate) || 0)),
+        framerate: Math.min(120, Math.max(1, Number(input.framerate) || 50)),
         preset: ['ultrafast', 'fast', 'medium', 'slow'].includes(input.preset) ? input.preset : 'fast',
         continuous: input.continuous !== false,
         sourceType: input.sourceType === 'device' ? 'device' : 'ingest',
@@ -1415,7 +1415,7 @@ const normalizeRecordingOptions = (input = {}) => {
         audioDevice: String(input.audioDevice || '').trim(),
         videoCodec: input.videoCodec === 'hevc' ? 'hevc' : 'h264',
         rateControl: ['cbr', 'vbr', 'crf'].includes(input.rateControl) ? input.rateControl : 'cbr',
-        maxBitrate: Math.min(150000, Math.max(250, Number(input.maxBitrate) || Number(input.videoBitrate) || 15000)),
+        maxBitrate: Math.min(150000, Math.max(250, Number(input.maxBitrate) || Number(input.videoBitrate) || 55000)),
         crf: Math.min(51, Math.max(0, Number(input.crf) || 20)),
         gopSize: Math.min(600, Math.max(1, Number(input.gopSize) || 60)),
         pixelFormat: ['yuv420p', 'yuv422p', 'yuv444p'].includes(input.pixelFormat) ? input.pixelFormat : 'yuv420p',
@@ -1608,7 +1608,7 @@ const getActiveRecordingPayload = (appName, streamName) => {
 };
 
 const listRecordings = (limit = 50) => {
-    // Auto-discover existing files in the recorded folder
+    // Auto-discover existing files in the recorded and recordings folders
     try {
         const scanDir = (dir) => {
             if (!fs.existsSync(dir)) return;
@@ -1625,22 +1625,33 @@ const listRecordings = (limit = 50) => {
                             const startTime = stat.birthtime ? stat.birthtime.toISOString() : stat.mtime.toISOString();
                             const endTime = stat.mtime ? stat.mtime.toISOString() : startTime;
                             const ext = path.extname(entry.name).slice(1).toLowerCase();
+                            const devName = entry.name.split('_')[0] || 'device';
                             db.prepare(`INSERT INTO stream_recordings
                                 (app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-                                .run('device', entry.name.split('_')[0] || 'device', fullPath, entry.name, startTime, endTime, ext, 12000, 192, 'cpu', 'source', 0, 'device', stat.size, JSON.stringify({}));
+                                .run('device', devName, fullPath, entry.name, startTime, endTime, ext, 50000, 192, 'nvidia', 'source', 0, 'device', stat.size, JSON.stringify({ videoDevice: devName }));
                         } catch (e) {}
                     }
                 }
             }
         };
         scanDir(RECORDED_DIR);
-        scanDir(FALLBACK_RECORDINGS_DIR);
+        scanDir(RECORDINGS_DIR);
     } catch (e) {}
 
     const rows = db.prepare('SELECT * FROM stream_recordings ORDER BY start_time DESC LIMIT ?').all(limit);
     const now = Date.now();
     return rows.map(row => {
+        let inputDevice = row.stream || '';
+        try {
+            if (row.settings_json) {
+                const parsed = JSON.parse(row.settings_json);
+                if (parsed.videoDevice) inputDevice = parsed.videoDevice;
+                else if (parsed.stream) inputDevice = parsed.stream;
+            }
+        } catch (e) {}
+        if (!inputDevice && row.app === 'device') inputDevice = row.stream;
+
         const session = activeRecordings.get(getRecordingKey(row.app, row.stream));
         const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id));
         if (session && output) {
@@ -1648,7 +1659,15 @@ const listRecordings = (limit = 50) => {
             try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
             const startTimeMs = new Date(row.start_time || session.startTime || now).getTime();
             const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
-            return { ...row, size, duration, is_active: true, formats: session.options.formats };
+            return {
+                ...row,
+                input_device: inputDevice,
+                inputDevice: inputDevice,
+                size,
+                duration,
+                is_active: true,
+                formats: session.options.formats
+            };
         }
 
         let size = row.size || 0;
@@ -1671,6 +1690,8 @@ const listRecordings = (limit = 50) => {
 
         return {
             ...row,
+            input_device: inputDevice,
+            inputDevice: inputDevice,
             size,
             duration,
             end_time: endTime,
@@ -2447,15 +2468,31 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
 });
 
 app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, (req, res) => {
-    const { app: appName, stream } = req.body;
-    const key = `${appName}/${stream}`;
-    const data = activeRecordings.get(key);
+    const { app: appName, stream, key: requestedKey } = req.body || {};
+    let targetKey = requestedKey;
+    if (!targetKey && appName && stream) {
+        targetKey = getRecordingKey(appName, stream);
+    }
+    let data = targetKey ? activeRecordings.get(targetKey) : null;
+    if (!data && (targetKey || stream)) {
+        for (const [k, v] of activeRecordings.entries()) {
+            if (k === targetKey || k === `${appName}/${stream}` || k.endsWith(`/${stream}`) || (stream && k.includes(stream)) || (appName && k.startsWith(`${appName}/`))) {
+                targetKey = k;
+                data = v;
+                break;
+            }
+        }
+    }
+    if (!data && activeRecordings.size === 1) {
+        targetKey = activeRecordings.keys().next().value;
+        data = activeRecordings.get(targetKey);
+    }
 
-    if (!data) return res.json({ success: false, error: 'No active recording found' });
+    if (!data || !targetKey) return res.json({ success: false, error: 'No active recording found' });
 
-    finishRecording(key, 'SIGTERM', true);
+    finishRecording(targetKey, 'SIGTERM', true);
 
-    res.json({ success: true, message: 'Recording stopped' });
+    res.json({ success: true, message: 'Recording stopped', key: targetKey });
 });
 
 app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, (req, res) => {

@@ -121,8 +121,8 @@ const defaultConfig: IngestRecordingOptions = {
   rateControl: 'cbr',
   resolution: 'source',
   framerate: 50,
-  videoBitrate: 12000,
-  maxBitrate: 15000,
+  videoBitrate: 50000,
+  maxBitrate: 55000,
   preset: 'fast',
   gopSize: 60,
   pixelFormat: 'yuv420p',
@@ -623,6 +623,7 @@ export const IngestServerView: React.FC<Props> = ({
               <thead>
                 <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078]">
                   <th className="px-4 py-3">File Name</th>
+                  <th className="px-4 py-3">Input Device / Source</th>
                   <th className="px-4 py-3">Format</th>
                   <th className="px-4 py-3">Encoder</th>
                   <th className="px-4 py-3">Resolution</th>
@@ -639,6 +640,11 @@ export const IngestServerView: React.FC<Props> = ({
                         <Film size={14} className="text-[#6D32D9]" />
                         <span>{rec.file_name || rec.stream || `recording_${rec.id}`}</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-700">
+                      <span className="rounded bg-slate-100 px-2 py-0.5 font-semibold text-slate-800 border border-slate-200">
+                        {rec.input_device || rec.inputDevice || rec.stream || (rec.app === 'device' ? 'Device' : `${rec.app}/${rec.stream}`)}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <ProtocolBadge protocol={getRecordingFormat(rec).toUpperCase()} />
