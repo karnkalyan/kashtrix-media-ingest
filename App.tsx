@@ -1192,15 +1192,21 @@ const FloatingTelemetryHud: React.FC<{
     ? { left: `${position.x}px`, top: `${position.y}px` }
     : { right: '16px', bottom: '16px' };
 
+  const isNearTop = Boolean(position && position.y < 360);
+
   return (
     <div
       ref={hudRef}
       style={style}
-      className="fixed z-50 select-none flex flex-col items-end"
+      className="fixed z-50 select-none"
     >
-      {/* Expanded Floating Card (Always pops upward from the floating widget towards the top) */}
+      {/* Expanded Floating Card (Anchored directly above the pill with 0 pill shifting) */}
       {isOpen && (
-        <div className="floating-hud-card animate-hud-pop mb-2.5 w-72 sm:w-80 rounded-2xl border border-[#E8DFF0] bg-white/98 p-3.5 shadow-2xl backdrop-blur-xl dark:bg-[#190E28]/98 dark:border-[#371F59]">
+        <div
+          className={`floating-hud-card animate-hud-pop absolute right-0 w-72 sm:w-80 rounded-2xl border border-[#E8DFF0] bg-white/98 p-3.5 shadow-2xl backdrop-blur-xl dark:bg-[#190E28]/98 dark:border-[#371F59] ${
+            isNearTop ? 'top-full mt-2.5 origin-top-right' : 'bottom-full mb-2.5 origin-bottom-right'
+          }`}
+        >
           <div
             onPointerDown={startDragging}
             className="flex items-center justify-between border-b border-[#E8DFF0] pb-2 dark:border-[#311B4E] cursor-grab active:cursor-grabbing"
