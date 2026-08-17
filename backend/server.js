@@ -2179,6 +2179,29 @@ const buildDashboardOverview = (streams = {}) => {
         COALESCE(SUM(max_viewers), 0) AS viewers FROM stream_sessions`).get();
     const recentSessions = db.prepare('SELECT * FROM stream_sessions ORDER BY start_time DESC LIMIT 8').all();
     const recentRecordings = listRecordings(8);
+    const activeRecordingsList = Array.from(activeRecordings.entries()).map(([key, active]) => {
+        const first = active.outputs && active.outputs[0];
+        let size = 0;
+        try { if (first && fs.existsSync(first.filePath)) size = fs.statSync(first.filePath).size; } catch (e) { }
+        const startTimeMs = new Date(active.startTime || Date.now()).getTime();
+        const duration = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
+        return {
+            key,
+            app: active.appName,
+            stream: active.stream,
+            fileName: first?.fileName,
+            filePath: first?.filePath,
+            format: first?.format || 'mp4',
+            startTime: active.startTime,
+            duration,
+            size,
+            encoder: active.options?.encoder || 'cpu',
+            videoBitrate: active.options?.videoBitrate || 12000,
+            resolution: active.options?.resolution || 'source',
+            framerate: active.options?.framerate || 50,
+            sourceType: active.options?.sourceType || 'device',
+        };
+    });
     return {
         generatedAt: new Date().toISOString(),
         totals: {
@@ -2196,6 +2219,7 @@ const buildDashboardOverview = (streams = {}) => {
         streams,
         recentSessions,
         recentRecordings,
+        activeRecordingsList,
     };
 };
 

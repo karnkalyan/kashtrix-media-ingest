@@ -34,6 +34,7 @@ interface DashboardOverview {
   streams: Record<string, any>;
   recentSessions: any[];
   recentRecordings: any[];
+  activeRecordingsList?: any[];
   system?: any;
 }
 
@@ -44,12 +45,21 @@ const formatBytes = (bytes = 0) => {
   return `${(bytes / Math.pow(1024, index)).toFixed(index ? 1 : 0)} ${units[index]}`;
 };
 
+const formatDuration = (seconds = 0) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 const emptyOverview: DashboardOverview = {
   generatedAt: '',
   totals: { channels: 0, runningChannels: 0, activeIngests: 0, activeRecordings: 0, recordings: 0, recordingBytes: 0, sessions: 0, viewers: 0, incomingBytes: 0, outgoingBytes: 0 },
   streams: {},
   recentSessions: [],
   recentRecordings: [],
+  activeRecordingsList: [],
 };
 
 const dashboardCacheKey = 'kte-dashboard-overview';
@@ -209,22 +219,46 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
 
       {/* KPI Cards Strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div
+          onClick={() => onNavigate?.('channels')}
+          className="cursor-pointer transition-all hover:scale-[1.01] rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]"
+        >
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Channels</span>
           <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{overview.totals.channels}</p>
           <span className="text-[10px] text-[#16A36A] font-medium dark:text-[#34D399]">{overview.totals.runningChannels} active</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div
+          onClick={() => onNavigate?.('ingest')}
+          className="cursor-pointer transition-all hover:scale-[1.01] rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]"
+        >
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Live Ingests</span>
           <p className="font-mono text-[20px] font-bold text-[#16A36A] dark:text-[#34D399]">{overview.totals.activeIngests}</p>
           <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">RTMP / SRT feeds</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Recs</span>
+        <div
+          onClick={() => onNavigate?.('ingest')}
+          className={`cursor-pointer transition-all hover:scale-[1.01] rounded-xl border p-3 shadow-xs ${
+            overview.totals.activeRecordings > 0
+              ? 'border-rose-300 bg-rose-50/60 dark:border-rose-900/60 dark:bg-rose-950/20'
+              : 'border-[#E8DFF0] bg-white dark:bg-[#190E28] dark:border-[#311B4E]'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Active Recs</span>
+            {overview.totals.activeRecordings > 0 && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+              </span>
+            )}
+          </div>
           <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{overview.totals.activeRecordings}</p>
           <span className="text-[10px] text-[#6F6078] dark:text-[#8E78A6]">{overview.totals.recordings} archived</span>
         </div>
-        <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]">
+        <div
+          onClick={() => onNavigate?.('recordings')}
+          className="cursor-pointer transition-all hover:scale-[1.01] rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#1E293B] dark:border-[#334155]"
+        >
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#94A3B8]">Storage</span>
           <p className="font-mono text-[20px] font-bold text-[#7C3AED] dark:text-[#A78BFA]">{formatBytes(overview.totals.recordingBytes)}</p>
           <span className="text-[10px] text-[#6F6078] dark:text-[#94A3B8]">On disk</span>
@@ -235,6 +269,80 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           <span className="text-[10px] text-[#6F6078] dark:text-[#94A3B8]">{overview.totals.sessions} sessions</span>
         </div>
       </div>
+
+      {/* Active Master Recording Status Banner */}
+      {overview.activeRecordingsList && overview.activeRecordingsList.length > 0 && (
+        <div className="rounded-xl border border-rose-200 bg-linear-to-r from-rose-50/90 via-white to-rose-50/50 p-4 shadow-sm dark:border-rose-900/60 dark:from-rose-950/30 dark:via-[#190E28] dark:to-rose-950/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-rose-100 pb-3 dark:border-rose-900/40">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-display text-[14px] font-bold text-rose-950 dark:text-rose-200">
+                    Live Recording in Progress
+                  </h2>
+                  <span className="rounded-md bg-rose-600 px-2 py-0.5 text-[10px] font-bold tracking-wider text-white uppercase shadow-xs">
+                    {overview.activeRecordingsList.length} Active Session{overview.activeRecordingsList.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <p className="text-[11px] text-rose-700/80 dark:text-rose-300/80">
+                  Direct capture & archive engine is currently recording uncompressed broadcast feeds
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onNavigate?.('ingest')}
+              className="flex items-center gap-1.5 self-start rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-xs hover:bg-rose-700 sm:self-auto transition-colors"
+            >
+              Open Recording Studio <ChevronRight size={13} />
+            </button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {overview.activeRecordingsList.map(rec => (
+              <div
+                key={rec.key}
+                className="rounded-lg border border-rose-200/80 bg-white/90 p-3 shadow-2xs dark:border-rose-900/50 dark:bg-[#1E1130]"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[12px] font-bold text-slate-900 dark:text-white truncate max-w-[200px]" title={rec.stream}>
+                    {rec.app === 'device' ? `Device: ${rec.stream}` : `${rec.app}/${rec.stream}`}
+                  </span>
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 font-mono text-[10px] font-bold text-rose-700 dark:bg-rose-900/60 dark:text-rose-300 animate-pulse">
+                    REC {formatDuration(rec.duration || 0)}
+                  </span>
+                </div>
+
+                <div className="mt-2 grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 text-[10px] font-mono dark:border-slate-800">
+                  <div>
+                    <span className="block text-[9px] uppercase text-slate-400 font-sans">Size</span>
+                    <b className="text-slate-800 dark:text-slate-200">{formatBytes(rec.size || 0)}</b>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] uppercase text-slate-400 font-sans">Quality</span>
+                    <b className="text-purple-600 dark:text-purple-400">{rec.videoBitrate}k</b>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] uppercase text-slate-400 font-sans">FPS / Codec</span>
+                    <b className="text-slate-800 dark:text-slate-200">{rec.framerate || 50} fps</b>
+                  </div>
+                </div>
+
+                {rec.fileName && (
+                  <p className="mt-2 truncate font-mono text-[9px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-200/60 dark:border-slate-800" title={rec.filePath || rec.fileName}>
+                    {rec.fileName}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main 2-Column Desktop Grid */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -266,9 +374,17 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
                 <div key={key} className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2 dark:bg-[#0F172A] dark:border-[#334155]">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-[#1B1024] text-[13px] truncate dark:text-white">{stream.name || key}</span>
-                    <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.2 text-[9px] font-bold text-[#16A36A] dark:bg-[#064E3B] dark:border-[#047857] dark:text-[#34D399]">
-                      LIVE
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {stream.isRecording && (
+                        <span className="flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-2 py-0.2 text-[9px] font-bold text-rose-600 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                          REC
+                        </span>
+                      )}
+                      <span className="rounded-full bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.2 text-[9px] font-bold text-[#16A36A] dark:bg-[#064E3B] dark:border-[#047857] dark:text-[#34D399]">
+                        LIVE
+                      </span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-3 gap-1 text-center font-mono text-[11px]">
                     <div>
@@ -281,8 +397,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
                     </div>
                     <div>
                       <span className="block text-[9px] font-semibold uppercase text-[#6F6078] dark:text-[#8E78A6]">Recording</span>
-                      <b className={stream.isRecording ? 'text-[#E11D72] dark:text-[#F472B6]' : 'text-[#6F6078] dark:text-[#8E78A6]'}>
-                        {stream.isRecording ? 'REC' : 'OFF'}
+                      <b className={stream.isRecording ? 'text-rose-600 font-bold dark:text-rose-400' : 'text-[#6F6078] dark:text-[#8E78A6]'}>
+                        {stream.isRecording ? 'RECORDING' : 'IDLE'}
                       </b>
                     </div>
                   </div>
@@ -295,7 +411,14 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
         {/* Right Column: Latest Recordings */}
         <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
           <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
-            <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Latest Recordings</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Recordings</h2>
+              {overview.totals.activeRecordings > 0 && (
+                <span className="rounded-full bg-rose-100 border border-rose-200 px-2 py-0.5 text-[9px] font-bold text-rose-700 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300 animate-pulse">
+                  {overview.totals.activeRecordings} Recording
+                </span>
+              )}
+            </div>
             <button
               onClick={() => onNavigate?.('recordings')}
               className="text-[11px] font-semibold text-[#6D32D9] hover:underline dark:text-[#A78BFA]"
@@ -311,11 +434,17 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
               overview.recentRecordings.slice(0, 5).map(recording => (
                 <div key={recording.id} className="flex items-center justify-between p-3 transition-colors hover:bg-[#F4EEFF]/40 dark:hover:bg-[#2B1745]">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#1B1024] text-[12px] dark:text-white" title={recording.file_name}>
-                      {recording.file_name}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      {recording.is_active && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                      )}
+                      <p className="truncate font-semibold text-[#1B1024] text-[12px] dark:text-white" title={recording.file_name}>
+                        {recording.file_name}
+                      </p>
+                    </div>
                     <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
                       {recording.app}/{recording.stream} • {formatBytes(Number(recording.size || 0))}
+                      {recording.is_active && <span className="ml-1 text-rose-600 font-bold dark:text-rose-400">• LIVE REC</span>}
                     </p>
                   </div>
                   <button
