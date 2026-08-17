@@ -205,7 +205,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ videoDevice, audioDevice }),
+          body: JSON.stringify({
+            videoDevice,
+            audioDevice,
+            resolution: config.resolution,
+            framerate: config.framerate,
+          }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'FFmpeg could not start the device preview');

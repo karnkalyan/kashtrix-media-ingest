@@ -951,13 +951,51 @@ app.get('/api/ffmpeg/devices', authMiddleware, async (req, res) => {
     catch (error) { res.status(500).json({ error: error.message || 'Unable to detect capture devices' }); }
 });
 
-const devicePreviewInputArgs = (videoDevice, audioDevice) => {
+const getDeckLinkFormatCode = (resolution, framerate) => {
+    const fps = Math.round(Number(framerate) || 0);
+    const res = String(resolution || '').toLowerCase();
+    if (res.includes('1080') || res === '1920x1080') {
+        if (fps === 50) return 'Hp50';
+        if (fps === 60) return 'Hp60';
+        if (fps === 59) return 'Hp59';
+        if (fps === 30) return '30p ';
+        if (fps === 29) return '29p ';
+        if (fps === 25) return '25p ';
+        if (fps === 24) return '24p ';
+        if (fps === 23) return '23p ';
+        return 'Hp50';
+    } else if (res.includes('720') || res === '1280x720') {
+        if (fps === 50) return 'hp50';
+        if (fps === 60) return 'hp60';
+        if (fps === 59) return 'hp59';
+        return 'hp50';
+    } else if (res.includes('2160') || res.includes('3840x2160') || res.includes('4k')) {
+        if (fps === 50) return '4k50';
+        if (fps === 60) return '4k60';
+        if (fps === 59) return '4k59';
+        if (fps === 30) return '4k30';
+        if (fps === 25) return '4k25';
+        if (fps === 24) return '4k24';
+        return '4k50';
+    } else if (res.includes('576') || res.includes('pal')) {
+        return 'pal ';
+    } else if (res.includes('480') || res.includes('ntsc')) {
+        return 'ntsc';
+    }
+    return null;
+};
+
+const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
     if (process.platform === 'win32') {
         const source = [
             videoDevice ? `video=${videoDevice}` : '',
             audioDevice ? `audio=${audioDevice}` : '',
         ].filter(Boolean).join(':');
-        return ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M', '-i', source];
+        const args = ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M'];
+        if (videoDevice && options.framerate) args.push('-framerate', String(options.framerate));
+        if (videoDevice && options.resolution && options.resolution !== 'source') args.push('-video_size', options.resolution);
+        args.push('-i', source);
+        return args;
     }
 
     // The Linux appliance enumerates DeckLink sources. A DeckLink input carries
@@ -966,7 +1004,14 @@ const devicePreviewInputArgs = (videoDevice, audioDevice) => {
     if (videoDevice && audioDevice && videoDevice !== audioDevice) {
         throw new Error('DeckLink video and audio preview must use the same capture device');
     }
-    return ['-thread_queue_size', '1024', '-f', 'decklink', '-i', videoDevice || audioDevice];
+    const dev = videoDevice || audioDevice;
+    const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
+    const formatCode = options.formatCode || getDeckLinkFormatCode(options.resolution, options.framerate);
+    if (formatCode) args.push('-format_code', formatCode);
+    if (options.videoInput) args.push('-video_input', options.videoInput);
+    if (options.rawFormat) args.push('-raw_format', options.rawFormat);
+    args.push('-i', dev);
+    return args;
 };
 
 const scheduleDevicePreviewCleanup = (outputDir) => {
@@ -1002,6 +1047,11 @@ const waitForDevicePreview = (preview, playlistPath, timeoutMs = 10000) => new P
 app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) => {
     const videoDevice = String(req.body?.videoDevice || '').trim().slice(0, 256);
     const audioDevice = String(req.body?.audioDevice || '').trim().slice(0, 256);
+    const resolution = String(req.body?.resolution || '').trim().slice(0, 32);
+    const framerate = Number(req.body?.framerate) || 0;
+    const formatCode = String(req.body?.formatCode || '').trim().slice(0, 16);
+    const videoInput = String(req.body?.videoInput || '').trim().slice(0, 32);
+    const rawFormat = String(req.body?.rawFormat || '').trim().slice(0, 32);
     if (!videoDevice && !audioDevice) return res.status(400).json({ error: 'Select at least one capture device' });
 
     let previewId = '';
@@ -1011,7 +1061,7 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
         if (videoDevice && !devices.video.includes(videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
         if (audioDevice && !devices.audio.includes(audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
         let inputArgs;
-        try { inputArgs = devicePreviewInputArgs(videoDevice, audioDevice); }
+        try { inputArgs = devicePreviewInputArgs(videoDevice, audioDevice, { resolution, framerate, formatCode, videoInput, rawFormat }); }
         catch (error) { return res.status(400).json({ error: error.message }); }
 
         for (const [previewId, preview] of devicePreviewProcesses) {
@@ -1220,14 +1270,29 @@ const normalizeRecordingOptions = (input = {}) => {
 const recordingInputArgs = (inputUrl, options) => {
     if (options.sourceType !== 'device') return ['-i', inputUrl];
     if (!options.videoDevice && !options.audioDevice) throw new Error('Select at least one video or audio capture device');
-    const source = [
-        options.videoDevice ? `video=${options.videoDevice}` : '',
-        options.audioDevice ? `audio=${options.audioDevice}` : '',
-    ].filter(Boolean).join(':');
-    const args = ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M'];
-    if (options.videoDevice && options.framerate) args.push('-framerate', String(options.framerate));
-    if (options.videoDevice && options.resolution !== 'source') args.push('-video_size', options.resolution);
-    args.push('-i', source);
+    if (process.platform === 'win32') {
+        const source = [
+            options.videoDevice ? `video=${options.videoDevice}` : '',
+            options.audioDevice ? `audio=${options.audioDevice}` : '',
+        ].filter(Boolean).join(':');
+        const args = ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M'];
+        if (options.videoDevice && options.framerate) args.push('-framerate', String(options.framerate));
+        if (options.videoDevice && options.resolution !== 'source') args.push('-video_size', options.resolution);
+        args.push('-i', source);
+        return args;
+    }
+
+    // Linux / DeckLink hardware capture
+    if (options.videoDevice && options.audioDevice && options.videoDevice !== options.audioDevice) {
+        throw new Error('DeckLink video and audio must use the same capture device');
+    }
+    const dev = options.videoDevice || options.audioDevice;
+    const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
+    const formatCode = options.formatCode || getDeckLinkFormatCode(options.resolution, options.framerate);
+    if (formatCode) args.push('-format_code', formatCode);
+    if (options.videoInput) args.push('-video_input', options.videoInput);
+    if (options.rawFormat) args.push('-raw_format', options.rawFormat);
+    args.push('-i', dev);
     return args;
 };
 

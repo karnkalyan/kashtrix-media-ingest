@@ -637,7 +637,7 @@ export const IngestServerView: React.FC<Props> = ({
                         <Download size={12} /> Download
                       </a>
 
-                      {!!(rec.is_active || activeRecordingKeys[`${rec.app || 'live'}/${rec.stream || rec.file_name}`] || recordingStatuses[`${rec.app || 'live'}/${rec.stream || rec.file_name}`]) && (
+                      {!!rec.is_active && (
                         <button
                           type="button"
                           onClick={() => handleToggleRecord(rec.app || 'live', rec.stream || rec.file_name)}
@@ -688,7 +688,7 @@ export const IngestServerView: React.FC<Props> = ({
                 maxHeight={320}
               />
 
-              {!!(recPreview.is_active || activeRecordingKeys[`${recPreview.app || 'live'}/${recPreview.stream || recPreview.file_name}`]) && (
+              {!!recPreview.is_active && (
                 <div className="flex items-center justify-between rounded-lg border border-[#FECACA] bg-[#FEF2F2] p-3">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-[#DC3545] animate-pulse" />
