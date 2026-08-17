@@ -27,6 +27,7 @@ backend/data/
 backend/media/
 media/
 recordings/
+recorded/
 uploads/
 *.part
 

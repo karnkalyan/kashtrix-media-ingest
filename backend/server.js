@@ -66,7 +66,9 @@ const API_PORT = 3005;
 const DATA_DIR = path.join(__dirname, 'data');
 
 const MEDIA_ROOT = path.join(process.cwd(), 'media');
-const RECORDINGS_DIR = path.join(MEDIA_ROOT, 'recordings');
+const RECORDED_DIR = path.join(process.cwd(), 'recorded');
+const RECORDINGS_DIR = RECORDED_DIR;
+const FALLBACK_RECORDINGS_DIR = path.join(MEDIA_ROOT, 'recordings');
 const RECORDING_THUMBNAILS_DIR = path.join(MEDIA_ROOT, 'recording-thumbnails');
 
 const JWT_SECRET = requireEnv('KTE_JWT_SECRET', 32);
@@ -109,7 +111,8 @@ const SYSTEM_STATS_INTERVAL_MS = 2000;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(MEDIA_ROOT)) fs.mkdirSync(MEDIA_ROOT, { recursive: true });
-if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+if (!fs.existsSync(RECORDED_DIR)) fs.mkdirSync(RECORDED_DIR, { recursive: true });
+if (!fs.existsSync(FALLBACK_RECORDINGS_DIR)) fs.mkdirSync(FALLBACK_RECORDINGS_DIR, { recursive: true });
 if (!fs.existsSync(RECORDING_THUMBNAILS_DIR)) fs.mkdirSync(RECORDING_THUMBNAILS_DIR, { recursive: true });
 if (!fs.existsSync(VOD_DIR)) fs.mkdirSync(VOD_DIR, { recursive: true });
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
@@ -434,9 +437,13 @@ app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
 const serveRecordingFile = (req, res, next) => {
     const rawPath = decodeURIComponent(req.path || '').replace(/^\/+/, '');
     if (!rawPath) return next();
-    const directPath = path.join(RECORDINGS_DIR, rawPath);
-    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
-        return res.sendFile(directPath);
+    const primaryPath = path.join(RECORDED_DIR, rawPath);
+    if (fs.existsSync(primaryPath) && fs.statSync(primaryPath).isFile()) {
+        return res.sendFile(primaryPath);
+    }
+    const fallbackPath = path.join(FALLBACK_RECORDINGS_DIR, rawPath);
+    if (fs.existsSync(fallbackPath) && fs.statSync(fallbackPath).isFile()) {
+        return res.sendFile(fallbackPath);
     }
     const fileName = path.basename(rawPath);
     try {
@@ -460,14 +467,16 @@ const serveRecordingFile = (req, res, next) => {
             }
             return null;
         };
-        const found = findFile(RECORDINGS_DIR);
+        const found = findFile(RECORDED_DIR) || findFile(FALLBACK_RECORDINGS_DIR);
         if (found) return res.sendFile(found);
     } catch (e) {}
     next();
 };
 
-app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
-app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/recorded', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/media/recorded', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/media/recordings', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/recordings', express.static(RECORDED_DIR, hlsStaticOptions), serveRecordingFile);
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
@@ -1542,7 +1551,8 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     }
     const timestamp = Date.now();
     const startTime = new Date(timestamp).toISOString();
-    const dir = path.join(RECORDINGS_DIR, appName, stream);
+    const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDED_DIR;
+    const dir = options.sourceType === 'device' ? targetDir : path.join(targetDir, appName, stream);
     fs.mkdirSync(dir, { recursive: true });
     if (options.sourceType === 'device' && options.encoder === 'copy') options.encoder = 'cpu';
     const inputUrl = options.sourceType === 'device' ? '' : `rtmp://127.0.0.1:${getSettings().rtmpPort}/${appName}/${stream}`;
@@ -1608,6 +1618,36 @@ const getActiveRecordingPayload = (appName, streamName) => {
 };
 
 const listRecordings = (limit = 50) => {
+    // Auto-discover existing files in the recorded folder
+    try {
+        const scanDir = (dir) => {
+            if (!fs.existsSync(dir)) return;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    scanDir(fullPath);
+                } else if (entry.isFile() && /\.(mp4|mkv|mov|ts|flv)$/i.test(entry.name)) {
+                    const existing = db.prepare('SELECT id FROM stream_recordings WHERE file_name = ? LIMIT 1').get(entry.name);
+                    if (!existing) {
+                        try {
+                            const stat = fs.statSync(fullPath);
+                            const startTime = stat.birthtime ? stat.birthtime.toISOString() : stat.mtime.toISOString();
+                            const endTime = stat.mtime ? stat.mtime.toISOString() : startTime;
+                            const ext = path.extname(entry.name).slice(1).toLowerCase();
+                            db.prepare(`INSERT INTO stream_recordings
+                                (app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                                .run('device', entry.name.split('_')[0] || 'device', fullPath, entry.name, startTime, endTime, ext, 12000, 192, 'cpu', 'source', 0, 'device', stat.size, JSON.stringify({}));
+                        } catch (e) {}
+                    }
+                }
+            }
+        };
+        scanDir(RECORDED_DIR);
+        scanDir(FALLBACK_RECORDINGS_DIR);
+    } catch (e) {}
+
     const rows = db.prepare('SELECT * FROM stream_recordings ORDER BY start_time DESC LIMIT ?').all(limit);
     const now = Date.now();
     return rows.map(row => {
@@ -2779,8 +2819,10 @@ mediaApp.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 mediaApp.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Serve recordings and media static paths
-mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR), serveRecordingFile);
-mediaApp.use('/recordings', express.static(RECORDINGS_DIR), serveRecordingFile);
+mediaApp.use('/recorded', express.static(RECORDED_DIR), serveRecordingFile);
+mediaApp.use('/media/recorded', express.static(RECORDED_DIR), serveRecordingFile);
+mediaApp.use('/media/recordings', express.static(RECORDED_DIR), serveRecordingFile);
+mediaApp.use('/recordings', express.static(RECORDED_DIR), serveRecordingFile);
 mediaApp.use('/media', express.static(MEDIA_ROOT));
 mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
     const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(req.params.id);
