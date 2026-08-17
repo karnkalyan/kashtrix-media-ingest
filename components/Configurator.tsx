@@ -197,6 +197,21 @@ export const Configurator: React.FC<Props> = ({
       if (resolvedType === InputType.VOD && cleanInputUrl.startsWith('media/vod/')) {
         cleanInputUrl = cleanInputUrl.replace(/^media\/vod\//, '');
       }
+      if (resolvedType === InputType.DEVICE) {
+        const raw = cleanInputUrl.replace('device://', '');
+        if (raw.includes('+')) {
+          const parts = raw.split('+');
+          setVideoDevice(parts[0].replace(/^video=/i, '').trim());
+          setAudioDevice(parts[1].replace(/^audio=/i, '').trim());
+        } else if (raw.startsWith('video=')) {
+          setVideoDevice(raw.replace(/^video=/i, '').trim());
+        } else if (raw.startsWith('audio=')) {
+          setAudioDevice(raw.replace(/^audio=/i, '').trim());
+        } else {
+          setVideoDevice(raw.trim());
+          setAudioDevice(raw.trim());
+        }
+      }
       setInputUrl(cleanInputUrl);
 
       if (editingChannel.profileId) setProfileId(editingChannel.profileId);
@@ -218,6 +233,8 @@ export const Configurator: React.FC<Props> = ({
       setInputType(InputType.URL);
       setChannelName('');
       setInputUrl('');
+      setVideoDevice('');
+      setAudioDevice('');
       setDestinations([
         {
           id: uniqueId(),
@@ -319,6 +336,11 @@ export const Configurator: React.FC<Props> = ({
     ]);
   };
 
+  const removeDestination = (id: string) => {
+    if (destinations.length === 1) return toast.error('At least one output destination is required.');
+    setDestinations(prev => prev.filter(item => item.id !== id));
+  };
+
   const setDestination = (id: string, next: Partial<ChannelDestination>) => {
     setDestinations(prev => prev.map(item => {
       if (item.id !== id) return item;
@@ -351,10 +373,16 @@ export const Configurator: React.FC<Props> = ({
   };
 
   const probeInput = async () => {
-    if (!inputUrl) return toast.error('Enter input URL before probing.');
+    let target = inputUrl.trim();
+    if (inputType === InputType.DEVICE) {
+      if (videoDevice && audioDevice) target = `device://${videoDevice}+${audioDevice}`;
+      else if (videoDevice) target = `device://video=${videoDevice}`;
+      else if (audioDevice) target = `device://audio=${audioDevice}`;
+    }
+    if (!target) return toast.error('Enter input URL or select capture device before probing.');
     setLoading(true);
     try {
-      const data = await getTsPrograms(inputUrl);
+      const data = await getTsPrograms(target);
       setPrograms(data || []);
       if (data && data.length) {
         setProgramId(data[0].id);

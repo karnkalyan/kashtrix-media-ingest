@@ -171,19 +171,16 @@ export const generateCommand = (
 
   if (channel.inputType === InputType.DEVICE) {
     const cleanUrl = channel.inputUrl.replace('device://', '');
+    const parts = cleanUrl.split('+');
+    const vDev = (parts[0] || '').replace(/^video=/i, '').trim();
+    const aDev = (parts[1] || vDev).replace(/^audio=/i, '').trim();
+
     if (isWindows) {
-      const parts = cleanUrl.split('+');
-      if (parts.length === 2) {
-        inputFlags = `-f dshow -rtbufsize 100M -i video=${quote(parts[0].trim().replace(/^video=/i, ''))}:audio=${quote(parts[1].trim().replace(/^audio=/i, ''))}`;
-      } else if (cleanUrl.startsWith('video=') || cleanUrl.startsWith('audio=')) {
-        inputFlags = `-f dshow -rtbufsize 100M -i ${quote(cleanUrl.trim())}`;
-      } else {
-        inputFlags = `-f dshow -rtbufsize 100M -i video=${quote(cleanUrl.trim().replace(/^video=/i, ''))}`;
-      }
+      inputFlags = `-thread_queue_size 1024 -f dshow -rtbufsize 1024M -i video=${quote(vDev || 'video')}:audio=${quote(aDev || 'audio')}`;
     } else if (isMac) {
-      inputFlags = `-f avfoundation -i ${quote(channel.inputUrl)}`;
+      inputFlags = `-f avfoundation -i ${quote(vDev || channel.inputUrl)}`;
     } else {
-      inputFlags = `-i ${quote(channel.inputUrl)}`;
+      inputFlags = `-thread_queue_size 1024 -f decklink -video_input hdmi -i ${quote(vDev || cleanUrl)}`;
     }
   } else if (channel.inputType === InputType.VOD) {
     inputFlags = `-re -i ${quote(`${VOD_BASE_PATH}${channel.inputUrl}`)}`;

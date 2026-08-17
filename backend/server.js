@@ -775,7 +775,7 @@ const ensureCommandDirectories = (cmdString) => {
     }
 };
 
-app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res) => {
+app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req, res) => {
     const { channelId, streamName } = req.body;
     if (!channelId) return res.status(400).json({ error: 'channelId is required' });
     if (runningProcesses[channelId]) return res.status(409).json({ error: 'Channel is already running' });
@@ -818,6 +818,45 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, (req, res)
         return res.status(400).json({ error: 'No FFmpeg command configured for this channel' });
     }
     try {
+        // 0. Resolve device capture for host platform and ensure hardware lock is free
+        if (finalCommand.includes('device://') || finalCommand.includes('-f dshow') || finalCommand.includes('-f decklink')) {
+            // Stop any conflicting device preview so DeckLink lock is clean
+            for (const [pId, pObj] of activeDevicePreviews.entries()) {
+                try {
+                    pObj.process?.kill('SIGTERM');
+                    setTimeout(() => { try { pObj.process?.kill('SIGKILL'); } catch (e) {} }, 1000);
+                } catch (e) {}
+                activeDevicePreviews.delete(pId);
+            }
+            await new Promise(r => setTimeout(r, 500));
+
+            let devName = '';
+            const dshowMatch = finalCommand.match(/-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
+            const devUriMatch = finalCommand.match(/-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
+            if (devUriMatch) {
+                const parts = devUriMatch[1].split('+');
+                devName = parts[0].replace(/^video=/i, '').trim();
+            } else if (dshowMatch) {
+                const parts = dshowMatch[1].split(':');
+                const vPart = parts.find(p => p.startsWith('video=')) || parts[0];
+                devName = vPart.replace(/^video=/i, '').trim();
+            }
+
+            if (process.platform !== 'win32') {
+                const linuxDeviceFlags = `-thread_queue_size 1024 -f decklink -video_input hdmi -i "${devName}"`;
+                if (devUriMatch) {
+                    finalCommand = finalCommand.replace(devUriMatch[0], linuxDeviceFlags);
+                } else if (dshowMatch) {
+                    finalCommand = finalCommand.replace(dshowMatch[0], linuxDeviceFlags);
+                }
+            } else {
+                const winDeviceFlags = `-thread_queue_size 1024 -f dshow -rtbufsize 1024M -i video="${devName}":audio="${devName}"`;
+                if (devUriMatch) {
+                    finalCommand = finalCommand.replace(devUriMatch[0], winDeviceFlags);
+                }
+            }
+        }
+
         // 1. Resolve VOD/file input paths to absolute paths
         const inputMatch = finalCommand.match(/-i\s+["']?([^"'\s]+)["']?/i);
         if (inputMatch) {
@@ -922,6 +961,22 @@ app.post('/api/channels/stop', authMiddleware, (req, res) => {
 app.post('/api/ffprobe-ts-programs', authMiddleware, (req, res) => {
     const { input } = req.body;
     if (!input) return res.status(400).json({ error: 'input required' });
+
+    if (input.startsWith('device://')) {
+        const raw = input.replace('device://', '');
+        const parts = raw.split('+');
+        const devName = parts[0].replace(/^video=/i, '').trim();
+        const programs = [{
+            id: 0,
+            name: devName || 'DeckLink Live Capture Feed',
+            streams: [
+                { index: '0:v:0', type: 'video', codec: 'rawvideo / decklink', resolution: '1920x1080' },
+                { index: '0:a:0', type: 'audio', codec: 'pcm_s16le', lang: 'Main' },
+            ],
+        }];
+        return res.json(programs);
+    }
+
     const isNetwork = /^(udp|srt|rtp|rtsp|http|https|rtmp|rtmps):\/\//i.test(input);
     const ffInput = isNetwork ? input : path.join(VOD_DIR, input).replace(/\\/g, '/');
 
