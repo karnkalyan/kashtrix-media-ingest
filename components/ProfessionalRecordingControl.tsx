@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare } from 'react-icons/fi';
+import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare, FiMaximize, FiMinimize } from 'react-icons/fi';
 import { IngestRecordingOptions, TranscodingProfile, VideoCodec } from '../types';
 import DetailDrawer from './ui/DetailDrawer';
 
@@ -84,12 +84,16 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [previewStarting, setPreviewStarting] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [previewTime, setPreviewTime] = useState(0);
+  const [detectedResolution, setDetectedResolution] = useState('');
+  const [detectedFramerate, setDetectedFramerate] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
   const [recordPreviewModalOpen, setRecordPreviewModalOpen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
   const devicePreviewIdRef = useRef<string | null>(null);
   const previewGenerationRef = useRef(0);
@@ -147,6 +151,23 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }).catch(() => {});
   }, []);
 
+  const toggleFullscreen = () => {
+    if (!previewContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      previewContainerRef.current.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
   const stopPreview = useCallback(async () => {
     previewGenerationRef.current += 1;
     const currentId = devicePreviewIdRef.current;
@@ -162,6 +183,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     setPreviewStarting(false);
     setPreviewing(false);
     setPreviewTime(0);
+    setDetectedResolution('');
+    setDetectedFramerate('');
 
     if (currentId) {
       const token = localStorage.getItem('kte-auth-token');
@@ -201,6 +224,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         hls.loadSource(hlsUrl);
         hls.attachMedia(video);
         hlsRef.current = hls;
+        hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+          if (hls.levels?.[0]) {
+            const lvl = hls.levels[0];
+            if (lvl.width && lvl.height) {
+              setDetectedResolution(`${lvl.width}x${lvl.height}`);
+            }
+            if (lvl.frameRate) {
+              setDetectedFramerate(`${Math.round(lvl.frameRate)} fps`);
+            }
+          }
+        });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal || generation !== previewGenerationRef.current) return;
           stopPreview();
@@ -346,15 +380,61 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       <section className="source-preview app-panel min-w-0 overflow-hidden bg-slate-950">
         <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white">
           <div><p className="text-[10px] font-bold uppercase tracking-[0.1em]">Source preview</p><p className="mt-0.5 text-[10px] text-slate-400">Live confidence monitor</p></div>
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2 py-1 text-[9px] font-bold"><span className="h-1.5 w-1.5 rounded-full bg-pink-400" />LIVE</span>
+          <div className="flex items-center gap-2">
+            {previewing && (
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                className="flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[10px] font-medium text-white hover:bg-white/20 transition-colors"
+                title={isFullscreen ? 'Exit full screen' : 'Full screen preview'}
+              >
+                {isFullscreen ? <FiMinimize size={12} /> : <FiMaximize size={12} />}
+                <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+              </button>
+            )}
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2 py-1 text-[9px] font-bold"><span className="h-1.5 w-1.5 rounded-full bg-pink-400" />LIVE</span>
+          </div>
         </div>
-        <div className="relative aspect-video min-h-[180px] w-full bg-[#090d17]">
-          <video ref={videoRef} playsInline muted onTimeUpdate={event => setPreviewTime(event.currentTarget.currentTime)} className={`h-full w-full object-contain ${previewing ? 'block' : 'hidden'}`} />
+        <div ref={previewContainerRef} className="relative aspect-video min-h-[180px] w-full bg-[#090d17]">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            onLoadedMetadata={event => {
+              const v = event.currentTarget;
+              if (v.videoWidth && v.videoHeight) {
+                setDetectedResolution(`${v.videoWidth}x${v.videoHeight}`);
+              }
+            }}
+            onTimeUpdate={event => {
+              const v = event.currentTarget;
+              setPreviewTime(v.currentTime);
+              if (v.videoWidth && v.videoHeight && !detectedResolution) {
+                setDetectedResolution(`${v.videoWidth}x${v.videoHeight}`);
+              }
+            }}
+            className={`h-full w-full object-contain ${previewing ? 'block' : 'hidden'}`}
+          />
           {!previewing && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-violet-200/50"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/[0.05]"><FiEye size={23} /></span><span className="text-xs font-medium">Select a source and start preview</span></div>}
-          {previewing && <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-md bg-indigo-600 px-2.5 py-1.5 text-[9px] font-bold text-white shadow-lg"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />LIVE PREVIEW {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}</div>}
+          {previewing && (
+            <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-md bg-indigo-600 px-2.5 py-1.5 text-[9px] font-bold text-white shadow-lg">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              LIVE PREVIEW {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}
+            </div>
+          )}
+          {previewing && (
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white backdrop-blur hover:bg-black/80 transition-colors"
+              title={isFullscreen ? 'Exit full screen' : 'Full screen preview'}
+            >
+              {isFullscreen ? <FiMinimize size={13} /> : <FiMaximize size={13} />}
+            </button>
+          )}
           <div className="pointer-events-none absolute bottom-4 left-4 flex max-w-[calc(100%-2rem)] items-center divide-x divide-white/15 rounded-xl border border-white/10 bg-slate-950/75 px-1 py-2 text-white backdrop-blur-md">
-            <span className="px-3"><b className="block text-[11px]">{activeConfig.resolution === 'source' ? 'Source' : activeConfig.resolution}</b><small className="text-[8px] text-slate-400">Resolution</small></span>
-            <span className="px-3"><b className="block text-[11px]">{activeConfig.framerate || 'Source'}{activeConfig.framerate ? ' fps' : ''}</b><small className="text-[8px] text-slate-400">Frame rate</small></span>
+            <span className="px-3"><b className="block text-[11px]">{detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : '1920x1080')}</b><small className="text-[8px] text-slate-400">Resolution</small></span>
+            <span className="px-3"><b className="block text-[11px]">{detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : '50 fps')}</b><small className="text-[8px] text-slate-400">Frame rate</small></span>
             <span className="px-3"><b className="block text-[11px]">{activeConfig.videoBitrate} Kbps</b><small className="text-[8px] text-slate-400">Bitrate</small></span>
           </div>
         </div>
@@ -645,7 +725,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </div>
             <div>
               <span className="text-slate-400 block text-[9px]">Signal Standard:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || 'Auto Detect (Native Signal)'}</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || (detectedResolution ? `${detectedResolution}${detectedFramerate ? ` @ ${detectedFramerate}` : ''} (Detected)` : 'Auto Detect (Native Signal)')}</span>
             </div>
             <div>
               <span className="text-slate-400 block text-[9px]">Encoding Bitrate:</span>

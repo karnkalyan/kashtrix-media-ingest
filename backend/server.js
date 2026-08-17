@@ -1140,6 +1140,7 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
             '-y', '-hide_banner', '-loglevel', 'warning',
             ...inputArgs,
             '-map', '0:v:0?', '-map', '0:a:0?',
+            '-vf', 'yadif=0:-1:1,scale=trunc(iw/2)*2:trunc(ih/2)*2',
             '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0',
             '-c:a', 'aac', '-b:a', '128k', '-ar', '48000',
