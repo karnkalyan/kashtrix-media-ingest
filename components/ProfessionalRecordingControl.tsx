@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare } from 'react-icons/fi';
 import { IngestRecordingOptions, TranscodingProfile, VideoCodec } from '../types';
+import DetailDrawer from './ui/DetailDrawer';
 
 type Format = IngestRecordingOptions['formats'][number];
 
@@ -86,6 +87,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
+  const [recordPreviewModalOpen, setRecordPreviewModalOpen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
@@ -519,22 +521,141 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           <FiSquare className="mr-1.5 inline fill-rose-700" /> Stop active recording
         </button>
       ) : (
-        <button
-          type="button"
-          disabled={startDisabled}
-          onClick={async () => {
-            if (previewing || previewStarting) {
-              await stopPreview();
-              await new Promise(r => setTimeout(r, 600));
-            }
-            await start();
-          }}
-          className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
-        >
-          <FiDisc className="mr-2 inline" /> Start recording
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={startDisabled}
+            onClick={async () => {
+              setRecordPreviewModalOpen(true);
+              await startSourcePreview();
+            }}
+            className="h-9 rounded-md border border-[#6D32D9] bg-white px-3 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            title="Open live preview modal to verify video before recording"
+          >
+            <FiEye className="mr-1.5 inline" /> Preview & Start
+          </button>
+
+          <button
+            type="button"
+            disabled={startDisabled}
+            onClick={async () => {
+              if (previewing || previewStarting) {
+                await stopPreview();
+                await new Promise(r => setTimeout(r, 600));
+              }
+              await start();
+            }}
+            className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+          >
+            <FiDisc className="mr-2 inline" /> Start recording
+          </button>
+        </div>
       )}
     </div>
+
+    {/* Recording Pre-Flight Confidence Monitor Modal */}
+    <DetailDrawer
+      open={recordPreviewModalOpen}
+      onClose={async () => {
+        setRecordPreviewModalOpen(false);
+        await stopPreview();
+      }}
+      title="Recording Confidence Monitor"
+      subtitle="Verify live capture feed before beginning recording session"
+      width="max-w-[580px]"
+      footer={
+        <div className="flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={async () => {
+              setRecordPreviewModalOpen(false);
+              await stopPreview();
+            }}
+            className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            disabled={startDisabled}
+            onClick={async () => {
+              setRecordPreviewModalOpen(false);
+              await stopPreview();
+              await new Promise(r => setTimeout(r, 600));
+              await start();
+            }}
+            className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+          >
+            <FiDisc className="mr-1.5 inline" /> Start Recording Now
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="relative aspect-video min-h-[220px] w-full overflow-hidden rounded-xl bg-black shadow-inner">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            onTimeUpdate={event => setPreviewTime(event.currentTarget.currentTime)}
+            className={`h-full w-full object-contain ${previewing ? 'block' : 'hidden'}`}
+          />
+          {!previewing && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-violet-200/60 p-4 text-center">
+              {previewStarting ? (
+                <>
+                  <FiRefreshCw className="h-7 w-7 animate-spin text-[#7C3AED]" />
+                  <p className="text-xs font-medium text-white">Opening capture source…</p>
+                </>
+              ) : (
+                <>
+                  <FiEye size={26} />
+                  <p className="text-xs font-medium text-white">Live preview offline</p>
+                </>
+              )}
+            </div>
+          )}
+          {previewing && (
+            <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-md bg-rose-600 px-2 py-1 text-[9px] font-bold text-white shadow">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+              LIVE {Math.floor(previewTime / 60).toString().padStart(2, '0')}:{Math.floor(previewTime % 60).toString().padStart(2, '0')}
+            </div>
+          )}
+        </div>
+
+        {previewError && (
+          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-300">
+            {previewError}
+          </div>
+        )}
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-[#311B4E] dark:bg-[#211335]/60 space-y-2.5">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">Capture & Recording Specifications</div>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span className="text-slate-400 block text-[9px]">Source Device:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100">{sourceName}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[9px]">Video Input:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100 uppercase">{activeConfig.videoInput || 'HDMI'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[9px]">Signal Standard:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || 'Auto (' + (activeConfig.resolution !== 'source' ? activeConfig.resolution : 'Source') + ')'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[9px]">Encoding Bitrate:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.videoBitrate} Kbps ({activeFormats.join(', ').toUpperCase()})</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] leading-relaxed">
+          Verify live picture framing above. When you click <b>Start Recording Now</b>, the preview monitor will be released and the capture hardware will seamlessly begin encoding your recording archive.
+        </p>
+      </div>
+    </DetailDrawer>
   </>;
 };
 

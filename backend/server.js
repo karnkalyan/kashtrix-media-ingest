@@ -1116,11 +1116,17 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
         try { inputArgs = devicePreviewInputArgs(ffmpegVideoDevice, ffmpegAudioDevice, { resolution, framerate, formatCode, videoInput, rawFormat }); }
         catch (error) { return res.status(400).json({ error: error.message }); }
 
-        for (const [previewId, preview] of devicePreviewProcesses) {
-            if (preview.owner === req.user.sub) stopDevicePreview(previewId);
-            else if ((videoDevice && preview.videoDevice === videoDevice) || (audioDevice && preview.audioDevice === audioDevice)) {
-                return res.status(409).json({ error: 'The selected capture device is already being previewed' });
+        let stoppedAnyPreview = false;
+        for (const [pId, prev] of devicePreviewProcesses) {
+            if (prev.owner === req.user.sub || prev.videoDevice === videoDevice || prev.audioDevice === audioDevice ||
+                resolveCaptureDevice(devices, prev.videoDevice) === ffmpegVideoDevice ||
+                resolveCaptureDevice(devices, prev.audioDevice) === ffmpegAudioDevice) {
+                stopDevicePreview(pId);
+                stoppedAnyPreview = true;
             }
+        }
+        if (stoppedAnyPreview) {
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
 
         previewId = crypto.randomUUID();
