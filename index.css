@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans: "Inter", "system-ui", "sans-serif";
@@ -314,8 +315,35 @@ html.dark select option {
   background-color: #450A0A !important;
 }
 
-.dark .bg-\[\#FFFBEB\] {
-  background-color: #451A03 !important;
+/* Floating Telemetry HUD Dark Mode Overrides */
+.dark .floating-hud-card,
+html.dark .floating-hud-card {
+  background-color: rgba(25, 14, 40, 0.96) !important;
+  border-color: #371F59 !important;
+  color: #F1EAFA !important;
+}
+
+.dark .floating-hud-pill,
+html.dark .floating-hud-pill {
+  background-color: rgba(25, 14, 40, 0.96) !important;
+  border-color: #371F59 !important;
+  color: #F1EAFA !important;
+}
+
+.dark .floating-hud-inner,
+html.dark .floating-hud-inner {
+  background-color: #211335 !important;
+  border-color: #371F59 !important;
+}
+
+.dark .bg-amber-50,
+.dark .bg-amber-50\/40,
+.dark .bg-amber-50\/70,
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/40,
+html.dark .bg-amber-50\/70 {
+  background-color: #211335 !important;
+  border-color: #371F59 !important;
 }
 
 /* Borders -> Deep Purple Border #311B4E */

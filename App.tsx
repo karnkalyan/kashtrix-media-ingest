@@ -1200,7 +1200,7 @@ const FloatingTelemetryHud: React.FC<{
     >
       {/* Expanded Floating Card */}
       {isOpen && (
-        <div className="mb-2 w-72 rounded-2xl border border-[#E8DFF0] bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:bg-[#190E28]/95 dark:border-[#371F59] animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="floating-hud-card mb-2 w-72 rounded-2xl border border-[#E8DFF0] bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:bg-[#190E28]/96 dark:border-[#371F59] animate-in fade-in slide-in-from-bottom-2 duration-200">
           <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2 dark:border-[#311B4E] cursor-grab active:cursor-grabbing">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
@@ -1213,7 +1213,7 @@ const FloatingTelemetryHud: React.FC<{
               {position && (
                 <button
                   onClick={resetPosition}
-                  className="rounded px-1.5 py-0.5 text-[9px] font-semibold bg-[#F4EEFF] text-[#7C3AED] hover:bg-[#EDE9FE] dark:bg-[#281640] dark:text-[#C4B5FD] transition-colors"
+                  className="rounded px-1.5 py-0.5 text-[9px] font-semibold bg-[#F4EEFF] text-[#7C3AED] hover:bg-[#EDE9FE] dark:bg-[#311754] dark:text-[#C4B5FD] transition-colors"
                   title="Reset Position to Bottom Right"
                 >
                   Reset
@@ -1236,60 +1236,60 @@ const FloatingTelemetryHud: React.FC<{
             {/* CPU */}
             <div>
               <div className="flex justify-between font-semibold">
-                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#B9A5CD]">
-                  <FiCpu size={12} className="text-[#6D32D9] dark:text-[#A78BFA]" /> CPU Engine
+                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#E2D1F9]">
+                  <FiCpu size={12} className="text-[#6D32D9] dark:text-[#C4B5FD]" /> CPU Engine
                 </span>
-                <span className="font-mono text-[#1B1024] dark:text-white">{telemetry.cpuLoad.toFixed(1)}%</span>
+                <span className="font-mono font-bold text-[#1B1024] dark:text-white">{telemetry.cpuLoad.toFixed(1)}%</span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#281640]">
-                <div className="h-full rounded-full bg-[#7C3AED]" style={{ width: `${Math.min(100, Math.max(0, telemetry.cpuLoad))}%` }} />
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#311B4E]">
+                <div className="h-full rounded-full bg-[#7C3AED] dark:bg-[#A78BFA]" style={{ width: `${Math.min(100, Math.max(0, telemetry.cpuLoad))}%` }} />
               </div>
             </div>
 
             {/* GPU */}
             <div>
               <div className="flex justify-between font-semibold">
-                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#B9A5CD]">
-                  <FiZap size={12} className="text-amber-500" /> GPU Acceleration
+                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#E2D1F9]">
+                  <FiZap size={12} className="text-amber-500 dark:text-amber-400" /> GPU Acceleration
                 </span>
-                <span className="font-mono text-amber-600 dark:text-amber-400">{telemetry.gpuLoad.toFixed(1)}%</span>
+                <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{telemetry.gpuLoad.toFixed(1)}%</span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#281640]">
-                <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(0, telemetry.gpuLoad))}%` }} />
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#311B4E]">
+                <div className="h-full rounded-full bg-amber-500 dark:bg-amber-400" style={{ width: `${Math.min(100, Math.max(0, telemetry.gpuLoad))}%` }} />
               </div>
-              <div className="mt-0.5 text-[9px] text-[#6F6078] dark:text-[#B9A5CD] truncate">{telemetry.gpuModel}</div>
+              <div className="mt-0.5 text-[9px] text-[#6F6078] dark:text-[#D8C6E8] truncate">{telemetry.gpuModel}</div>
             </div>
 
             {/* RAM */}
             <div>
               <div className="flex justify-between font-semibold">
-                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#B9A5CD]">
-                  <FiLayers size={12} className="text-[#2563EB]" /> System RAM
+                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#E2D1F9]">
+                  <FiLayers size={12} className="text-[#2563EB] dark:text-[#93C5FD]" /> System RAM
                 </span>
-                <span className="font-mono text-[#2563EB] dark:text-[#60A5FA]">{telemetry.memLoad.toFixed(1)}%</span>
+                <span className="font-mono font-bold text-[#2563EB] dark:text-[#93C5FD]">{telemetry.memLoad.toFixed(1)}%</span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#281640]">
-                <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${Math.min(100, Math.max(0, telemetry.memLoad))}%` }} />
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#311B4E]">
+                <div className="h-full rounded-full bg-[#2563EB] dark:bg-[#60A5FA]" style={{ width: `${Math.min(100, Math.max(0, telemetry.memLoad))}%` }} />
               </div>
             </div>
 
             {/* Network */}
-            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 dark:bg-[#211335] dark:border-[#371F59]">
-              <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
-                <span className="flex items-center gap-1 font-semibold">
-                  <FiRadio size={11} className="text-[#16A36A]" /> Network I/O
+            <div className="floating-hud-inner rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 dark:bg-[#211335] dark:border-[#371F59]">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="flex items-center gap-1 font-semibold text-[#6F6078] dark:text-[#E2D1F9]">
+                  <FiRadio size={11} className="text-[#16A36A] dark:text-[#6EE7B7]" /> Network I/O
                 </span>
-                <span className="font-mono text-[#16A36A] dark:text-[#34D399] font-bold">Active</span>
+                <span className="font-mono text-[#16A36A] dark:text-[#6EE7B7] font-bold">Active</span>
               </div>
               <div className="mt-1 flex items-center justify-between font-mono font-bold text-[11px]">
-                <span className="text-[#2563EB] dark:text-[#60A5FA]">↓ {formatNetSpeed(telemetry.lastRx)}</span>
-                <span className="text-[#16A36A] dark:text-[#34D399]">↑ {formatNetSpeed(telemetry.lastTx)}</span>
+                <span className="text-[#2563EB] dark:text-[#93C5FD]">↓ {formatNetSpeed(telemetry.lastRx)}</span>
+                <span className="text-[#16A36A] dark:text-[#6EE7B7]">↑ {formatNetSpeed(telemetry.lastTx)}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-3 flex items-center justify-between border-t border-[#E8DFF0] pt-2 dark:border-[#311B4E]">
-            <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+            <span className="text-[10px] text-[#6F6078] dark:text-[#D8C6E8]">
               Uptime: <strong className="font-mono text-[#1B1024] dark:text-white">{telemetry.uptimeFmt}</strong>
             </span>
             <button
@@ -1308,9 +1308,9 @@ const FloatingTelemetryHud: React.FC<{
 
       {/* Floating HUD Pill Button with Drag Grip */}
       {!minimized ? (
-        <div className="flex items-center shadow-xl rounded-full border border-[#E8DFF0] bg-white/95 backdrop-blur-md p-1 gap-1.5 dark:bg-[#190E28]/95 dark:border-[#371F59] cursor-grab active:cursor-grabbing hover:shadow-2xl transition-shadow">
+        <div className="floating-hud-pill flex items-center shadow-xl rounded-full border border-[#E8DFF0] bg-white/95 backdrop-blur-md p-1 gap-1.5 dark:bg-[#190E28]/96 dark:border-[#371F59] cursor-grab active:cursor-grabbing hover:shadow-2xl transition-shadow">
           <div
-            className="hud-drag-handle pl-2 pr-0.5 text-[#A195AD] dark:text-[#6D5A85] hover:text-[#7C3AED]"
+            className="hud-drag-handle pl-2 pr-0.5 text-[#A195AD] dark:text-[#A78BFA] hover:text-[#7C3AED]"
             title="Drag to move HUD anywhere"
           >
             <FiMove size={12} />
@@ -1330,16 +1330,16 @@ const FloatingTelemetryHud: React.FC<{
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[#16A36A]"></span>
             </span>
             <span className="flex items-center gap-1">
-              <FiCpu size={11} className="text-[#6D32D9] dark:text-[#A78BFA]" />
-              <span className="font-mono font-bold text-[11px]">{telemetry.cpuLoad.toFixed(0)}%</span>
+              <FiCpu size={11} className="text-[#6D32D9] dark:text-[#C4B5FD]" />
+              <span className="font-mono font-bold text-[11px] text-[#1B1024] dark:text-white">{telemetry.cpuLoad.toFixed(0)}%</span>
             </span>
-            <span className="text-[#E8DFF0] dark:text-[#311B4E]">|</span>
+            <span className="text-[#E8DFF0] dark:text-[#371F59]">|</span>
             <span className="flex items-center gap-1">
-              <FiZap size={11} className="text-amber-500" />
+              <FiZap size={11} className="text-amber-500 dark:text-amber-400" />
               <span className="font-mono font-bold text-[11px] text-amber-600 dark:text-amber-400">{telemetry.gpuLoad.toFixed(0)}%</span>
             </span>
-            <span className="text-[#E8DFF0] dark:text-[#311B4E]">|</span>
-            <span className="font-mono font-bold text-[11px] text-[#16A36A] dark:text-[#34D399]">
+            <span className="text-[#E8DFF0] dark:text-[#371F59]">|</span>
+            <span className="font-mono font-bold text-[11px] text-[#16A36A] dark:text-[#6EE7B7]">
               ↓ {formatNetSpeed(telemetry.lastRx)}
             </span>
           </button>

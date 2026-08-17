@@ -327,8 +327,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
             <span className="font-medium text-[11px]">Stream Ingest (RTMP / SRT)</span>
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1 text-amber-950 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
-            <Zap size={12} className="text-amber-600 dark:text-amber-400" />
+          <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
+            <Zap size={12} className="text-amber-500 dark:text-amber-400" />
             <span className="font-medium text-[11px]">GPU Acceleration: <strong>{systemStats?.gpuDetails?.model || 'Hardware Video Engine'}</strong></span>
           </div>
 
@@ -366,16 +366,16 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
 
           <div
             onClick={() => onNavigate?.('monitor')}
-            className="cursor-pointer rounded-lg border border-amber-200/80 bg-amber-50/40 p-2.5 hover:bg-amber-100/50 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
+            className="cursor-pointer rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
           >
-            <div className="flex items-center justify-between text-[10px] text-amber-800 dark:text-amber-300">
+            <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
               <span className="font-semibold uppercase tracking-wider">GPU Engine</span>
-              <Zap size={12} className="text-amber-600 dark:text-amber-400" />
+              <Zap size={12} className="text-amber-500 dark:text-amber-400" />
             </div>
-            <p className="font-mono text-[16px] font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+            <p className="font-mono text-[16px] font-bold text-amber-600 dark:text-amber-400 mt-0.5">
               {systemStats?.gpuDetails ? `${systemStats.gpuDetails.load?.toFixed(1)}%` : '—'}
             </p>
-            <span className="text-[10px] text-amber-800/80 dark:text-amber-300/80 truncate block" title={systemStats?.gpuDetails?.model}>
+            <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] truncate block" title={systemStats?.gpuDetails?.model}>
               {systemStats?.gpuDetails?.vramFmt || 'VRAM'} ({systemStats?.gpuDetails?.memoryLoad?.toFixed(0) || 0}%)
             </span>
           </div>
