@@ -1078,9 +1078,6 @@ const FloatingTelemetryHud: React.FC<{
   });
 
   const hudRef = React.useRef<HTMLDivElement>(null);
-  const isDraggingRef = React.useRef(false);
-  const dragStartRef = React.useRef({ mouseX: 0, mouseY: 0, posX: 0, posY: 0 });
-  const hasMovedRef = React.useRef(false);
 
   // Keep inside viewport bounds on resize
   useEffect(() => {
@@ -1105,80 +1102,75 @@ const FloatingTelemetryHud: React.FC<{
     return () => window.removeEventListener('resize', handleResize);
   }, [position]);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  // Clean Pointer Drag Handler attached ONLY to the drag handle icon & header bar
+  const startDragging = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     const target = e.target as HTMLElement;
-    // If interacting with interactive buttons (like close, navigate, minimize), do not start drag
-    if (target.closest('button') && !target.closest('.hud-drag-handle')) {
-      return;
-    }
+    if (target.closest('button')) return; // Do not drag if clicking buttons
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
 
     const el = hudRef.current;
     if (!el) return;
 
     const rect = el.getBoundingClientRect();
-    const currentX = position ? position.x : rect.left;
-    const currentY = position ? position.y : rect.top;
+    const initPosX = position ? position.x : rect.left;
+    const initPosY = position ? position.y : rect.top;
 
-    isDraggingRef.current = false;
-    hasMovedRef.current = false;
-    dragStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      posX: currentX,
-      posY: currentY,
+    const onPointerMove = (moveEv: PointerEvent) => {
+      const dx = moveEv.clientX - startX;
+      const dy = moveEv.clientY - startY;
+
+      const width = el.offsetWidth || 288;
+      const height = el.offsetHeight || 60;
+      const maxX = Math.max(8, window.innerWidth - width - 8);
+      const maxY = Math.max(8, window.innerHeight - height - 8);
+
+      const nextX = Math.min(Math.max(8, initPosX + dx), maxX);
+      const nextY = Math.min(Math.max(8, initPosY + dy), maxY);
+
+      setPosition({ x: nextX, y: nextY });
     };
 
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
+    const onPointerUp = (upEv: PointerEvent) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    const dx = e.clientX - dragStartRef.current.mouseX;
-    const dy = e.clientY - dragStartRef.current.mouseY;
+      const dx = upEv.clientX - startX;
+      const dy = upEv.clientY - startY;
+      const width = el.offsetWidth || 288;
+      const height = el.offsetHeight || 60;
+      const maxX = Math.max(8, window.innerWidth - width - 8);
+      const maxY = Math.max(8, window.innerHeight - height - 8);
 
-    if (Math.hypot(dx, dy) > 6) {
-      isDraggingRef.current = true;
-      hasMovedRef.current = true;
-    }
+      const finalX = Math.min(Math.max(8, initPosX + dx), maxX);
+      const finalY = Math.min(Math.max(8, initPosY + dy), maxY);
 
-    if (!isDraggingRef.current) return;
-
-    const el = hudRef.current;
-    const width = el?.offsetWidth || 288;
-    const height = el?.offsetHeight || 60;
-    const maxX = Math.max(8, window.innerWidth - width - 8);
-    const maxY = Math.max(8, window.innerHeight - height - 8);
-
-    const nextX = Math.min(Math.max(8, dragStartRef.current.posX + dx), maxX);
-    const nextY = Math.min(Math.max(8, dragStartRef.current.posY + dy), maxY);
-
-    setPosition({ x: nextX, y: nextY });
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-
-    if (isDraggingRef.current && position) {
+      const newPos = { x: finalX, y: finalY };
+      setPosition(newPos);
       try {
-        localStorage.setItem('kashtrix-hud-pos', JSON.stringify(position));
+        localStorage.setItem('kashtrix-hud-pos', JSON.stringify(newPos));
       } catch {}
-    }
+    };
 
-    isDraggingRef.current = false;
-    setTimeout(() => {
-      hasMovedRef.current = false;
-    }, 50);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
   };
 
   const handlePillClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
-    if (hasMovedRef.current) return;
     setIsOpen(prev => !prev);
   };
 
   const toggleMinimized = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     const next = !minimized;
     setMinimized(next);
@@ -1188,6 +1180,7 @@ const FloatingTelemetryHud: React.FC<{
   };
 
   const resetPosition = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     setPosition(null);
     try {
@@ -1203,16 +1196,16 @@ const FloatingTelemetryHud: React.FC<{
     <div
       ref={hudRef}
       style={style}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      className="fixed z-50 select-none touch-none flex flex-col items-end"
+      className="fixed z-50 select-none flex flex-col items-end"
     >
-      {/* Expanded Floating Card (Opens upward from the floating widget towards the top) */}
+      {/* Expanded Floating Card (Always pops upward from the floating widget towards the top) */}
       {isOpen && (
         <div className="floating-hud-card animate-hud-pop mb-2.5 w-72 sm:w-80 rounded-2xl border border-[#E8DFF0] bg-white/98 p-3.5 shadow-2xl backdrop-blur-xl dark:bg-[#190E28]/98 dark:border-[#371F59]">
-          <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2 dark:border-[#311B4E] cursor-grab active:cursor-grabbing">
+          <div
+            onPointerDown={startDragging}
+            className="flex items-center justify-between border-b border-[#E8DFF0] pb-2 dark:border-[#311B4E] cursor-grab active:cursor-grabbing"
+            title="Drag header to move HUD"
+          >
             <div className="flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16A36A] opacity-75"></span>
@@ -1223,6 +1216,7 @@ const FloatingTelemetryHud: React.FC<{
             <div className="flex items-center gap-1.5">
               {position && (
                 <button
+                  type="button"
                   onClick={resetPosition}
                   className="rounded px-1.5 py-0.5 text-[9px] font-semibold bg-[#F4EEFF] text-[#7C3AED] hover:bg-[#EDE9FE] dark:bg-[#311754] dark:text-[#C4B5FD] transition-colors"
                   title="Reset Position to Bottom Right"
@@ -1231,6 +1225,7 @@ const FloatingTelemetryHud: React.FC<{
                 </button>
               )}
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsOpen(false);
@@ -1304,6 +1299,7 @@ const FloatingTelemetryHud: React.FC<{
               Uptime: <strong className="font-mono text-[#1B1024] dark:text-white">{telemetry.uptimeFmt}</strong>
             </span>
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onNavigate('monitor');
@@ -1319,9 +1315,10 @@ const FloatingTelemetryHud: React.FC<{
 
       {/* Floating HUD Pill Button with Drag Grip */}
       {!minimized ? (
-        <div className="floating-hud-pill flex items-center shadow-xl rounded-full border border-[#E8DFF0] bg-white/95 backdrop-blur-md p-1 gap-1.5 dark:bg-[#190E28]/96 dark:border-[#371F59] cursor-grab active:cursor-grabbing hover:shadow-2xl transition-shadow">
+        <div className="floating-hud-pill flex items-center shadow-xl rounded-full border border-[#E8DFF0] bg-white/95 backdrop-blur-md p-1 gap-1.5 dark:bg-[#190E28]/96 dark:border-[#371F59] hover:shadow-2xl transition-shadow">
           <div
-            className="hud-drag-handle pl-2 pr-0.5 text-[#A195AD] dark:text-[#A78BFA] hover:text-[#7C3AED]"
+            onPointerDown={startDragging}
+            className="hud-drag-handle pl-2 pr-0.5 text-[#A195AD] dark:text-[#A78BFA] hover:text-[#7C3AED] cursor-grab active:cursor-grabbing"
             title="Drag to move HUD anywhere"
           >
             <FiMove size={12} />
@@ -1330,8 +1327,8 @@ const FloatingTelemetryHud: React.FC<{
           <button
             type="button"
             onClick={handlePillClick}
-            className="flex items-center gap-2 rounded-full px-2 py-1 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:text-white dark:hover:bg-[#2D1A45] transition-colors"
-            title="Click to expand/collapse live telemetry"
+            className="flex items-center gap-2 rounded-full px-2 py-1 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:text-white dark:hover:bg-[#2D1A45] transition-colors cursor-pointer"
+            title="Click to toggle live telemetry details"
           >
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16A36A] opacity-75"></span>
@@ -1355,7 +1352,7 @@ const FloatingTelemetryHud: React.FC<{
           <button
             type="button"
             onClick={toggleMinimized}
-            className="p-1 text-[#6F6078] hover:text-[#1B1024] rounded-full dark:text-[#B9A5CD] dark:hover:text-white transition-colors"
+            className="p-1 text-[#6F6078] hover:text-[#1B1024] rounded-full dark:text-[#B9A5CD] dark:hover:text-white transition-colors cursor-pointer"
             title="Minimize Floating Telemetry"
           >
             <FiMinimize size={12} />
@@ -1365,6 +1362,7 @@ const FloatingTelemetryHud: React.FC<{
         <button
           type="button"
           onClick={toggleMinimized}
+          onPointerDown={startDragging}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E8DFF0] bg-white shadow-lg text-[#7C3AED] hover:bg-[#F4EEFF] dark:bg-[#190E28] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45] transition-all cursor-grab active:cursor-grabbing"
           title="Restore System Telemetry HUD (Drag to move)"
         >
