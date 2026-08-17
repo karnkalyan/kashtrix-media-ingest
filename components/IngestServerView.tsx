@@ -287,15 +287,10 @@ export const IngestServerView: React.FC<Props> = ({
       }
     );
 
-    const pollInterval = setInterval(() => {
-      fetchRecordings().catch(() => {});
-    }, 2000);
-
     return () => {
       unsubscribe();
-      clearInterval(pollInterval);
     };
-  }, [fetchData, fetchConfig, refreshDevices, fetchRecordings]);
+  }, [fetchData, fetchConfig, refreshDevices]);
 
   const saveConfig = async () => {
     setSavingConfig(true);
