@@ -1458,7 +1458,17 @@ const recordingInputArgs = (inputUrl, options) => {
 };
 
 const recordingArgs = (inputUrl, filePath, options) => {
-    const args = ['-y', '-hide_banner', '-loglevel', 'warning', ...recordingInputArgs(inputUrl, options), '-map', '0:v:0?', '-map', '0:a:0?', '-max_muxing_queue_size', '4096'];
+    const isDevice = options.sourceType === 'device';
+    const args = [
+        '-y',
+        '-hide_banner',
+        '-loglevel', 'warning',
+        ...(isDevice ? ['-fflags', '+genpts+discardcorrupt', '-avoid_negative_ts', 'make_zero'] : []),
+        ...recordingInputArgs(inputUrl, options),
+        '-map', '0:v:0?',
+        '-map', '0:a:0?',
+        '-max_muxing_queue_size', '4096'
+    ];
     if (options.encoder === 'copy') {
         args.push('-c', 'copy');
     } else {
@@ -1470,12 +1480,19 @@ const recordingArgs = (inputUrl, filePath, options) => {
             args.push('-b:v', `${options.videoBitrate}k`, '-maxrate', `${options.rateControl === 'cbr' ? options.videoBitrate : options.maxBitrate}k`, '-bufsize', `${options.maxBitrate * 2}k`);
         }
         if (options.preset) args.push('-preset', options.preset);
+        if (videoEncoder === 'libx264') {
+            args.push('-tune', 'zerolatency');
+        } else if (videoEncoder === 'h264_nvenc') {
+            args.push('-tune', 'll', '-zerolatency', '1');
+        }
         const vfFilters = [];
-        if (options.sourceType === 'device') {
+        if (isDevice) {
             vfFilters.push('yadif=0:-1:1');
         }
         if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
             vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
+        } else if (isDevice) {
+            vfFilters.push('scale=trunc(iw/2)*2:trunc(ih/2)*2');
         }
         if (vfFilters.length > 0) {
             args.push('-vf', vfFilters.join(','));
@@ -1483,8 +1500,11 @@ const recordingArgs = (inputUrl, filePath, options) => {
         if (options.framerate && Number(options.framerate) > 0) {
             args.push('-r', String(options.framerate));
         }
-        args.push('-g', String(options.gopSize || 60), '-pix_fmt', options.pixelFormat || 'yuv420p');
+        args.push('-g', String(options.gopSize || 60), '-keyint_min', '25', '-sc_threshold', '0', '-pix_fmt', options.pixelFormat || 'yuv420p');
         args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
+        if (isDevice) {
+            args.push('-af', 'aresample=async=1000');
+        }
     }
     if (filePath.endsWith('.mp4') || filePath.endsWith('.mov')) args.push('-movflags', '+faststart');
     args.push(filePath);
@@ -1511,6 +1531,15 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     if (activeRecordings.has(key)) throw new Error('Recording already active');
 
     const options = normalizeRecordingOptions(rawOptions);
+    if (options.sourceType === 'device') {
+        for (const [pId, pObj] of activeDevicePreviews.entries()) {
+            try { pObj.process?.kill('SIGTERM'); } catch (e) {}
+            activeDevicePreviews.delete(pId);
+        }
+        for (const [pId] of devicePreviewProcesses.entries()) {
+            stopDevicePreview(pId);
+        }
+    }
     const timestamp = Date.now();
     const startTime = new Date(timestamp).toISOString();
     const dir = path.join(RECORDINGS_DIR, appName, stream);
