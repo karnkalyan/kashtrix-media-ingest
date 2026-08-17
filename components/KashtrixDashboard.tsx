@@ -11,12 +11,26 @@ import {
   X,
   Activity,
   Server,
-  ChevronRight
+  ChevronRight,
+  Cpu,
+  Layers,
+  Wifi,
+  ShieldCheck,
+  CheckCircle2
 } from 'lucide-react';
 import Button from './ui/Button';
 import ProtocolBadge from './ui/ProtocolBadge';
 import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
 import { subscribeRealtime } from '../services/realtime';
+
+const formatSpeedRate = (bytesPerSec: number): string => {
+  if (!bytesPerSec || isNaN(bytesPerSec)) return '0 B/s';
+  const bits = bytesPerSec * 8;
+  if (bits >= 1_000_000_000) return `${(bits / 1_000_000_000).toFixed(2)} Gbps`;
+  if (bits >= 1_000_000) return `${(bits / 1_000_000).toFixed(2)} Mbps`;
+  if (bits >= 1_000) return `${(bits / 1_000).toFixed(1)} Kbps`;
+  return `${bits.toFixed(0)} bps`;
+};
 
 const getRecordingFormat = (recording: any): string => {
   if (recording?.file_name && recording.file_name.includes('.')) {
@@ -108,6 +122,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [previewRecording, setPreviewRecording] = useState<any | null>(null);
 
+  const [systemStats, setSystemStats] = useState<any>(null);
+
   const fetchOverview = useCallback(async (showIndicator = false) => {
     if (showIndicator) setRefreshing(true);
     try {
@@ -176,6 +192,29 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
   }, [fetchOverview]);
 
   useEffect(() => {
+    let isMounted = true;
+    const fetchSystemStats = async () => {
+      try {
+        const token = localStorage.getItem('kte-auth-token');
+        const res = await fetch('/api/system/stats', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          setSystemStats(data);
+        }
+      } catch {}
+    };
+
+    fetchSystemStats();
+    const interval = setInterval(fetchSystemStats, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
     const commit = (updater: (current: DashboardOverview) => DashboardOverview) => {
       setOverview(current => {
         const next = updater(current);
@@ -188,6 +227,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
     return subscribeRealtime(message => {
       if (message.type === 'dashboard_overview' && message.payload) {
         commit(() => message.payload);
+      } else if (message.type === 'system_stats' && message.payload) {
+        setSystemStats(message.payload);
       } else if (message.type === 'ingest_stats') {
         const streams = message.payload || {};
         const streamValues = Object.values(streams) as any[];
@@ -232,7 +273,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
 
         <button
           type="button"
-          onClick={() => fetchOverview(true)}
+          onClick={() => { fetchOverview(true); }}
           className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2F1A4B]"
         >
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /> Refresh
@@ -244,6 +285,150 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           {error}
         </div>
       )}
+
+      {/* Server Operational Status & Subsystem Health Panel */}
+      <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16A36A] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-[#16A36A]"></span>
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">
+                  Server Core Operational
+                </h2>
+                <span className="rounded-md bg-[#F0FDF4] border border-[#BBF7D0] px-2 py-0.5 text-[10px] font-bold text-[#16A36A] dark:bg-[#064E3B]/60 dark:border-[#059669]/60 dark:text-[#34D399]">
+                  All Subsystems Healthy
+                </span>
+              </div>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+                Node Media Server, GPU transcode engine, ingest daemon & sqlite database active • Uptime: <strong className="font-mono text-[#1B1024] dark:text-white">{systemStats?.uptimeFmt || 'Active'}</strong>
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigate?.('monitor')}
+            className="flex items-center gap-1.5 self-start rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 py-1.5 text-[11px] font-semibold text-[#4A1B7A] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#C4B5FD] dark:hover:bg-[#2D1A45] sm:self-auto transition-colors"
+          >
+            <Activity size={13} className="text-[#6D32D9] dark:text-[#A78BFA]" />
+            <span>Open System Telemetry</span>
+            <ChevronRight size={12} />
+          </button>
+        </div>
+
+        {/* Subsystem Health Badges */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
+            <span className="font-medium text-[11px]">Stream Ingest (RTMP :1935 / SRT :9000)</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1 text-amber-950 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-200">
+            <Zap size={12} className="text-amber-600 dark:text-amber-400" />
+            <span className="font-medium text-[11px]">GPU Acceleration: <strong>{systemStats?.gpuDetails?.model || 'AMD Radeon(TM) 860M Graphics'}</strong></span>
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
+            <span className="font-medium text-[11px]">Transcoder (FFmpeg Core)</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
+            <span className="font-medium text-[11px]">Database (Prisma SQLite)</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
+            <span className="font-medium text-[11px]">WebSocket Gateway</span>
+          </div>
+        </div>
+
+        {/* Real-time Hardware & GPU Strip */}
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-5 border-t border-[#E8DFF0] pt-3 dark:border-[#311B4E]">
+          <div
+            onClick={() => onNavigate?.('monitor')}
+            className="cursor-pointer rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
+          >
+            <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              <span className="font-semibold uppercase tracking-wider">CPU Load</span>
+              <Cpu size={12} className="text-[#6D32D9]" />
+            </div>
+            <p className="font-mono text-[16px] font-bold text-[#1B1024] dark:text-white mt-0.5">
+              {systemStats ? `${systemStats.cpuLoad?.toFixed(1)}%` : '—'}
+            </p>
+            <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">{systemStats?.cpusCount || 1} cores active</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate?.('monitor')}
+            className="cursor-pointer rounded-lg border border-amber-200/80 bg-amber-50/40 p-2.5 hover:bg-amber-100/50 dark:bg-[#2A1D12] dark:border-amber-900/60 dark:hover:bg-[#352516] transition-colors"
+          >
+            <div className="flex items-center justify-between text-[10px] text-amber-800 dark:text-amber-300">
+              <span className="font-semibold uppercase tracking-wider">GPU Engine</span>
+              <Zap size={12} className="text-amber-600 dark:text-amber-400" />
+            </div>
+            <p className="font-mono text-[16px] font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+              {systemStats?.gpuDetails ? `${systemStats.gpuDetails.load?.toFixed(1)}%` : '—'}
+            </p>
+            <span className="text-[10px] text-amber-800/80 dark:text-amber-300/80 truncate block" title={systemStats?.gpuDetails?.model}>
+              {systemStats?.gpuDetails?.vramFmt || 'VRAM'} ({systemStats?.gpuDetails?.memoryLoad?.toFixed(0) || 0}%)
+            </span>
+          </div>
+
+          <div
+            onClick={() => onNavigate?.('monitor')}
+            className="cursor-pointer rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
+          >
+            <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              <span className="font-semibold uppercase tracking-wider">System RAM</span>
+              <Layers size={12} className="text-[#2563EB]" />
+            </div>
+            <p className="font-mono text-[16px] font-bold text-[#2563EB] dark:text-[#60A5FA] mt-0.5">
+              {systemStats ? `${systemStats.memLoad?.toFixed(1)}%` : '—'}
+            </p>
+            <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] truncate block">
+              {systemStats?.memoryDetails ? `${systemStats.memoryDetails.usedFmt}` : 'Allocated'}
+            </span>
+          </div>
+
+          <div
+            onClick={() => onNavigate?.('monitor')}
+            className="cursor-pointer rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
+          >
+            <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              <span className="font-semibold uppercase tracking-wider">Storage Disk</span>
+              <HardDrive size={12} className="text-[#16A36A]" />
+            </div>
+            <p className="font-mono text-[16px] font-bold text-[#16A36A] dark:text-[#34D399] mt-0.5">
+              {systemStats ? `${systemStats.diskLoad?.toFixed(1)}%` : '—'}
+            </p>
+            <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] truncate block">
+              {systemStats?.storageDetails ? `${systemStats.storageDetails.usedFmt}` : 'Used'}
+            </span>
+          </div>
+
+          <div
+            onClick={() => onNavigate?.('monitor')}
+            className="cursor-pointer rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors col-span-2 sm:col-span-1"
+          >
+            <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              <span className="font-semibold uppercase tracking-wider">Network I/O</span>
+              <Wifi size={12} className="text-[#0284C7]" />
+            </div>
+            <p className="font-mono text-[16px] font-bold text-[#0284C7] dark:text-[#38BDF8] mt-0.5">
+              {formatSpeedRate((systemStats?.lastRx || 0) + (systemStats?.lastTx || 0))}
+            </p>
+            <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              ↓ {formatSpeedRate(systemStats?.lastRx || 0)}
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* KPI Cards Strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">

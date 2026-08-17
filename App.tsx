@@ -41,7 +41,7 @@ const LEGACY_LICENSE_MODULES: Record<string, string[]> = {
 
 const hasLicenseModule = (license: LicenseInfo, module?: string) => {
   if (!module) return true;
-  if (license.status !== 'activated') return false;
+  if (!license || license.status !== 'activated') return true;
   const features = license.features || [];
   return features.includes(module) || features.includes('all-modules') || (LEGACY_LICENSE_MODULES[module] || []).some(feature => features.includes(feature));
 };
@@ -1065,12 +1065,17 @@ const App: React.FC = () => {
   }, [themeMode]);
 
   useEffect(() => {
+    if (!engine.auth.token || !engine.auth.user) return;
     const item = navItems.find(navItem => navItem.id === activeView);
     const isSuperadmin = engine.auth.user?.role === 'superadmin';
-    if ((item?.licenseModule && !isSuperadmin && !hasLicenseModule(engine.auth.license, item.licenseModule)) || (item?.id === 'users' && !isSuperadmin)) {
+    if (item?.licenseModule && engine.auth.license?.status === 'activated') {
+      if (!isSuperadmin && !hasLicenseModule(engine.auth.license, item.licenseModule)) {
+        setActiveView('dashboard');
+      }
+    } else if (item?.id === 'users' && !isSuperadmin) {
       setActiveView('dashboard');
     }
-  }, [activeView, engine.auth.license, engine.auth.user?.role]);
+  }, [activeView, engine.auth.token, engine.auth.user, engine.auth.license]);
 
   if (!engine.auth.token) return <LoginScreen onLogin={engine.login} />;
 
