@@ -52,6 +52,17 @@ const getRecordingFormat = (item: any): string => {
   return 'mp4';
 };
 
+const getRecordingUrl = (item: any): string => {
+  if (!item) return '';
+  const app = item.app || 'device';
+  const stream = item.stream || 'stream';
+  const fileName = item.file_name || item.stream;
+  if (app && stream && fileName) {
+    return `/recordings/${encodeURIComponent(app)}/${encodeURIComponent(stream)}/${encodeURIComponent(fileName)}`;
+  }
+  return `/recordings/${encodeURIComponent(fileName || '')}`;
+};
+
 interface Props {
   fetchIngestStreams: () => Promise<any>;
   fetchIngestHistory: () => Promise<any>;
@@ -627,7 +638,7 @@ export const IngestServerView: React.FC<Props> = ({
                       </button>
 
                       <a
-                        href={`/media/recordings/${rec.file_name || rec.stream}`}
+                        href={getRecordingUrl(rec)}
                         download={rec.file_name || 'recording.mp4'}
                         target="_blank"
                         rel="noreferrer"
@@ -683,7 +694,7 @@ export const IngestServerView: React.FC<Props> = ({
           {recPreview && (
             <div className="space-y-4">
               <MediaPreview
-                url={`/media/recordings/${recPreview.file_name}`}
+                url={getRecordingUrl(recPreview)}
                 title={recPreview.file_name}
                 maxHeight={320}
               />

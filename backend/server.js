@@ -431,8 +431,43 @@ app.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
-app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions));
-app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions));
+const serveRecordingFile = (req, res, next) => {
+    const rawPath = decodeURIComponent(req.path || '').replace(/^\/+/, '');
+    if (!rawPath) return next();
+    const directPath = path.join(RECORDINGS_DIR, rawPath);
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+        return res.sendFile(directPath);
+    }
+    const fileName = path.basename(rawPath);
+    try {
+        const row = db.prepare('SELECT file_path FROM stream_recordings WHERE file_name = ? ORDER BY id DESC LIMIT 1').get(fileName);
+        if (row && row.file_path && fs.existsSync(row.file_path)) {
+            return res.sendFile(path.resolve(row.file_path));
+        }
+    } catch (e) {}
+    try {
+        const findFile = (dir) => {
+            if (!fs.existsSync(dir)) return null;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    const found = findFile(full);
+                    if (found) return found;
+                } else if (entry.name === fileName) {
+                    return full;
+                }
+            }
+            return null;
+        };
+        const found = findFile(RECORDINGS_DIR);
+        if (found) return res.sendFile(found);
+    } catch (e) {}
+    next();
+};
+
+app.use('/media/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
+app.use('/recordings', express.static(RECORDINGS_DIR, hlsStaticOptions), serveRecordingFile);
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 const publicPaths = new Set(['/api/auth/login', '/api/license/status']);
@@ -2158,6 +2193,14 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         const devices = await scanCaptureDevices();
         if (options.videoDevice && !devices.video.includes(options.videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
         if (options.audioDevice && !devices.audio.includes(options.audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
+
+        // Auto-close any active device preview holding the hardware capture device
+        for (const [previewId, preview] of devicePreviewProcesses) {
+            if ((options.videoDevice && preview.videoDevice === options.videoDevice) || (options.audioDevice && preview.audioDevice === options.audioDevice)) {
+                stopDevicePreview(previewId);
+            }
+        }
+
         if (options.videoDevice) options.videoDevice = resolveCaptureDevice(devices, options.videoDevice);
         if (options.audioDevice) options.audioDevice = resolveCaptureDevice(devices, options.audioDevice);
     }
@@ -2561,8 +2604,8 @@ mediaApp.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 mediaApp.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Serve recordings and media static paths
-mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR));
-mediaApp.use('/recordings', express.static(RECORDINGS_DIR));
+mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR), serveRecordingFile);
+mediaApp.use('/recordings', express.static(RECORDINGS_DIR), serveRecordingFile);
 mediaApp.use('/media', express.static(MEDIA_ROOT));
 mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
     const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(req.params.id);

@@ -282,12 +282,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           </div>
         </div>
       </div>
-        <button type="button" onClick={previewing ? stopPreview : startSourcePreview} disabled={startDisabled || previewStarting} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">{previewing ? <FiEyeOff size={13} /> : <FiEye size={13} />}{previewStarting ? 'Starting FFmpeg preview…' : previewing ? 'Close preview' : 'Preview source'}</button>
+        <button type="button" onClick={previewing ? stopPreview : startSourcePreview} disabled={startDisabled || previewStarting} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40">{previewing ? <FiEyeOff size={13} /> : <FiEye size={13} />}{previewStarting ? 'Starting preview…' : previewing ? 'Close preview' : 'Preview source'}</button>
       </section>
 
       <section className="source-preview app-panel min-w-0 overflow-hidden bg-slate-950">
         <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.1em]">Source preview</p><p className="mt-0.5 text-[10px] text-slate-400">Server FFmpeg / HLS confidence monitor</p></div>
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.1em]">Source preview</p><p className="mt-0.5 text-[10px] text-slate-400">Live confidence monitor</p></div>
           <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2 py-1 text-[9px] font-bold"><span className="h-1.5 w-1.5 rounded-full bg-pink-400" />LIVE</span>
         </div>
         <div className="relative aspect-video min-h-[180px] w-full bg-[#090d17]">
@@ -469,7 +469,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         <button
           type="button"
           disabled={startDisabled}
-          onClick={start}
+          onClick={async () => {
+            if (previewing || previewStarting) {
+              stopPreview();
+              await new Promise(r => setTimeout(r, 200));
+            }
+            await start();
+          }}
           className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
         >
           <FiDisc className="mr-2 inline" /> Start recording
