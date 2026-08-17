@@ -304,7 +304,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
                 </span>
               </div>
               <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                Node Media Server, GPU transcode engine, ingest daemon & sqlite database active • Uptime: <strong className="font-mono text-[#1B1024] dark:text-white">{systemStats?.uptimeFmt || 'Active'}</strong>
+                Stream Ingest, GPU acceleration, Transcoder, and Database active • Uptime: <strong className="font-mono text-[#1B1024] dark:text-white">{systemStats?.uptimeFmt || 'Active'}</strong>
               </p>
             </div>
           </div>
@@ -324,27 +324,27 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
           <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
-            <span className="font-medium text-[11px]">Stream Ingest (RTMP :1935 / SRT :9000)</span>
+            <span className="font-medium text-[11px]">Stream Ingest (RTMP / SRT)</span>
           </div>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1 text-amber-950 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-200">
             <Zap size={12} className="text-amber-600 dark:text-amber-400" />
-            <span className="font-medium text-[11px]">GPU Acceleration: <strong>{systemStats?.gpuDetails?.model || 'AMD Radeon(TM) 860M Graphics'}</strong></span>
+            <span className="font-medium text-[11px]">GPU Acceleration: <strong>{systemStats?.gpuDetails?.model || 'Hardware Video Engine'}</strong></span>
           </div>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
-            <span className="font-medium text-[11px]">Transcoder (FFmpeg Core)</span>
+            <span className="font-medium text-[11px]">Transcoder</span>
           </div>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
-            <span className="font-medium text-[11px]">Database (Prisma SQLite)</span>
+            <span className="font-medium text-[11px]">Database</span>
           </div>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-2.5 py-1 text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16A36A]" />
-            <span className="font-medium text-[11px]">WebSocket Gateway</span>
+            <span className="font-medium text-[11px]">Realtime Sync Engine</span>
           </div>
         </div>
 

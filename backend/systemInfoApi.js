@@ -342,14 +342,13 @@ const _performFullSystemFetch = async (extraContext = {}) => {
         const isHealthy = cpuLoad < 90 && memLoad < 90;
 
         const services = [
-            { id: 'stream_engine', name: 'Stream Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
+            { id: 'stream_engine', name: 'Stream Ingest Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'ingest_service', name: 'Ingest Service', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
-            { id: 'transcoder', name: 'Transcoder Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
-            { id: 'ffmpeg', name: 'FFmpeg Core', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
+            { id: 'transcoder', name: 'Transcoder', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'recording_engine', name: 'Recording Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'storage', name: 'Storage Subsystem', status: diskLoad > 90 ? 'Warning' : 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
-            { id: 'websocket', name: 'WebSocket Gateway', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
-            { id: 'database', name: 'Database (SQLite/Prisma)', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
+            { id: 'websocket', name: 'Realtime Sync Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
+            { id: 'database', name: 'Database', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
         ];
 
         return {
