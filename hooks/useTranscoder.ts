@@ -180,25 +180,20 @@ export const generateCommand = (
   if (channel.inputType === InputType.DEVICE) {
     const [rawBase, rawQuery] = (channel.inputUrl || '').replace('device://', '').split('?');
     let videoInput = 'hdmi';
-    let formatCode = '';
+    let formatCode = 'Hp50';
     if (rawQuery) {
       const params = new URLSearchParams(rawQuery);
       if (params.get('video_input')) videoInput = params.get('video_input') || 'hdmi';
-      if (params.get('format_code')) formatCode = params.get('format_code') || '';
+      if (params.get('format_code')) formatCode = params.get('format_code') || 'Hp50';
     }
     const parts = rawBase.split('+');
     const vDev = (parts[0] || '').replace(/^video=/i, '').trim();
     const aDev = (parts[1] || vDev).replace(/^audio=/i, '').trim();
 
-    if (isWindows) {
-      inputFlags = `-framerate 50 -thread_queue_size 2048 -f dshow -rtbufsize 2048M -i video=${quote(vDev || 'video')}:audio=${quote(aDev || 'audio')}`;
-    } else if (isMac) {
-      inputFlags = `-f avfoundation -i ${quote(vDev || '0')}`;
-    } else {
-      const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '';
-      const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-      inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(vDev || aDev || 'Intensity Pro 4K')}`;
-    }
+    const dev = vDev || aDev || 'Intensity Pro 4K';
+    const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '-format_code Hp50 ';
+    const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
+    inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(dev)}`;
   } else if (channel.inputType === InputType.VOD) {
     inputFlags = `-re -i ${quote(`${VOD_BASE_PATH}${channel.inputUrl}`)}`;
   } else if (channel.inputType === InputType.LIVE) {

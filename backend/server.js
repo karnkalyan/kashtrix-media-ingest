@@ -883,8 +883,73 @@ app.delete('/api/profiles/:id', authMiddleware, (req, res) => {
     res.json({ ok: true });
 });
 
-app.put('/api/channels/:id', authMiddleware, (req, res) => {
-    const channel = sanitizeChannelForStorage({ ...req.body, id: req.params.id });
+const normalizeChannelForSave = async (channel) => {
+    if (!channel) return channel;
+    const sanitized = sanitizeChannelForStorage(channel);
+    try {
+        const devices = await scanCaptureDevices().catch(() => ({ video: [], audio: [] }));
+        if (sanitized.command && (sanitized.command.includes('device://') || sanitized.command.includes('-f dshow') || sanitized.command.includes('-f decklink'))) {
+            let cmd = sanitized.command;
+            let videoDev = '';
+            let audioDev = '';
+            let videoInput = 'hdmi';
+            let formatCode = '';
+
+            const devUriMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
+            const dshowMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
+            const decklinkMatch = cmd.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+["']?([^"']+)["']?/i);
+
+            if (devUriMatch) {
+                const [baseUri, queryStr] = devUriMatch[1].split('?');
+                if (queryStr) {
+                    const params = new URLSearchParams(queryStr);
+                    if (params.get('video_input')) videoInput = params.get('video_input');
+                    if (params.get('format_code')) formatCode = params.get('format_code');
+                }
+                const parts = baseUri.split('+');
+                videoDev = parts[0].replace(/^video=/i, '').trim();
+                audioDev = (parts[1] || videoDev).replace(/^audio=/i, '').trim();
+            } else if (dshowMatch) {
+                const [baseUri, queryStr] = dshowMatch[1].split('?');
+                if (queryStr) {
+                    const params = new URLSearchParams(queryStr);
+                    if (params.get('video_input')) videoInput = params.get('video_input');
+                    if (params.get('format_code')) formatCode = params.get('format_code');
+                }
+                const parts = baseUri.split(':');
+                const vPart = parts.find(p => p.startsWith('video=')) || parts[0];
+                const aPart = parts.find(p => p.startsWith('audio=')) || vPart;
+                videoDev = vPart.replace(/^video=/i, '').replace(/["']/g, '').trim();
+                audioDev = aPart.replace(/^audio=/i, '').replace(/["']/g, '').trim();
+            } else if (decklinkMatch) {
+                videoDev = decklinkMatch[1].replace(/["']/g, '').trim();
+                audioDev = videoDev;
+            }
+
+            if (videoDev.includes('?')) videoDev = videoDev.split('?')[0].trim();
+            if (audioDev.includes('?')) audioDev = audioDev.split('?')[0].trim();
+
+            const resolvedVideo = resolveCaptureDevice(devices, videoDev) || videoDev;
+            const resolvedAudio = resolveCaptureDevice(devices, audioDev) || audioDev;
+
+            if (process.platform !== 'win32') {
+                const formatCodeResolved = (formatCode && formatCode !== 'auto' && formatCode !== 'unset') ? formatCode : (getDeckLinkFormatCode('1080', 50) || 'Hp50');
+                const formatFlag = `-format_code ${formatCodeResolved} `;
+                const vInputFlag = (videoInput && videoInput !== 'unset' && videoInput !== 'auto') ? `-video_input ${videoInput} ` : '-video_input hdmi ';
+                const targetHandle = resolvedVideo || resolvedAudio || '75:05326625:00000000';
+                const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${targetHandle}"`;
+                if (devUriMatch) cmd = cmd.replace(devUriMatch[0], linuxDeviceFlags);
+                else if (dshowMatch) cmd = cmd.replace(dshowMatch[0], linuxDeviceFlags);
+                else if (decklinkMatch) cmd = cmd.replace(decklinkMatch[0], linuxDeviceFlags);
+            }
+            sanitized.command = cmd.replace(/\s+-s\s+(source|auto|original|N\/A)\b/gi, '').replace(/\s+-r\s+0(?:\.0+)?\b/g, '');
+        }
+    } catch (e) {}
+    return sanitized;
+};
+
+app.put('/api/channels/:id', authMiddleware, async (req, res) => {
+    const channel = await normalizeChannelForSave({ ...req.body, id: req.params.id });
     db.prepare(`INSERT INTO channels (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP`)
         .run(channel.id, JSON.stringify(channel));
@@ -951,27 +1016,8 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
         }
 
         if (!channelData) {
-            // Fallback: search all channel rows in database by ID or name
-            const allRows = db.prepare('SELECT id, data FROM channels').all();
-            const targetSlug = sanitizeName(streamName || channelId);
-            for (const row of allRows) {
-                try {
-                    const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-                    const rowIdStr = String(row.id || '');
-                    const parsedIdStr = String(parsed?.id || '');
-                    const parsedNameSlug = sanitizeName(parsed?.name || '');
-                    if (rowIdStr === String(channelId) || parsedIdStr === String(channelId) || (targetSlug && parsedNameSlug === targetSlug)) {
-                        channelData = parsed;
-                        break;
-                    }
-                } catch (e) {}
-            }
+            return res.status(404).json({ error: 'Channel not found' });
         }
-
-        if (!channelData) {
-            return res.status(404).json({ error: 'Channel not found in database' });
-        }
-
         finalCommand = channelData.command;
     }
     if (!finalCommand) {
@@ -991,9 +1037,9 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             let videoInput = 'hdmi';
             let formatCode = '';
 
-            const devUriMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
-            const dshowMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
-            const decklinkMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+["']?([^"']+)["']?/i);
+            const devUriMatch = finalCommand.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
+            const dshowMatch = finalCommand.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
+            const decklinkMatch = finalCommand.match(/(?:-framerate\s+\S+\s+)?(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+["']?([^"']+)["']?/i);
 
             if (devUriMatch) {
                 const [baseUri, queryStr] = devUriMatch[1].split('?');
@@ -1030,9 +1076,11 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             const resolvedAudio = resolveCaptureDevice(devices, audioDev) || audioDev;
 
             if (process.platform !== 'win32') {
-                const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '';
-                const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
-                const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${resolvedVideo || resolvedAudio || 'Intensity Pro 4K'}"`;
+                const formatCodeResolved = (formatCode && formatCode !== 'auto' && formatCode !== 'unset') ? formatCode : (getDeckLinkFormatCode('1080', 50) || 'Hp50');
+                const formatFlag = `-format_code ${formatCodeResolved} `;
+                const vInputFlag = (videoInput && videoInput !== 'unset' && videoInput !== 'auto') ? `-video_input ${videoInput} ` : '-video_input hdmi ';
+                const targetHandle = resolvedVideo || resolvedAudio || '75:05326625:00000000';
+                const linuxDeviceFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i "${targetHandle}"`;
                 if (devUriMatch) {
                     finalCommand = finalCommand.replace(devUriMatch[0], linuxDeviceFlags);
                 } else if (dshowMatch) {
