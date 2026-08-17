@@ -1092,8 +1092,6 @@ const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
             audioDevice ? `audio=${audioDevice}` : '',
         ].filter(Boolean).join(':');
         const args = ['-thread_queue_size', '1024', '-f', 'dshow', '-rtbufsize', '1024M'];
-        if (videoDevice && options.framerate) args.push('-framerate', String(options.framerate));
-        if (videoDevice && options.resolution && options.resolution !== 'source') args.push('-video_size', options.resolution);
         args.push('-i', source);
         return args;
     }
@@ -1202,10 +1200,10 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
             '-map', '0:v:0?', '-map', '0:a:0?',
             '-vf', 'yadif=0:-1:1,scale=trunc(iw/2)*2:trunc(ih/2)*2',
             '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-            '-pix_fmt', 'yuv420p', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0',
+            '-pix_fmt', 'yuv420p', '-g', '25', '-keyint_min', '25', '-sc_threshold', '0',
             '-c:a', 'aac', '-b:a', '128k', '-ar', '48000',
-            '-max_muxing_queue_size', '2048',
-            '-f', 'hls', '-hls_time', '1', '-hls_list_size', '4',
+            '-max_muxing_queue_size', '4096',
+            '-f', 'hls', '-hls_time', '1', '-hls_list_size', '3',
             '-hls_flags', 'delete_segments+append_list+omit_endlist+independent_segments',
             '-hls_segment_filename', segmentPattern,
             playlistPath,

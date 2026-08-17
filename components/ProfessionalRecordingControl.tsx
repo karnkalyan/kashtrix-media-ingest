@@ -80,7 +80,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   stopRecording = () => {},
   profiles = [],
 }) => {
-  const [profileId, setProfileId] = useState('custom');
+  const [profileId, setProfileId] = useState('source-default');
   const [previewing, setPreviewing] = useState(false);
   const [previewStarting, setPreviewStarting] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -305,6 +305,26 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   const applyProfile = (id: string) => {
     setProfileId(id);
+    if (id === 'source-default') {
+      patch({
+        encoder: sourceType === 'device' ? 'cpu' : 'copy',
+        videoCodec: 'h264',
+        resolution: 'source',
+        framerate: 0,
+        rateControl: 'cbr',
+        videoBitrate: 12000,
+        maxBitrate: 18000,
+        preset: 'fast',
+        gopSize: 60,
+        pixelFormat: 'yuv420p',
+        audioCodec: 'aac',
+        audioBitrate: 192,
+        sampleRate: 48000,
+        audioChannels: 2,
+      });
+      return;
+    }
+    if (id === 'custom') return;
     const profile = profiles.find(item => item.id === id);
     if (!profile) return;
     const codec = [VideoCodec.H265, VideoCodec.HEVC_NVENC, VideoCodec.HEVC_AMF, VideoCodec.HEVC_VIDEOTOOLBOX].includes(profile.videoCodec) ? 'hevc' : 'h264';
@@ -354,30 +374,29 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </Label>
             <Label>Signal standard
               <select value={activeConfig.formatCode || ''} onChange={event => patch({ formatCode: event.target.value })} className={selectClass}>
-                <option value="">Auto Detect / Native Input Signal</option>
-                <option value="Hi50">1080i 50 fps (Hi50 - Broadcast Interlaced)</option>
-                <option value="Hp50">1080p 50 fps (Hp50 - Progressive)</option>
-                <option value="Hi60">1080i 60 fps (Hi60)</option>
-                <option value="Hp60">1080p 60 fps (Hp60)</option>
-                <option value="Hi59">1080i 59.94 fps (Hi59)</option>
-                <option value="Hp59">1080p 59.94 fps (Hp59)</option>
-                <option value="25p ">1080p 25 fps (25p)</option>
-                <option value="30p ">1080p 30 fps (30p)</option>
-                <option value="24p ">1080p 24 fps (24p)</option>
-                <option value="Hi50">1080i 50 fps (Hi50 - Interlaced)</option>
-                <option value="Hi60">1080i 60 fps (Hi60 - Interlaced)</option>
-                <option value="Hi59">1080i 59.94 fps (Hi59 - Interlaced)</option>
-                <option value="hp50">720p 50 fps (hp50)</option>
-                <option value="hp60">720p 60 fps (hp60)</option>
-                <option value="hp59">720p 59.94 fps (hp59)</option>
-                <option value="4k50">4K UHD 50 fps (4k50)</option>
-                <option value="4k60">4K UHD 60 fps (4k60)</option>
-                <option value="pal ">PAL 576i (pal)</option>
-                <option value="ntsc">NTSC 480i (ntsc)</option>
+                <option value="">Auto / Native</option>
+                <option value="Hi50">1080i 50 fps (PAL Broadcast)</option>
+                <option value="Hp50">1080p 50 fps</option>
+                <option value="Hi60">1080i 60 fps</option>
+                <option value="Hp60">1080p 60 fps</option>
+                <option value="Hi59">1080i 59.94 fps (NTSC Broadcast)</option>
+                <option value="Hp59">1080p 59.94 fps</option>
+                <option value="25p ">1080p 25 fps</option>
+                <option value="30p ">1080p 30 fps</option>
+                <option value="24p ">1080p 24 fps</option>
+                <option value="hp50">720p 50 fps</option>
+                <option value="hp60">720p 60 fps</option>
+                <option value="hp59">720p 59.94 fps</option>
+                <option value="4k50">4K UHD 50 fps</option>
+                <option value="4k60">4K UHD 60 fps</option>
+                <option value="pal ">PAL 576i</option>
+                <option value="ntsc">NTSC 480i</option>
               </select>
             </Label>
           </div>
-        </> : <Label>Active RTMP/SRT ingest<select value={selectedStreamKey} onChange={event => setSelectedStreamKey(event.target.value)} className={selectClass}><option value="">Select active ingest</option>{Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || 'live'})</option>)}</select>{!Object.keys(streams).length && <span className="mt-1 block text-[10px] text-amber-600">No ingest is publishing right now. Capture devices are still available in the other tab.</span>}</Label>}
+        </> : <>
+          <Label>Active RTMP/SRT ingest<select value={selectedStreamKey} onChange={event => setSelectedStreamKey(event.target.value)} className={selectClass}><option value="">Select active ingest</option>{Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || 'live'})</option>)}</select>{!Object.keys(streams).length && <span className="mt-1 block text-[10px] text-amber-600">No ingest is publishing right now. Capture devices are still available in the other tab.</span>}</Label>
+        </>}
         <div>
           <Label>Recording filename
             <input type="text" maxLength={180} value={activeConfig.fileName || ''} onChange={event => patch({ fileName: event.target.value })} placeholder="{channel}_{date}_{time}" className={inputClass} />
@@ -459,7 +478,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     <div className="recording-settings-grid mt-3 grid grid-cols-1 gap-3 xl:grid-cols-4"><section className="app-panel p-4 xl:col-span-2">
       <h3 className="panel-kicker mb-4">Video encoding</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Label>Transcoding profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
+        <Label>Transcoding profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="source-default">Native Source / Direct Capture (Default — No Re-encoding)</option><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
         <Label>Video codec<select disabled={encodingDisabled} value={activeConfig.videoCodec} onChange={event => patch({ videoCodec: event.target.value as any })} className={selectClass}><option value="h264">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option></select></Label>
         <Label>Rate control<select disabled={encodingDisabled} value={activeConfig.rateControl} onChange={event => patch({ rateControl: event.target.value as any })} className={selectClass}><option value="cbr">CBR broadcast</option><option value="vbr">VBR quality</option><option value="crf">Constant quality</option></select></Label>
         <Label>Resolution<select disabled={encodingDisabled} value={activeConfig.resolution} onChange={event => patch({ resolution: event.target.value })} className={selectClass}><option value="source">Source / original</option><option value="7680x4320">8K UHD</option><option value="3840x2160">4K UHD 2160p</option><option value="2560x1440">QHD 1440p</option><option value="1920x1080">Full HD 1080p</option><option value="1280x720">HD 720p</option><option value="720x576">PAL 576p</option><option value="720x480">NTSC 480p</option></select></Label>
