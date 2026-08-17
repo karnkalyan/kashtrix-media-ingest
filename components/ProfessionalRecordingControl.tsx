@@ -208,8 +208,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           body: JSON.stringify({
             videoDevice,
             audioDevice,
-            resolution: config.resolution,
-            framerate: config.framerate,
+            resolution: activeConfig.resolution,
+            framerate: activeConfig.framerate,
+            videoInput: activeConfig.videoInput || 'hdmi',
+            formatCode: activeConfig.formatCode || '',
           }),
         });
         const data = await response.json().catch(() => ({}));
@@ -269,8 +271,42 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         </div>
         <div className="grid grid-cols-1 gap-3">
         {sourceType === 'device' ? <>
-          <Label>Video device<select value={videoDevice} onChange={event => setVideoDevice(event.target.value)} className={selectClass}><option value="">No video</option>{videoDevices.map(device => <option key={device} value={device}>{device}</option>)}</select>{!devicesLoading && !videoDevices.length && <span className="mt-1 block text-[10px] text-amber-600">No DirectShow video device detected.</span>}</Label>
+          <Label>Video device<select value={videoDevice} onChange={event => setVideoDevice(event.target.value)} className={selectClass}><option value="">No video</option>{videoDevices.map(device => <option key={device} value={device}>{device}</option>)}</select>{!devicesLoading && !videoDevices.length && <span className="mt-1 block text-[10px] text-amber-600">No capture device detected.</span>}</Label>
           <Label>Audio device<select value={audioDevice} onChange={event => setAudioDevice(event.target.value)} className={selectClass}><option value="">No audio</option>{audioDevices.map(device => <option key={device} value={device}>{device}</option>)}</select></Label>
+          <div className="grid grid-cols-2 gap-2">
+            <Label>Video input
+              <select value={activeConfig.videoInput || 'hdmi'} onChange={event => patch({ videoInput: event.target.value as any })} className={selectClass}>
+                <option value="hdmi">HDMI</option>
+                <option value="sdi">SDI</option>
+                <option value="component">Component (YPbPr)</option>
+                <option value="composite">Composite (CVBS)</option>
+                <option value="s_video">S-Video</option>
+                <option value="optical_sdi">Optical SDI</option>
+                <option value="unset">Auto / Default</option>
+              </select>
+            </Label>
+            <Label>Signal standard
+              <select value={activeConfig.formatCode || ''} onChange={event => patch({ formatCode: event.target.value })} className={selectClass}>
+                <option value="">Auto from Profile ({activeConfig.resolution !== 'source' ? `${activeConfig.resolution}@${activeConfig.framerate || 50}fps` : 'Auto'})</option>
+                <option value="Hp50">1080p 50 fps (Hp50)</option>
+                <option value="Hp60">1080p 60 fps (Hp60)</option>
+                <option value="Hp59">1080p 59.94 fps (Hp59)</option>
+                <option value="25p ">1080p 25 fps (25p)</option>
+                <option value="30p ">1080p 30 fps (30p)</option>
+                <option value="24p ">1080p 24 fps (24p)</option>
+                <option value="Hi50">1080i 50 fps (Hi50 - Interlaced)</option>
+                <option value="Hi60">1080i 60 fps (Hi60 - Interlaced)</option>
+                <option value="Hi59">1080i 59.94 fps (Hi59 - Interlaced)</option>
+                <option value="hp50">720p 50 fps (hp50)</option>
+                <option value="hp60">720p 60 fps (hp60)</option>
+                <option value="hp59">720p 59.94 fps (hp59)</option>
+                <option value="4k50">4K UHD 50 fps (4k50)</option>
+                <option value="4k60">4K UHD 60 fps (4k60)</option>
+                <option value="pal ">PAL 576i (pal)</option>
+                <option value="ntsc">NTSC 480i (ntsc)</option>
+              </select>
+            </Label>
+          </div>
         </> : <Label>Active RTMP/SRT ingest<select value={selectedStreamKey} onChange={event => setSelectedStreamKey(event.target.value)} className={selectClass}><option value="">Select active ingest</option>{Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || 'live'})</option>)}</select>{!Object.keys(streams).length && <span className="mt-1 block text-[10px] text-amber-600">No ingest is publishing right now. Capture devices are still available in the other tab.</span>}</Label>}
         <div>
           <Label>Recording filename

@@ -1,4 +1,3 @@
-
 export enum InputType {
   URL = 'URL',
   VOD = 'VOD File',
@@ -61,7 +60,7 @@ export type VideoQualityMode = 'bitrate' | 'crf';
 
 export interface TranscodingProfile {
   id: string;
-  name:string;
+  name: string;
   isAudioOnly?: boolean;
 
   // Video Settings
@@ -117,6 +116,9 @@ export interface IngestRecordingOptions {
   audioCodec?: 'aac' | 'mp3' | 'opus';
   sampleRate?: number;
   audioChannels?: number;
+  videoInput?: 'unset' | 'sdi' | 'hdmi' | 'optical_sdi' | 'component' | 'composite' | 's_video' | string;
+  formatCode?: string;
+  rawFormat?: string;
   // Storage Destination Options
   storageType?: 'local' | 'smb' | 'ftp' | 's3';
   storagePath?: string;

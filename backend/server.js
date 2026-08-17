@@ -1048,7 +1048,8 @@ const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
     const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
     const formatCode = options.formatCode || getDeckLinkFormatCode(options.resolution, options.framerate);
     if (formatCode) args.push('-format_code', formatCode);
-    if (options.videoInput) args.push('-video_input', options.videoInput);
+    const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'hdmi';
+    if (videoInput) args.push('-video_input', videoInput);
     if (options.rawFormat) args.push('-raw_format', options.rawFormat);
     args.push('-i', dev);
     return args;
@@ -1315,6 +1316,9 @@ const normalizeRecordingOptions = (input = {}) => {
         audioCodec: ['aac', 'mp3', 'opus'].includes(input.audioCodec) ? input.audioCodec : 'aac',
         sampleRate: [32000, 44100, 48000, 96000].includes(Number(input.sampleRate)) ? Number(input.sampleRate) : 48000,
         audioChannels: [1, 2, 6, 8].includes(Number(input.audioChannels)) ? Number(input.audioChannels) : 2,
+        formatCode: String(input.formatCode || '').trim().slice(0, 16),
+        videoInput: ['unset', 'sdi', 'hdmi', 'optical_sdi', 'component', 'composite', 's_video'].includes(String(input.videoInput || '')) ? input.videoInput : (input.videoInput ? String(input.videoInput).trim().slice(0, 32) : 'hdmi'),
+        rawFormat: String(input.rawFormat || '').trim().slice(0, 32),
     };
 };
 
@@ -1341,14 +1345,15 @@ const recordingInputArgs = (inputUrl, options) => {
     const args = ['-thread_queue_size', '1024', '-f', 'decklink'];
     const formatCode = options.formatCode || getDeckLinkFormatCode(options.resolution, options.framerate);
     if (formatCode) args.push('-format_code', formatCode);
-    if (options.videoInput) args.push('-video_input', options.videoInput);
+    const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'hdmi';
+    if (videoInput) args.push('-video_input', videoInput);
     if (options.rawFormat) args.push('-raw_format', options.rawFormat);
     args.push('-i', dev);
     return args;
 };
 
 const recordingArgs = (inputUrl, filePath, options) => {
-    const args = ['-y', '-hide_banner', '-loglevel', 'warning', ...recordingInputArgs(inputUrl, options), '-map', '0:v:0?', '-map', '0:a:0?'];
+    const args = ['-y', '-hide_banner', '-loglevel', 'warning', ...recordingInputArgs(inputUrl, options), '-map', '0:v:0?', '-map', '0:a:0?', '-max_muxing_queue_size', '4096'];
     if (options.encoder === 'copy') {
         args.push('-c', 'copy');
     } else {
