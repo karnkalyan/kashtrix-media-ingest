@@ -5,7 +5,7 @@ import {
   FiMonitor, FiLogOut, FiMenu, FiX, FiSearch, FiChevronDown, FiChevronLeft, FiChevronRight,
   FiArchive, FiBarChart2, FiShield, FiServer, FiMaximize, FiMinimize, FiTv, FiBell,
   FiSun, FiMoon, FiLock, FiCpu, FiHardDrive, FiTerminal, FiCopy, FiEye, FiEyeOff, FiRadio, FiAward,
-  FiLogIn, FiZap, FiLayers
+  FiLogIn, FiZap, FiLayers, FiMove
 } from 'react-icons/fi';
 import { FaBroadcastTower } from 'react-icons/fa';
 import ChannelDashboard from './components/JobQueue';
@@ -1048,7 +1048,7 @@ const useGlobalTelemetry = (): GlobalTelemetryState => {
 };
 
 /* ═══════════════════════════════════════════
-   FLOATING TELEMETRY HUD WIDGET
+   FLOATING TELEMETRY HUD WIDGET (DRAGGABLE)
    ═══════════════════════════════════════════ */
 const FloatingTelemetryHud: React.FC<{
   telemetry: GlobalTelemetryState;
@@ -1063,7 +1063,112 @@ const FloatingTelemetryHud: React.FC<{
     }
   });
 
-  const toggleMinimized = () => {
+  // Draggable position state
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const saved = localStorage.getItem('kashtrix-hud-pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+
+  const hudRef = React.useRef<HTMLDivElement>(null);
+  const isDraggingRef = React.useRef(false);
+  const dragStartRef = React.useRef({ mouseX: 0, mouseY: 0, posX: 0, posY: 0 });
+  const hasMovedRef = React.useRef(false);
+
+  // Keep inside viewport bounds on resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (!position) return;
+      const el = hudRef.current;
+      const width = el?.offsetWidth || 288;
+      const height = el?.offsetHeight || 60;
+      const maxX = Math.max(8, window.innerWidth - width - 8);
+      const maxY = Math.max(8, window.innerHeight - height - 8);
+      const clampedX = Math.min(Math.max(8, position.x), maxX);
+      const clampedY = Math.min(Math.max(8, position.y), maxY);
+      if (clampedX !== position.x || clampedY !== position.y) {
+        const newPos = { x: clampedX, y: clampedY };
+        setPosition(newPos);
+        try {
+          localStorage.setItem('kashtrix-hud-pos', JSON.stringify(newPos));
+        } catch {}
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [position]);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const target = e.target as HTMLElement;
+    // Do not drag if interacting with inner interactive buttons (like close, navigate, minimize)
+    if (target.closest('button') && !target.closest('.hud-drag-handle')) {
+      return;
+    }
+
+    const el = hudRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const currentX = position ? position.x : rect.left;
+    const currentY = position ? position.y : rect.top;
+
+    isDraggingRef.current = true;
+    hasMovedRef.current = false;
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      posX: currentX,
+      posY: currentY,
+    };
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.mouseX;
+    const dy = e.clientY - dragStartRef.current.mouseY;
+
+    if (Math.hypot(dx, dy) > 4) {
+      hasMovedRef.current = true;
+    }
+
+    const el = hudRef.current;
+    const width = el?.offsetWidth || 288;
+    const height = el?.offsetHeight || 60;
+    const maxX = Math.max(8, window.innerWidth - width - 8);
+    const maxY = Math.max(8, window.innerHeight - height - 8);
+
+    const nextX = Math.min(Math.max(8, dragStartRef.current.posX + dx), maxX);
+    const nextY = Math.min(Math.max(8, dragStartRef.current.posY + dy), maxY);
+
+    setPosition({ x: nextX, y: nextY });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    if (position) {
+      try {
+        localStorage.setItem('kashtrix-hud-pos', JSON.stringify(position));
+      } catch {}
+    }
+  };
+
+  const toggleMinimized = (e: React.MouseEvent) => {
+    e.stopPropagation();
     const next = !minimized;
     setMinimized(next);
     try {
@@ -1071,12 +1176,32 @@ const FloatingTelemetryHud: React.FC<{
     } catch {}
   };
 
+  const resetPosition = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPosition(null);
+    try {
+      localStorage.removeItem('kashtrix-hud-pos');
+    } catch {}
+  };
+
+  const style: React.CSSProperties = position
+    ? { left: `${position.x}px`, top: `${position.y}px` }
+    : { right: '16px', bottom: '16px' };
+
   return (
-    <div className="fixed bottom-4 right-4 z-40 select-none">
+    <div
+      ref={hudRef}
+      style={style}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      className="fixed z-50 select-none touch-none"
+    >
       {/* Expanded Floating Card */}
       {isOpen && (
         <div className="mb-2 w-72 rounded-2xl border border-[#E8DFF0] bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:bg-[#190E28]/95 dark:border-[#371F59] animate-in fade-in slide-in-from-bottom-2 duration-200">
-          <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2 dark:border-[#311B4E]">
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2 dark:border-[#311B4E] cursor-grab active:cursor-grabbing">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16A36A] opacity-75"></span>
@@ -1084,12 +1209,27 @@ const FloatingTelemetryHud: React.FC<{
               </span>
               <span className="font-display text-[13px] font-bold text-[#1B1024] dark:text-white">Live Telemetry HUD</span>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white transition-colors"
-            >
-              <FiX size={14} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {position && (
+                <button
+                  onClick={resetPosition}
+                  className="rounded px-1.5 py-0.5 text-[9px] font-semibold bg-[#F4EEFF] text-[#7C3AED] hover:bg-[#EDE9FE] dark:bg-[#281640] dark:text-[#C4B5FD] transition-colors"
+                  title="Reset Position to Bottom Right"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                }}
+                className="text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white transition-colors"
+                title="Close"
+              >
+                <FiX size={14} />
+              </button>
+            </div>
           </div>
 
           <div className="mt-2.5 space-y-2 text-[11px]">
@@ -1153,22 +1293,37 @@ const FloatingTelemetryHud: React.FC<{
               Uptime: <strong className="font-mono text-[#1B1024] dark:text-white">{telemetry.uptimeFmt}</strong>
             </span>
             <button
-              onClick={() => { onNavigate('monitor'); setIsOpen(false); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate('monitor');
+                setIsOpen(false);
+              }}
               className="flex items-center gap-1 rounded-md bg-[#7C3AED] px-2 py-1 text-[10px] font-bold text-white hover:bg-[#6D28D9] transition-colors"
             >
-              Open Telemetry <FiChevronRight size={11} />
+              Open Full Monitor <FiChevronRight size={11} />
             </button>
           </div>
         </div>
       )}
 
-      {/* Floating HUD Pill Button */}
+      {/* Floating HUD Pill Button with Drag Grip */}
       {!minimized ? (
-        <div className="flex items-center shadow-xl rounded-full border border-[#E8DFF0] bg-white/95 backdrop-blur-md p-1 gap-1.5 dark:bg-[#190E28]/95 dark:border-[#371F59]">
+        <div className="flex items-center shadow-xl rounded-full border border-[#E8DFF0] bg-white/95 backdrop-blur-md p-1 gap-1.5 dark:bg-[#190E28]/95 dark:border-[#371F59] cursor-grab active:cursor-grabbing hover:shadow-2xl transition-shadow">
+          <div
+            className="hud-drag-handle pl-2 pr-0.5 text-[#A195AD] dark:text-[#6D5A85] hover:text-[#7C3AED]"
+            title="Drag to move HUD anywhere"
+          >
+            <FiMove size={12} />
+          </div>
+
           <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:text-white dark:hover:bg-[#2D1A45] transition-colors"
-            title="Toggle Live System Usage HUD"
+            onClick={() => {
+              if (!hasMovedRef.current) {
+                setIsOpen(!isOpen);
+              }
+            }}
+            className="flex items-center gap-2 rounded-full px-2 py-1 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:text-white dark:hover:bg-[#2D1A45] transition-colors"
+            title="Click to expand/collapse live telemetry"
           >
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16A36A] opacity-75"></span>
@@ -1200,8 +1355,8 @@ const FloatingTelemetryHud: React.FC<{
       ) : (
         <button
           onClick={toggleMinimized}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E8DFF0] bg-white shadow-lg text-[#7C3AED] hover:bg-[#F4EEFF] dark:bg-[#190E28] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45] transition-all"
-          title="Restore System Telemetry HUD"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E8DFF0] bg-white shadow-lg text-[#7C3AED] hover:bg-[#F4EEFF] dark:bg-[#190E28] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45] transition-all cursor-grab active:cursor-grabbing"
+          title="Restore System Telemetry HUD (Drag to move)"
         >
           <FiActivity size={16} className="animate-pulse" />
         </button>
