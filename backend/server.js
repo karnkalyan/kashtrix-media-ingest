@@ -828,31 +828,71 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
                 } catch (e) {}
                 activeDevicePreviews.delete(pId);
             }
+            for (const [pId, prev] of devicePreviewProcesses.entries()) {
+                stopDevicePreview(pId);
+            }
             await new Promise(r => setTimeout(r, 500));
 
-            let devName = '';
-            const dshowMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
+            let videoDev = '';
+            let audioDev = '';
+            let videoInput = 'hdmi';
+            let formatCode = '';
+
             const devUriMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-i\s+["']?device:\/\/([^"'\s]+)["']?/i);
+            const dshowMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-f\s+dshow\s+(?:-rtbufsize\s+\S+\s+)?-i\s+["']?([^"']+)["']?/i);
+            const decklinkMatch = finalCommand.match(/(?:-thread_queue_size\s+\d+\s+)?-f\s+decklink\s+(?:-[a-z_]+\s+\S+\s+)*-i\s+["']?([^"']+)["']?/i);
+
             if (devUriMatch) {
-                const parts = devUriMatch[1].split('+');
-                devName = parts[0].replace(/^video=/i, '').trim();
+                const [baseUri, queryStr] = devUriMatch[1].split('?');
+                if (queryStr) {
+                    const params = new URLSearchParams(queryStr);
+                    if (params.get('video_input')) videoInput = params.get('video_input');
+                    if (params.get('format_code')) formatCode = params.get('format_code');
+                }
+                const parts = baseUri.split('+');
+                videoDev = parts[0].replace(/^video=/i, '').trim();
+                audioDev = (parts[1] || videoDev).replace(/^audio=/i, '').trim();
             } else if (dshowMatch) {
-                const parts = dshowMatch[1].split(':');
+                const [baseUri, queryStr] = dshowMatch[1].split('?');
+                if (queryStr) {
+                    const params = new URLSearchParams(queryStr);
+                    if (params.get('video_input')) videoInput = params.get('video_input');
+                    if (params.get('format_code')) formatCode = params.get('format_code');
+                }
+                const parts = baseUri.split(':');
                 const vPart = parts.find(p => p.startsWith('video=')) || parts[0];
-                devName = vPart.replace(/^video=/i, '').trim();
+                const aPart = parts.find(p => p.startsWith('audio=')) || vPart;
+                videoDev = vPart.replace(/^video=/i, '').replace(/["']/g, '').trim();
+                audioDev = aPart.replace(/^audio=/i, '').replace(/["']/g, '').trim();
+            } else if (decklinkMatch) {
+                videoDev = decklinkMatch[1].replace(/["']/g, '').trim();
+                audioDev = videoDev;
             }
 
+            if (videoDev.includes('?')) videoDev = videoDev.split('?')[0].trim();
+            if (audioDev.includes('?')) audioDev = audioDev.split('?')[0].trim();
+
+            const devices = await scanCaptureDevices().catch(() => ({ video: [], audio: [] }));
+            const resolvedVideo = resolveCaptureDevice(devices, videoDev) || videoDev;
+            const resolvedAudio = resolveCaptureDevice(devices, audioDev) || audioDev;
+
             if (process.platform !== 'win32') {
-                const linuxDeviceFlags = `-thread_queue_size 1024 -f decklink -video_input hdmi -i "${devName}"`;
+                const formatFlag = formatCode && formatCode !== 'auto' && formatCode !== 'unset' ? `-format_code ${formatCode} ` : '';
+                const vInputFlag = videoInput && videoInput !== 'unset' && videoInput !== 'auto' ? `-video_input ${videoInput} ` : '-video_input hdmi ';
+                const linuxDeviceFlags = `-thread_queue_size 1024 -f decklink ${formatFlag}${vInputFlag}-i "${resolvedVideo || resolvedAudio || 'Intensity Pro 4K'}"`;
                 if (devUriMatch) {
                     finalCommand = finalCommand.replace(devUriMatch[0], linuxDeviceFlags);
                 } else if (dshowMatch) {
                     finalCommand = finalCommand.replace(dshowMatch[0], linuxDeviceFlags);
+                } else if (decklinkMatch) {
+                    finalCommand = finalCommand.replace(decklinkMatch[0], linuxDeviceFlags);
                 }
             } else {
-                const winDeviceFlags = `-thread_queue_size 1024 -f dshow -rtbufsize 1024M -i video="${devName}":audio="${devName}"`;
+                const winDeviceFlags = `-thread_queue_size 1024 -f dshow -rtbufsize 1024M -i video="${resolvedVideo || 'video'}":audio="${resolvedAudio || resolvedVideo || 'audio'}"`;
                 if (devUriMatch) {
                     finalCommand = finalCommand.replace(devUriMatch[0], winDeviceFlags);
+                } else if (dshowMatch) {
+                    finalCommand = finalCommand.replace(dshowMatch[0], winDeviceFlags);
                 }
             }
         }
