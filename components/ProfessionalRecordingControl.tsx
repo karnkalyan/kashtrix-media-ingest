@@ -338,7 +338,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }
   }, [videoDevice]);
 
-  // Check preview status on mount to recover active preview and stop button after page refresh
+  const [serverDevicePreview, setServerDevicePreview] = useState<{
+    active: boolean;
+    previewId?: string;
+    videoDevice?: string;
+    audioDevice?: string;
+    hlsUrl?: string;
+    detectedResolution?: string;
+    detectedFramerate?: string;
+  } | null>(null);
+
+  // Check preview status on mount to recover active preview if matching selected device
   useEffect(() => {
     let isMounted = true;
     const checkPreviewStatus = async () => {
@@ -349,20 +359,18 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json().catch(() => ({}));
-        if (isMounted && data.active && data.previewId) {
-          if (!videoDevice || data.videoDevice === videoDevice) {
-            devicePreviewIdRef.current = data.previewId;
-            setActiveHlsUrl(data.hlsUrl || `/hls/device-preview/${data.previewId}/index.m3u8`);
-            setPreviewing(true);
-            if (data.detectedResolution) setDetectedResolution(data.detectedResolution);
-            if (data.detectedFramerate) setDetectedFramerate(data.detectedFramerate);
+        if (isMounted) {
+          if (data.active && data.previewId) {
+            setServerDevicePreview(data);
+          } else {
+            setServerDevicePreview(null);
           }
         }
       } catch {}
     };
     checkPreviewStatus();
     return () => { isMounted = false; };
-  }, [sourceType, videoDevice]);
+  }, [sourceType]);
 
   // Listen for device preview state updates over WebSocket
   useEffect(() => {
@@ -375,16 +383,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           setDetectedFramerate(msg.payload.detectedFramerate);
         }
         if (msg.payload.active && msg.payload.previewId) {
-          if (sourceType === 'device' && (!videoDevice || msg.payload.videoDevice === videoDevice)) {
-            devicePreviewIdRef.current = msg.payload.previewId;
-            setActiveHlsUrl(msg.payload.hlsUrl || `/hls/device-preview/${msg.payload.previewId}/index.m3u8`);
-            setPreviewing(true);
-          }
+          setServerDevicePreview(msg.payload);
         } else if (!msg.payload.active) {
-          devicePreviewIdRef.current = null;
-          setActiveHlsUrl('');
-          setPreviewing(false);
-          setPreviewStarting(false);
+          setServerDevicePreview(null);
         }
       }
     });
@@ -392,7 +393,30 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => {
       unsubscribe();
     };
-  }, [sourceType, videoDevice, audioDevice]);
+  }, []);
+
+  // Sync preview player STRICTLY based on selected same device across different client browsers/tabs
+  useEffect(() => {
+    if (sourceType === 'device' && serverDevicePreview?.active && serverDevicePreview.previewId) {
+      const isSameVideo = Boolean(videoDevice && serverDevicePreview.videoDevice === videoDevice);
+      const isSameAudio = Boolean(!videoDevice && audioDevice && serverDevicePreview.audioDevice === audioDevice);
+      if (isSameVideo || isSameAudio) {
+        devicePreviewIdRef.current = serverDevicePreview.previewId;
+        setActiveHlsUrl(serverDevicePreview.hlsUrl || `/hls/device-preview/${serverDevicePreview.previewId}/index.m3u8`);
+        setPreviewing(true);
+        if (serverDevicePreview.detectedResolution) setDetectedResolution(serverDevicePreview.detectedResolution);
+        if (serverDevicePreview.detectedFramerate) setDetectedFramerate(serverDevicePreview.detectedFramerate);
+        return;
+      }
+    }
+
+    // If not matching the current selected device, do NOT show or play the other device's stream
+    if (sourceType === 'device') {
+      devicePreviewIdRef.current = null;
+      setActiveHlsUrl('');
+      setPreviewing(false);
+    }
+  }, [sourceType, videoDevice, audioDevice, serverDevicePreview]);
 
   const startSourcePreview = async () => {
     if (previewStarting) return;
@@ -403,6 +427,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
     try {
       if (sourceType === 'device') {
+        if (!currentVideoDev && !currentAudioDev) {
+          throw new Error('Please select a video or audio capture device first');
+        }
         const token = localStorage.getItem('kte-auth-token');
         const response = await fetch('/api/ingest/device-preview/start', {
           method: 'POST',
@@ -426,6 +453,15 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         if (data.detectedFramerate) setDetectedFramerate(data.detectedFramerate);
         setActiveHlsUrl(data.hlsUrl);
         setPreviewing(true);
+        setServerDevicePreview({
+          active: true,
+          previewId: data.previewId,
+          videoDevice: data.videoDevice || currentVideoDev,
+          audioDevice: data.audioDevice || currentAudioDev,
+          hlsUrl: data.hlsUrl,
+          detectedResolution: data.detectedResolution,
+          detectedFramerate: data.detectedFramerate,
+        });
       } else if (selectedStreamKey) {
         const encodedStreamKey = selectedStreamKey.split('/').filter(Boolean).map(encodeURIComponent).join('/');
         setActiveHlsUrl(`/hls/${encodedStreamKey}/index.m3u8`);
@@ -441,9 +477,6 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   };
 
   const handleDeviceSelectionChange = (type: 'video' | 'audio', value: string) => {
-    if (previewing || previewStarting) {
-      void stopPreview(true);
-    }
     if (type === 'video') {
       setVideoDevice?.(value);
     } else {
