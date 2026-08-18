@@ -379,7 +379,7 @@ export const generateCommand = (
   // Append DeckLink output(s) to the command
   if (decklinkDests.length > 0) {
     for (const dk of decklinkDests) {
-      baseCommand += ` ${buildDecklinkOutputFlags(dk, profile)}`;
+      baseCommand += ` -map 0:v:0 -map 0:a:0? ${buildDecklinkOutputFlags(dk, profile)}`;
     }
   }
 

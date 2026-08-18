@@ -234,3 +234,41 @@ export const PIXEL_FORMAT_OPTIONS = [
   { value: 'yuv422p', label: 'yuv422p' },
   { value: 'yuv444p', label: 'yuv444p' },
 ];
+
+export const DEFAULT_DECKLINK_FORMATS: {
+  code: string;
+  resolution: string;
+  width: number;
+  height: number;
+  fps: string;
+  fpsNum: number;
+  fpsDen: number;
+  interlaced: boolean;
+  fieldOrder?: string;
+  description: string;
+}[] = [
+  { code: 'Hi50', resolution: '1920x1080', width: 1920, height: 1080, fps: '50', fpsNum: 25000, fpsDen: 1000, interlaced: true, fieldOrder: 'upper field first', description: '1080i 50 fps (1920x1080, Interlaced Upper Field - Broadcast PAL)' },
+  { code: 'Hi59', resolution: '1920x1080', width: 1920, height: 1080, fps: '59.94', fpsNum: 30000, fpsDen: 1001, interlaced: true, fieldOrder: 'upper field first', description: '1080i 59.94 fps (1920x1080, Interlaced Upper Field - Broadcast NTSC)' },
+  { code: 'Hi60', resolution: '1920x1080', width: 1920, height: 1080, fps: '60', fpsNum: 30000, fpsDen: 1000, interlaced: true, fieldOrder: 'upper field first', description: '1080i 60 fps (1920x1080, Interlaced Upper Field)' },
+  { code: 'Hp50', resolution: '1920x1080', width: 1920, height: 1080, fps: '50', fpsNum: 50000, fpsDen: 1000, interlaced: false, description: '1080p 50 fps (1920x1080, Progressive 50 Hz)' },
+  { code: 'Hp59', resolution: '1920x1080', width: 1920, height: 1080, fps: '59.94', fpsNum: 60000, fpsDen: 1001, interlaced: false, description: '1080p 59.94 fps (1920x1080, Progressive 59.94 Hz)' },
+  { code: 'Hp60', resolution: '1920x1080', width: 1920, height: 1080, fps: '60', fpsNum: 60000, fpsDen: 1000, interlaced: false, description: '1080p 60 fps (1920x1080, Progressive 60 Hz)' },
+  { code: 'Hp25', resolution: '1920x1080', width: 1920, height: 1080, fps: '25', fpsNum: 25000, fpsDen: 1000, interlaced: false, description: '1080p 25 fps (1920x1080, Progressive 25 Hz)' },
+  { code: 'Hp29', resolution: '1920x1080', width: 1920, height: 1080, fps: '29.97', fpsNum: 30000, fpsDen: 1001, interlaced: false, description: '1080p 29.97 fps (1920x1080, Progressive 29.97 Hz)' },
+  { code: 'Hp30', resolution: '1920x1080', width: 1920, height: 1080, fps: '30', fpsNum: 30000, fpsDen: 1000, interlaced: false, description: '1080p 30 fps (1920x1080, Progressive 30 Hz)' },
+  { code: '24ps', resolution: '1920x1080', width: 1920, height: 1080, fps: '24', fpsNum: 24000, fpsDen: 1000, interlaced: false, description: '1080p 24 fps (1920x1080, Progressive Cinema Film)' },
+  { code: '23ps', resolution: '1920x1080', width: 1920, height: 1080, fps: '23.98', fpsNum: 24000, fpsDen: 1001, interlaced: false, description: '1080p 23.98 fps (1920x1080, Progressive Film)' },
+  { code: 'hp50', resolution: '1280x720', width: 1280, height: 720, fps: '50', fpsNum: 50000, fpsDen: 1000, interlaced: false, description: '720p 50 fps (1280x720, Progressive HD)' },
+  { code: 'hp59', resolution: '1280x720', width: 1280, height: 720, fps: '59.94', fpsNum: 60000, fpsDen: 1001, interlaced: false, description: '720p 59.94 fps (1280x720, Progressive HD)' },
+  { code: 'hp60', resolution: '1280x720', width: 1280, height: 720, fps: '60', fpsNum: 60000, fpsDen: 1000, interlaced: false, description: '720p 60 fps (1280x720, Progressive HD)' },
+  { code: 'pal ', resolution: '720x576', width: 720, height: 576, fps: '25', fpsNum: 25000, fpsDen: 1000, interlaced: true, fieldOrder: 'upper field first', description: 'PAL 576i (720x576, Interlaced Upper Field - SD Broadcast)' },
+  { code: 'ntsc', resolution: '720x486', width: 720, height: 486, fps: '29.97', fpsNum: 30000, fpsDen: 1001, interlaced: true, fieldOrder: 'lower field first', description: 'NTSC 486i (720x486, Interlaced Lower Field - SD Broadcast)' },
+  { code: '4k50', resolution: '3840x2160', width: 3840, height: 2160, fps: '50', fpsNum: 50000, fpsDen: 1000, interlaced: false, description: '4K UHD 50 fps (3840x2160, Progressive Ultra HD)' },
+  { code: '4k59', resolution: '3840x2160', width: 3840, height: 2160, fps: '59.94', fpsNum: 60000, fpsDen: 1001, interlaced: false, description: '4K UHD 59.94 fps (3840x2160, Progressive Ultra HD)' },
+  { code: '4k60', resolution: '3840x2160', width: 3840, height: 2160, fps: '60', fpsNum: 60000, fpsDen: 1000, interlaced: false, description: '4K UHD 60 fps (3840x2160, Progressive Ultra HD)' },
+  { code: '4k25', resolution: '3840x2160', width: 3840, height: 2160, fps: '25', fpsNum: 25000, fpsDen: 1000, interlaced: false, description: '4K UHD 25 fps (3840x2160, Progressive 25 Hz)' },
+  { code: '4k30', resolution: '3840x2160', width: 3840, height: 2160, fps: '30', fpsNum: 30000, fpsDen: 1000, interlaced: false, description: '4K UHD 30 fps (3840x2160, Progressive 30 Hz)' },
+  { code: '4k24', resolution: '3840x2160', width: 3840, height: 2160, fps: '24', fpsNum: 24000, fpsDen: 1000, interlaced: false, description: '4K UHD 24 fps (3840x2160, Progressive Cinema Film)' },
+  { code: '4k23', resolution: '3840x2160', width: 3840, height: 2160, fps: '23.98', fpsNum: 24000, fpsDen: 1001, interlaced: false, description: '4K UHD 23.98 fps (3840x2160, Progressive Film)' },
+];
+

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppSettings, Channel, ChannelDestination, DecklinkFormat, InputType, Protocol, TranscodingProfile } from '../types';
-import { LIVE_PROTOCOL_OPTIONS } from '../constants';
+import { LIVE_PROTOCOL_OPTIONS, DEFAULT_DECKLINK_FORMATS } from '../constants';
 import SegmentedControl from './ui/SegmentedControl';
 import ProtocolBadge from './ui/ProtocolBadge';
 import CodeField from './ui/CodeField';
@@ -326,7 +326,7 @@ export const Configurator: React.FC<Props> = ({
   }, []);
 
   const fetchDecklinkFormats = useCallback(async (deviceId: string) => {
-    if (!deviceId || decklinkFormats[deviceId]) return;
+    if (!deviceId) return;
     try {
       const token = localStorage.getItem('kte-auth-token');
       const res = await fetch(`/api/ffmpeg/devices/${encodeURIComponent(deviceId)}/formats`, {
@@ -336,10 +336,16 @@ export const Configurator: React.FC<Props> = ({
         const data = await res.json();
         if (data.formats?.length) {
           setDecklinkFormats(prev => ({ ...prev, [deviceId]: data.formats }));
+          return;
         }
       }
     } catch {}
-  }, [decklinkFormats]);
+    // Fallback if API or hardware query returned empty
+    setDecklinkFormats(prev => ({
+      ...prev,
+      [deviceId]: prev[deviceId]?.length ? prev[deviceId] : DEFAULT_DECKLINK_FORMATS,
+    }));
+  }, []);
 
   const refreshLive = useCallback(async () => {
     setLoading(true);
@@ -420,6 +426,23 @@ export const Configurator: React.FC<Props> = ({
         const format = recording.format || 'mp4';
         url = `media/recordings/${fileName}.${format}`;
         return { ...item, ...next, protocol, url, playbackUrl: '', recording };
+      }
+
+      if (protocol === Protocol.DECKLINK) {
+        const devId = next.decklinkDeviceId || item.decklinkDeviceId || decklinkDevicesList[0]?.id || '75:05326625:00000000';
+        const devName = next.decklinkDeviceName || item.decklinkDeviceName || decklinkDevicesList.find(d => d.id === devId)?.name || 'Intensity Pro 4K';
+        const formatCode = next.decklinkFormatCode || item.decklinkFormatCode || 'Hi50';
+        url = devId;
+        return {
+          ...item,
+          ...next,
+          protocol,
+          url,
+          decklinkDeviceId: devId,
+          decklinkDeviceName: devName,
+          decklinkFormatCode: formatCode,
+          playbackUrl: '',
+        };
       }
 
       return {
@@ -789,46 +812,66 @@ export const Configurator: React.FC<Props> = ({
                   onChange={url => setDestination(dest.id, { url })}
                 />
 
-                {dest.protocol === Protocol.DECKLINK && (
-                  <div className="space-y-2">
-                    <Select
-                      label="DeckLink Output Device"
-                      value={dest.decklinkDeviceId || ''}
-                      onChange={e => {
-                        const devId = e.target.value;
-                        const dev = decklinkDevicesList.find(d => d.id === devId);
-                        setDestination(dest.id, {
-                          decklinkDeviceId: devId,
-                          decklinkDeviceName: dev?.name || devId,
-                          url: devId,
-                        });
-                        if (devId) fetchDecklinkFormats(devId);
-                      }}
-                      placeholder="Select output device"
-                      options={decklinkDevicesList.map(d => ({
-                        value: d.id,
-                        label: `${d.name} (${d.id})`,
-                      }))}
-                    />
-                    {dest.decklinkDeviceId && (
+                {dest.protocol === Protocol.DECKLINK && (() => {
+                  const currentFormats = (dest.decklinkDeviceId && decklinkFormats[dest.decklinkDeviceId]?.length)
+                    ? decklinkFormats[dest.decklinkDeviceId]
+                    : DEFAULT_DECKLINK_FORMATS;
+                  const selectedFormat = currentFormats.find(f => f.code === (dest.decklinkFormatCode || 'Hi50')) || currentFormats[0];
+
+                  return (
+                    <div className="space-y-2">
                       <Select
-                        label="Output Format"
-                        value={dest.decklinkFormatCode || ''}
+                        label="DeckLink Output Device"
+                        value={dest.decklinkDeviceId || (decklinkDevicesList[0]?.id || '')}
+                        onChange={e => {
+                          const devId = e.target.value;
+                          const dev = decklinkDevicesList.find(d => d.id === devId);
+                          setDestination(dest.id, {
+                            decklinkDeviceId: devId,
+                            decklinkDeviceName: dev?.name || devId,
+                            url: devId,
+                            decklinkFormatCode: dest.decklinkFormatCode || 'Hi50',
+                          });
+                          if (devId) fetchDecklinkFormats(devId);
+                        }}
+                        placeholder="Select output device"
+                        options={decklinkDevicesList.length > 0 ? decklinkDevicesList.map(d => ({
+                          value: d.id,
+                          label: `${d.name} (${d.id})`,
+                        })) : [
+                          { value: dest.decklinkDeviceId || '75:05326625:00000000', label: dest.decklinkDeviceName ? `${dest.decklinkDeviceName} (${dest.decklinkDeviceId})` : `Intensity Pro 4K (75:05326625:00000000)` }
+                        ]}
+                      />
+
+                      <Select
+                        label="Output Format (Signal Standard & Frame Rate)"
+                        value={dest.decklinkFormatCode || 'Hi50'}
                         onChange={e => setDestination(dest.id, { decklinkFormatCode: e.target.value })}
-                        placeholder="Select output format"
-                        options={(decklinkFormats[dest.decklinkDeviceId] || []).map(f => ({
+                        options={currentFormats.map(f => ({
                           value: f.code,
                           label: `${f.code} — ${f.description}`,
                         }))}
                       />
-                    )}
-                    {!decklinkDevicesList.length && (
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400">
-                        No DeckLink devices detected. Ensure drivers are installed and the device is connected.
-                      </p>
-                    )}
-                  </div>
-                )}
+
+                      {selectedFormat && (
+                        <div className="rounded-md border border-purple-200 bg-purple-50/70 p-2 text-[11px] text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-200 space-y-1">
+                          <div className="flex items-center justify-between font-semibold">
+                            <span>Format: {selectedFormat.code}</span>
+                            <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${selectedFormat.interlaced ? 'bg-amber-200 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200' : 'bg-emerald-200 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200'}`}>
+                              {selectedFormat.interlaced ? 'Interlaced' : 'Progressive'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-purple-700 dark:text-purple-300">
+                            Resolution: <span className="font-mono">{selectedFormat.resolution}</span> • Frame Rate: <span className="font-mono">{selectedFormat.fps} fps</span>
+                          </div>
+                          <div className="text-[10px] text-purple-600 dark:text-purple-400">
+                            Video Output: <span className="font-mono">uyvy422</span> (Uncompressed) • Audio: <span className="font-mono">pcm_s16le 48kHz Stereo</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

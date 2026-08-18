@@ -1532,15 +1532,43 @@ app.get('/api/ffmpeg/devices', authMiddleware, async (req, res) => {
 });
 
 // Parse DeckLink -list_formats output into structured format objects
+const STANDARD_DECKLINK_FALLBACK_FORMATS = [
+    { code: 'Hi50', resolution: '1920x1080', width: 1920, height: 1080, fps: '50', fpsNum: 25000, fpsDen: 1000, interlaced: true, fieldOrder: 'upper field first', description: '1080i 50 fps (1920x1080, Interlaced Upper Field - Broadcast PAL)' },
+    { code: 'Hi59', resolution: '1920x1080', width: 1920, height: 1080, fps: '59.94', fpsNum: 30000, fpsDen: 1001, interlaced: true, fieldOrder: 'upper field first', description: '1080i 59.94 fps (1920x1080, Interlaced Upper Field - Broadcast NTSC)' },
+    { code: 'Hi60', resolution: '1920x1080', width: 1920, height: 1080, fps: '60', fpsNum: 30000, fpsDen: 1000, interlaced: true, fieldOrder: 'upper field first', description: '1080i 60 fps (1920x1080, Interlaced Upper Field)' },
+    { code: 'Hp50', resolution: '1920x1080', width: 1920, height: 1080, fps: '50', fpsNum: 50000, fpsDen: 1000, interlaced: false, description: '1080p 50 fps (1920x1080, Progressive 50 Hz)' },
+    { code: 'Hp59', resolution: '1920x1080', width: 1920, height: 1080, fps: '59.94', fpsNum: 60000, fpsDen: 1001, interlaced: false, description: '1080p 59.94 fps (1920x1080, Progressive 59.94 Hz)' },
+    { code: 'Hp60', resolution: '1920x1080', width: 1920, height: 1080, fps: '60', fpsNum: 60000, fpsDen: 1000, interlaced: false, description: '1080p 60 fps (1920x1080, Progressive 60 Hz)' },
+    { code: 'Hp25', resolution: '1920x1080', width: 1920, height: 1080, fps: '25', fpsNum: 25000, fpsDen: 1000, interlaced: false, description: '1080p 25 fps (1920x1080, Progressive 25 Hz)' },
+    { code: 'Hp29', resolution: '1920x1080', width: 1920, height: 1080, fps: '29.97', fpsNum: 30000, fpsDen: 1001, interlaced: false, description: '1080p 29.97 fps (1920x1080, Progressive 29.97 Hz)' },
+    { code: 'Hp30', resolution: '1920x1080', width: 1920, height: 1080, fps: '30', fpsNum: 30000, fpsDen: 1000, interlaced: false, description: '1080p 30 fps (1920x1080, Progressive 30 Hz)' },
+    { code: '24ps', resolution: '1920x1080', width: 1920, height: 1080, fps: '24', fpsNum: 24000, fpsDen: 1000, interlaced: false, description: '1080p 24 fps (1920x1080, Progressive Cinema Film)' },
+    { code: '23ps', resolution: '1920x1080', width: 1920, height: 1080, fps: '23.98', fpsNum: 24000, fpsDen: 1001, interlaced: false, description: '1080p 23.98 fps (1920x1080, Progressive Film)' },
+    { code: 'hp50', resolution: '1280x720', width: 1280, height: 720, fps: '50', fpsNum: 50000, fpsDen: 1000, interlaced: false, description: '720p 50 fps (1280x720, Progressive HD)' },
+    { code: 'hp59', resolution: '1280x720', width: 1280, height: 720, fps: '59.94', fpsNum: 60000, fpsDen: 1001, interlaced: false, description: '720p 59.94 fps (1280x720, Progressive HD)' },
+    { code: 'hp60', resolution: '1280x720', width: 1280, height: 720, fps: '60', fpsNum: 60000, fpsDen: 1000, interlaced: false, description: '720p 60 fps (1280x720, Progressive HD)' },
+    { code: 'pal ', resolution: '720x576', width: 720, height: 576, fps: '25', fpsNum: 25000, fpsDen: 1000, interlaced: true, fieldOrder: 'upper field first', description: 'PAL 576i (720x576, Interlaced Upper Field - SD Broadcast)' },
+    { code: 'ntsc', resolution: '720x486', width: 720, height: 486, fps: '29.97', fpsNum: 30000, fpsDen: 1001, interlaced: true, fieldOrder: 'lower field first', description: 'NTSC 486i (720x486, Interlaced Lower Field - SD Broadcast)' },
+    { code: '4k50', resolution: '3840x2160', width: 3840, height: 2160, fps: '50', fpsNum: 50000, fpsDen: 1000, interlaced: false, description: '4K UHD 50 fps (3840x2160, Progressive Ultra HD)' },
+    { code: '4k59', resolution: '3840x2160', width: 3840, height: 2160, fps: '59.94', fpsNum: 60000, fpsDen: 1001, interlaced: false, description: '4K UHD 59.94 fps (3840x2160, Progressive Ultra HD)' },
+    { code: '4k60', resolution: '3840x2160', width: 3840, height: 2160, fps: '60', fpsNum: 60000, fpsDen: 1000, interlaced: false, description: '4K UHD 60 fps (3840x2160, Progressive Ultra HD)' },
+    { code: '4k25', resolution: '3840x2160', width: 3840, height: 2160, fps: '25', fpsNum: 25000, fpsDen: 1000, interlaced: false, description: '4K UHD 25 fps (3840x2160, Progressive 25 Hz)' },
+    { code: '4k30', resolution: '3840x2160', width: 3840, height: 2160, fps: '30', fpsNum: 30000, fpsDen: 1000, interlaced: false, description: '4K UHD 30 fps (3840x2160, Progressive 30 Hz)' },
+    { code: '4k24', resolution: '3840x2160', width: 3840, height: 2160, fps: '24', fpsNum: 24000, fpsDen: 1000, interlaced: false, description: '4K UHD 24 fps (3840x2160, Progressive Cinema Film)' },
+    { code: '4k23', resolution: '3840x2160', width: 3840, height: 2160, fps: '23.98', fpsNum: 24000, fpsDen: 1001, interlaced: false, description: '4K UHD 23.98 fps (3840x2160, Progressive Film)' },
+];
+
+// Parse DeckLink -list_formats output into structured format objects
 const parseDeckLinkFormats = (output) => {
     const formats = [];
-    const lines = output.split('\n');
+    const lines = String(output || '').split('\n');
     // Match lines like: "Hi50            1920x1080 at 25000/1000 fps (interlaced, upper field first)"
-    const formatRegex = /^\s+(\S+)\s+(\d+)x(\d+)\s+at\s+(\d+)\/(\d+)\s+fps(?:\s+\(([^)]*)\))?\s*$/;
+    const formatRegex = /^\s*(\S+)\s+(\d+)x(\d+)\s+at\s+(\d+)\/(\d+)\s+fps(?:\s+\(([^)]*)\))?/i;
     for (const line of lines) {
         const match = line.match(formatRegex);
         if (!match) continue;
         const [, code, width, height, fpsNum, fpsDen, flags] = match;
+        if (code === 'format_code' || code === 'Supported') continue;
         const fpsRaw = parseInt(fpsNum) / parseInt(fpsDen);
         const fps = Math.round(fpsRaw * 100) / 100;
         const interlaced = (flags || '').toLowerCase().includes('interlaced');
@@ -1548,7 +1576,7 @@ const parseDeckLinkFormats = (output) => {
             ? ((flags || '').toLowerCase().includes('upper') ? 'upper field first'
                 : (flags || '').toLowerCase().includes('lower') ? 'lower field first' : '')
             : '';
-        const description = `${width}x${height} @ ${fps}fps${interlaced ? ` (interlaced${fieldOrder ? ', ' + fieldOrder : ''})` : ' (progressive)'}`;
+        const description = `${width}x${height} @ ${fps}fps${interlaced ? ` (${fieldOrder ? 'Interlaced, ' + fieldOrder : 'Interlaced'})` : ' (Progressive)'}`;
         formats.push({
             code,
             resolution: `${width}x${height}`,
@@ -1570,26 +1598,35 @@ app.get('/api/ffmpeg/devices/:deviceId/formats', authMiddleware, async (req, res
     if (!deviceId) return res.status(400).json({ error: 'deviceId is required' });
     try {
         const { execFile } = require('child_process');
-        const output = await new Promise((resolve) => {
-            execFile(ffmpegPath, [
-                '-hide_banner',
-                '-i', deviceId,
-                '-f', 'decklink',
-                '-list_formats', '1',
-                deviceId,
-            ], {
+        const runProbe = (args) => new Promise((resolve) => {
+            execFile(ffmpegPath, args, {
                 encoding: 'utf8',
                 windowsHide: true,
-                timeout: 10000,
+                timeout: 8000,
                 maxBuffer: 1024 * 1024,
             }, (error, stdout, stderr) => {
                 resolve(`${stdout || ''}\n${stderr || ''}`);
             });
         });
-        const formats = parseDeckLinkFormats(output);
+
+        // 1. Try probing output formats using lavfi nullsrc
+        let output = await runProbe(['-hide_banner', '-f', 'lavfi', '-i', 'nullsrc', '-f', 'decklink', '-list_formats', '1', deviceId]);
+        let formats = parseDeckLinkFormats(output);
+
+        // 2. Try input probe if output probe returned empty
+        if (!formats.length) {
+            output = await runProbe(['-hide_banner', '-f', 'decklink', '-list_formats', '1', '-i', deviceId]);
+            formats = parseDeckLinkFormats(output);
+        }
+
+        // 3. If hardware probe didn't return (e.g. non-Linux or simulated), return standard Blackmagic broadcast formats
+        if (!formats.length) {
+            formats = STANDARD_DECKLINK_FALLBACK_FORMATS;
+        }
+
         res.json({ deviceId, formats });
     } catch (error) {
-        res.status(500).json({ error: error.message || 'Unable to query device formats' });
+        res.json({ deviceId, formats: STANDARD_DECKLINK_FALLBACK_FORMATS });
     }
 });
 
