@@ -750,53 +750,84 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       </section>
     </div>
 
-    <div className="recording-settings-grid mt-3 grid grid-cols-1 gap-3 xl:grid-cols-4"><section className="app-panel p-4 xl:col-span-2">
-      <h3 className="panel-kicker mb-4">Video encoding</h3>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Label>Transcoding profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="source-default">Native Source / Direct Capture (Default — No Re-encoding)</option><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
-        <Label>Video codec<select disabled={encodingDisabled} value={activeConfig.videoCodec} onChange={event => patch({ videoCodec: event.target.value as any })} className={selectClass}><option value="h264">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option></select></Label>
-        <Label>Rate control<select disabled={encodingDisabled} value={activeConfig.rateControl} onChange={event => patch({ rateControl: event.target.value as any })} className={selectClass}><option value="cbr">CBR broadcast</option><option value="vbr">VBR quality</option><option value="crf">Constant quality</option></select></Label>
-        <Label>Resolution<select disabled={encodingDisabled} value={activeConfig.resolution} onChange={event => patch({ resolution: event.target.value })} className={selectClass}><option value="source">Source / original</option><option value="7680x4320">8K UHD</option><option value="3840x2160">4K UHD 2160p</option><option value="2560x1440">QHD 1440p</option><option value="1920x1080">Full HD 1080p</option><option value="1280x720">HD 720p</option><option value="720x576">PAL 576p</option><option value="720x480">NTSC 480p</option></select></Label>
-        <Label>Frame rate<select disabled={encodingDisabled} value={activeConfig.framerate} onChange={event => patch({ framerate: Number(event.target.value) })} className={selectClass}><option value="0">Source</option><option value="23.976">23.976 fps</option><option value="24">24 fps</option><option value="25">25 fps</option><option value="29.97">29.97 fps</option><option value="30">30 fps</option><option value="50">50 fps</option><option value="59.94">59.94 fps</option><option value="60">60 fps</option><option value="120">120 fps</option></select></Label>
-        {activeConfig.rateControl === 'crf' ? <Label>CRF / CQ quality<input type="number" min="0" max="51" value={activeConfig.crf} onChange={event => patch({ crf: Number(event.target.value) })} className={inputClass} /></Label> : <Label>Target bitrate (Kbps)<input type="number" min="250" max="100000" value={activeConfig.videoBitrate} onChange={event => patch({ videoBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
-      </div>
-      <button type="button" onClick={() => setAdvancedOpen(value => !value)} className="mt-4 flex h-9 w-full items-center justify-between rounded-md border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" aria-expanded={advancedOpen}>Advanced video settings<FiChevronDown className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
-      {advancedOpen && <div className="mt-3 grid grid-cols-1 gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Label>Hardware encoder<select value={activeConfig.encoder} disabled={profileControlsHardware} onChange={event => patch({ encoder: event.target.value as IngestRecordingOptions['encoder'] })} className={selectClass}><option value="copy" disabled={sourceType === 'device'}>Stream copy (ingest only)</option><option value="cpu">CPU software</option><option value="nvidia">NVIDIA NVENC</option><option value="intel">Intel Quick Sync</option><option value="amd">AMD AMF</option></select></Label>
-        {activeConfig.rateControl !== 'crf' && <Label>Maximum bitrate (Kbps)<input type="number" min="250" max="150000" value={activeConfig.maxBitrate} onChange={event => patch({ maxBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
-        <Label>GOP / keyframe interval<input type="number" min="1" max="600" value={activeConfig.gopSize || 60} onChange={event => patch({ gopSize: Number(event.target.value) || 60 })} className={inputClass} /></Label>
-        <Label>Pixel format<select value={activeConfig.pixelFormat} onChange={event => patch({ pixelFormat: event.target.value as any })} className={selectClass}><option value="yuv420p">YUV 4:2:0</option><option value="yuv422p">YUV 4:2:2</option><option value="yuv444p">YUV 4:4:4</option></select></Label>
-        <Label>Encoder preset<select value={activeConfig.preset} onChange={event => patch({ preset: event.target.value as any })} className={selectClass}><option value="ultrafast">Ultra fast</option><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow / quality</option></select></Label>
-      </div>}
-    </section>
+    <div className="recording-settings-grid mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <section className="app-panel p-4">
+        <h3 className="panel-kicker mb-4">Video encoding</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Label>Transcoding profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="source-default">Native Source / Direct Capture (Default — No Re-encoding)</option><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
+          <Label>Video codec<select disabled={encodingDisabled} value={activeConfig.videoCodec} onChange={event => patch({ videoCodec: event.target.value as any })} className={selectClass}><option value="h264">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option></select></Label>
+          <Label>Rate control<select disabled={encodingDisabled} value={activeConfig.rateControl} onChange={event => patch({ rateControl: event.target.value as any })} className={selectClass}><option value="cbr">CBR broadcast</option><option value="vbr">VBR quality</option><option value="crf">Constant quality</option></select></Label>
+          <Label>Resolution<select disabled={encodingDisabled} value={activeConfig.resolution} onChange={event => patch({ resolution: event.target.value })} className={selectClass}><option value="source">Source / original</option><option value="7680x4320">8K UHD</option><option value="3840x2160">4K UHD 2160p</option><option value="2560x1440">QHD 1440p</option><option value="1920x1080">Full HD 1080p</option><option value="1280x720">HD 720p</option><option value="720x576">PAL 576p</option><option value="720x480">NTSC 480p</option></select></Label>
+          <Label>Frame rate<select disabled={encodingDisabled} value={activeConfig.framerate} onChange={event => patch({ framerate: Number(event.target.value) })} className={selectClass}><option value="0">Source</option><option value="23.976">23.976 fps</option><option value="24">24 fps</option><option value="25">25 fps</option><option value="29.97">29.97 fps</option><option value="30">30 fps</option><option value="50">50 fps</option><option value="59.94">59.94 fps</option><option value="60">60 fps</option><option value="120">120 fps</option></select></Label>
+          {activeConfig.rateControl === 'crf' ? <Label>CRF / CQ quality<input type="number" min="0" max="51" value={activeConfig.crf} onChange={event => patch({ crf: Number(event.target.value) })} className={inputClass} /></Label> : <Label>Target bitrate (Kbps)<input type="number" min="250" max="100000" value={activeConfig.videoBitrate} onChange={event => patch({ videoBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
+        </div>
+        <button type="button" onClick={() => setAdvancedOpen(value => !value)} className="mt-4 flex h-9 w-full items-center justify-between rounded-md border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" aria-expanded={advancedOpen}>Advanced video settings<FiChevronDown className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
+        {advancedOpen && <div className="mt-3 grid grid-cols-1 gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Label>Hardware encoder<select value={activeConfig.encoder} disabled={profileControlsHardware} onChange={event => patch({ encoder: event.target.value as IngestRecordingOptions['encoder'] })} className={selectClass}><option value="copy" disabled={sourceType === 'device'}>Stream copy (ingest only)</option><option value="cpu">CPU software</option><option value="nvidia">NVIDIA NVENC</option><option value="intel">Intel Quick Sync</option><option value="amd">AMD AMF</option></select></Label>
+          {activeConfig.rateControl !== 'crf' && <Label>Maximum bitrate (Kbps)<input type="number" min="250" max="150000" value={activeConfig.maxBitrate} onChange={event => patch({ maxBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
+          <Label>GOP / keyframe interval<input type="number" min="1" max="600" value={activeConfig.gopSize || 60} onChange={event => patch({ gopSize: Number(event.target.value) || 60 })} className={inputClass} /></Label>
+          <Label>Pixel format<select value={activeConfig.pixelFormat} onChange={event => patch({ pixelFormat: event.target.value as any })} className={selectClass}><option value="yuv420p">YUV 4:2:0</option><option value="yuv422p">YUV 4:2:2</option><option value="yuv444p">YUV 4:4:4</option></select></Label>
+          <Label>Encoder preset<select value={activeConfig.preset} onChange={event => patch({ preset: event.target.value as any })} className={selectClass}><option value="ultrafast">Ultra fast</option><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow / quality</option></select></Label>
+        </div>}
+      </section>
 
-    <div className="contents">
-      <section className="rounded-2xl border border-slate-200 p-4"><h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">3. Professional audio</h3><div className="grid grid-cols-1 gap-4 sm:grid-cols-2"><Label>Audio codec<select value={activeConfig.audioCodec} onChange={event => patch({ audioCodec: event.target.value as any })} className={selectClass}><option value="aac">AAC</option><option value="mp3">MP3</option><option value="opus">Opus</option></select></Label><Label>Audio bitrate (Kbps)<input type="number" min="32" max="1024" value={activeConfig.audioBitrate} onChange={event => patch({ audioBitrate: Number(event.target.value) })} className={inputClass} /></Label><Label>Sample rate<select value={activeConfig.sampleRate} onChange={event => patch({ sampleRate: Number(event.target.value) })} className={selectClass}><option value="32000">32 kHz</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz broadcast</option><option value="96000">96 kHz</option></select></Label><Label>Audio channels<select value={activeConfig.audioChannels} onChange={event => patch({ audioChannels: Number(event.target.value) })} className={selectClass}><option value="1">Mono</option><option value="2">Stereo</option><option value="6">5.1 surround</option><option value="8">7.1 surround</option></select></Label></div></section>
-      <section className="rounded-2xl border border-slate-200 p-4 dark:border-[#311B4E] dark:bg-[#1E1130]/40">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">4. Simultaneous output formats</h3>
-          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-            MOV / MKV = Uncompressed Master
+      <section className="app-panel rounded-2xl border border-slate-200 p-4 dark:border-[#311B4E] dark:bg-[#1E1130]/40">
+        <h3 className="panel-kicker mb-4">3. Professional audio</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Label>Audio codec<select value={activeConfig.audioCodec} onChange={event => patch({ audioCodec: event.target.value as any })} className={selectClass}><option value="aac">AAC</option><option value="mp3">MP3</option><option value="opus">Opus</option></select></Label>
+          <Label>Audio bitrate (Kbps)<input type="number" min="32" max="1024" value={activeConfig.audioBitrate} onChange={event => patch({ audioBitrate: Number(event.target.value) })} className={inputClass} /></Label>
+          <Label>Sample rate<select value={activeConfig.sampleRate} onChange={event => patch({ sampleRate: Number(event.target.value) })} className={selectClass}><option value="32000">32 kHz</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz broadcast</option><option value="96000">96 kHz</option></select></Label>
+          <Label>Audio channels<select value={activeConfig.audioChannels} onChange={event => patch({ audioChannels: Number(event.target.value) })} className={selectClass}><option value="1">Mono</option><option value="2">Stereo</option><option value="6">5.1 surround</option><option value="8">7.1 surround</option></select></Label>
+        </div>
+      </section>
+
+      <section className="app-panel col-span-full rounded-2xl border border-slate-200 p-4 dark:border-[#311B4E] dark:bg-[#1E1130]/40">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="panel-kicker">4. Simultaneous output formats</h3>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">(Select one or multiple archival formats)</span>
+          </div>
+          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            MOV &amp; MKV = 100% Uncompressed Master Quality
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {(['mp4', 'mkv', 'mov', 'ts', 'flv'] as const).map(format => {
-            const isSelected = activeFormats.includes(format);
-            const isUncompressed = format !== 'mp4' && format !== 'ts' && format !== 'flv';
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {([
+            { id: 'mp4', name: 'MP4', badge: 'Compressed', desc: 'H.264 / HEVC Stream', uncompressed: false },
+            { id: 'mkv', name: 'MKV', badge: 'Uncompressed', desc: 'Master 4:2:2 (rawvideo)', uncompressed: true },
+            { id: 'mov', name: 'MOV', badge: 'Uncompressed', desc: 'Master 4:2:2 (2vuy/uyvy)', uncompressed: true },
+            { id: 'ts',  name: 'TS',  badge: 'Broadcast',   desc: 'MPEG-TS Transport', uncompressed: false },
+            { id: 'flv', name: 'FLV', badge: 'Streaming',   desc: 'RTMP / Flash Container', uncompressed: false },
+          ] as const).map(fmt => {
+            const isSelected = activeFormats.includes(fmt.id);
             return (
               <button
                 type="button"
-                key={format}
-                onClick={() => toggleFormat(format)}
-                className={`flex flex-col items-center justify-center rounded-xl border p-2.5 text-center transition-all ${
+                key={fmt.id}
+                onClick={() => toggleFormat(fmt.id)}
+                className={`recording-format-btn group relative flex flex-col items-start justify-between rounded-xl border p-3 text-left transition-all duration-150 select-none ${
                   isSelected
-                    ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs dark:border-[#7C3AED] dark:bg-[#7C3AED]'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2B1744]'
+                    ? 'border-[#7C3AED] bg-[#7C3AED] text-white shadow-sm ring-2 ring-[#7C3AED]/25 dark:border-[#7C3AED] dark:bg-[#7C3AED]'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-violet-300 hover:bg-slate-50/90 dark:bg-[#211335] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2B1744] dark:hover:border-[#522D85]'
                 }`}
               >
-                <span className="text-xs font-black uppercase tracking-wide">{format}</span>
-                <span className={`mt-1 text-[9px] font-medium leading-tight ${isSelected ? 'text-indigo-100 dark:text-violet-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                  {format === 'mp4' ? 'Compressed' : isUncompressed ? 'Uncompressed' : 'Stream'}
+                <div className="flex w-full items-center justify-between gap-1">
+                  <span className="text-xs font-black uppercase tracking-wider">{fmt.name}</span>
+                  <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-tight ${
+                    isSelected
+                      ? 'bg-white/20 text-white'
+                      : fmt.uncompressed
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                  }`}>
+                    {fmt.badge}
+                  </span>
+                </div>
+                <span className={`mt-2 block w-full truncate text-[10px] font-medium leading-tight ${
+                  isSelected ? 'text-violet-100' : 'text-slate-500 dark:text-slate-400'
+                }`}>
+                  {fmt.desc}
                 </span>
               </button>
             );
@@ -805,12 +836,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-2.5 text-[10px] leading-relaxed text-slate-600 dark:bg-[#211335]/40 dark:border-[#371F59] dark:text-slate-300">
           <p className="font-semibold text-slate-700 dark:text-slate-200">Broadcast Quality Architecture:</p>
           <ul className="mt-1 list-disc list-inside space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
-            <li><b className="text-slate-700 dark:text-slate-200">MOV & MKV:</b> 100% Uncompressed Master Quality (<code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">rawvideo</code> 4:2:2 + <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">pcm_s16le</code> audio).</li>
-            <li><b className="text-slate-700 dark:text-slate-200">MP4:</b> Compressed streaming quality (H.264/HEVC + AAC) using the encoding settings above.</li>
+            <li><b className="text-slate-700 dark:text-slate-200">MOV (QuickTime):</b> 100% Broadcast Uncompressed Master (<code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">rawvideo</code> 4:2:2 <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">uyvy422</code> / <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">2vuy</code> + <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">pcm_s16le</code> audio).</li>
+            <li><b className="text-slate-700 dark:text-slate-200">MKV (Matroska):</b> 100% Uncompressed Master Quality (<code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">rawvideo</code> 4:2:2 <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">yuv422p</code> + <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">pcm_s16le</code> audio).</li>
+            <li><b className="text-slate-700 dark:text-slate-200">MP4, TS &amp; FLV:</b> Streaming &amp; transport streams encoded with configured hardware (NVENC/AMF/QSV) or CPU encoder.</li>
           </ul>
         </div>
       </section>
-    </div></div>
+    </div>
 
     <section className="app-panel mt-3 p-4">
       <div className="flex items-center justify-between gap-3 mb-3">

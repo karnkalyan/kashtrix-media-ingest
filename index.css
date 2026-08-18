@@ -853,10 +853,18 @@ h3,
   padding: 12px !important;
 }
 
-.recording-settings-grid button {
+.recording-settings-grid button:not(.recording-format-btn) {
   min-height: 34px;
   padding-top: 7px !important;
   padding-bottom: 7px !important;
+}
+
+.recording-format-btn {
+  min-height: 62px !important;
+  height: auto !important;
+  padding: 10px 12px !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
 }
 
 .live-server-workspace>section>.grid {

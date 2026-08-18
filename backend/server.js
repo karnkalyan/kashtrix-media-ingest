@@ -2316,15 +2316,22 @@ const buildSingleOutputArgs = (output, options, isDeviceDirect, targetFps) => {
             outArgs.push('-c:v', videoEncoder, '-b:v', `${Math.max(50000, options.videoBitrate || 50000)}k`);
             outArgs.push('-c:a', 'aac', '-b:a', '320k', '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
             outArgs.push('-f', 'flv');
+        } else if (format === 'mov') {
+            // True broadcast uncompressed video in QuickTime MOV container
+            // Standard QuickTime 8-bit 4:2:2 uncompressed video requires packed 'uyvy422' (FourCC tag: '2vuy').
+            // Planar yuv422p is incompatible with QuickTime container specifications and causes garbled/solarized rendering.
+            outArgs.push('-c:v', 'rawvideo');
+            const movPixFmt = options.pixelFormat === 'yuv444p' ? 'ayuv' : 'uyvy422';
+            const movTag = options.pixelFormat === 'yuv444p' ? 'ayuv' : '2vuy';
+            outArgs.push('-pix_fmt', movPixFmt, '-tag:v', movTag);
+            outArgs.push('-c:a', 'pcm_s16le', '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
+            outArgs.push('-movflags', '+faststart+frag_keyframe+empty_moov+default_base_moof');
         } else {
-            // True broadcast uncompressed video (rawvideo) + uncompressed PCM audio (pcm_s16le) for MOV, MKV, AVI
+            // True broadcast uncompressed video (rawvideo) + uncompressed PCM audio (pcm_s16le) for MKV, AVI
             outArgs.push('-c:v', 'rawvideo');
             const uncompressedPixFmt = options.pixelFormat && options.pixelFormat !== 'yuv420p' ? options.pixelFormat : 'yuv422p';
             outArgs.push('-pix_fmt', uncompressedPixFmt);
             outArgs.push('-c:a', 'pcm_s16le', '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
-            if (format === 'mov') {
-                outArgs.push('-movflags', '+faststart+frag_keyframe+empty_moov+default_base_moof');
-            }
         }
     } else {
         // Compressed MP4 format using configured hardware or CPU encoder and audio codec
