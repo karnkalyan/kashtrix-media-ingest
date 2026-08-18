@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare, FiMaximize, FiMinimize } from 'react-icons/fi';
-import { IngestRecordingOptions, TranscodingProfile, VideoCodec } from '../types';
+import { IngestRecordingOptions, TranscodingProfile, VideoCodec, DecklinkFormat } from '../types';
+import { DEFAULT_DECKLINK_FORMATS } from '../constants';
 import DetailDrawer from './ui/DetailDrawer';
 import { subscribeRealtime } from '../services/realtime';
 import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
@@ -220,6 +221,32 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
   const [recordPreviewModalOpen, setRecordPreviewModalOpen] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [deviceFormats, setDeviceFormats] = useState<Record<string, DecklinkFormat[]>>({});
+
+  useEffect(() => {
+    if (!videoDevice) return;
+    if (deviceFormats[videoDevice]) return;
+    const fetchFormats = async () => {
+      try {
+        const token = localStorage.getItem('kte-auth-token');
+        const res = await fetch(`/api/ffmpeg/devices/${encodeURIComponent(videoDevice)}/formats`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.formats?.length) {
+            setDeviceFormats(prev => ({ ...prev, [videoDevice]: data.formats }));
+            return;
+          }
+        }
+      } catch {}
+      setDeviceFormats(prev => ({
+        ...prev,
+        [videoDevice]: DEFAULT_DECKLINK_FORMATS,
+      }));
+    };
+    fetchFormats();
+  }, [videoDevice, deviceFormats]);
 
   useEffect(() => {
     let timer: any;
@@ -636,22 +663,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <Label>Signal standard
               <select value={activeConfig.formatCode || ''} onChange={event => patch({ formatCode: event.target.value })} className={selectClass}>
                 <option value="">Auto / Native</option>
-                <option value="Hi50">1080i 50 fps (PAL Broadcast)</option>
-                <option value="Hp50">1080p 50 fps</option>
-                <option value="Hi60">1080i 60 fps</option>
-                <option value="Hp60">1080p 60 fps</option>
-                <option value="Hi59">1080i 59.94 fps (NTSC Broadcast)</option>
-                <option value="Hp59">1080p 59.94 fps</option>
-                <option value="25p ">1080p 25 fps</option>
-                <option value="30p ">1080p 30 fps</option>
-                <option value="24p ">1080p 24 fps</option>
-                <option value="hp50">720p 50 fps</option>
-                <option value="hp60">720p 60 fps</option>
-                <option value="hp59">720p 59.94 fps</option>
-                <option value="4k50">4K UHD 50 fps</option>
-                <option value="4k60">4K UHD 60 fps</option>
-                <option value="pal ">PAL 576i</option>
-                <option value="ntsc">NTSC 480i</option>
+                {((videoDevice && deviceFormats[videoDevice]) || DEFAULT_DECKLINK_FORMATS).map(f => (
+                  <option key={f.code} value={f.code}>
+                    {f.code} — {f.description}
+                  </option>
+                ))}
               </select>
             </Label>
           </div>

@@ -570,10 +570,21 @@ export const Configurator: React.FC<Props> = ({
       );
     }
     if (inputType === InputType.DEVICE) {
+      const inputDeviceFormats = (videoDevice && decklinkFormats[videoDevice]) || DEFAULT_DECKLINK_FORMATS;
       return (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
-            <Select label="Video Device" value={videoDevice} onChange={e => setVideoDevice(e.target.value)} placeholder="No video" options={videoDevices.map(name => ({ value: name, label: name }))} />
+            <Select
+              label="Video Device"
+              value={videoDevice}
+              onChange={e => {
+                const v = e.target.value;
+                setVideoDevice(v);
+                if (v) fetchDecklinkFormats(v);
+              }}
+              placeholder="No video"
+              options={videoDevices.map(name => ({ value: name, label: name }))}
+            />
             <Select label="Audio Device" value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="No audio" options={audioDevices.map(name => ({ value: name, label: name }))} />
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -597,22 +608,10 @@ export const Configurator: React.FC<Props> = ({
               onChange={e => setFormatCode(e.target.value)}
               options={[
                 { value: '', label: 'Auto Detect / Native Wire Signal' },
-                { value: 'Hi50', label: '1080i 50 fps (PAL Broadcast)' },
-                { value: 'Hp50', label: '1080p 50 fps' },
-                { value: 'Hi60', label: '1080i 60 fps' },
-                { value: 'Hp60', label: '1080p 60 fps' },
-                { value: 'Hi59', label: '1080i 59.94 fps (NTSC Broadcast)' },
-                { value: 'Hp59', label: '1080p 59.94 fps' },
-                { value: '25p ', label: '1080p 25 fps' },
-                { value: '30p ', label: '1080p 30 fps' },
-                { value: '24p ', label: '1080p 24 fps' },
-                { value: 'hp50', label: '720p 50 fps' },
-                { value: 'hp60', label: '720p 60 fps' },
-                { value: 'hp59', label: '720p 59.94 fps' },
-                { value: '4k50', label: '4K UHD 50 fps' },
-                { value: '4k60', label: '4K UHD 60 fps' },
-                { value: 'pal ', label: 'PAL 576i' },
-                { value: 'ntsc', label: 'NTSC 480i' },
+                ...inputDeviceFormats.map(f => ({
+                  value: f.code,
+                  label: `${f.code} — ${f.description}`,
+                })),
               ]}
             />
           </div>
