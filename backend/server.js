@@ -2223,6 +2223,8 @@ const normalizeRecordingOptions = (input = {}) => {
         formatCode: String(input.formatCode || '').trim().slice(0, 16),
         videoInput: ['unset', 'sdi', 'hdmi', 'optical_sdi', 'component', 'composite', 's_video'].includes(String(input.videoInput || '')) ? input.videoInput : (input.videoInput ? String(input.videoInput).trim().slice(0, 32) : 'hdmi'),
         rawFormat: String(input.rawFormat || '').trim().slice(0, 32),
+        rawVideoDevice: String(input.rawVideoDevice || input.videoDevice || '').trim(),
+        rawAudioDevice: String(input.rawAudioDevice || input.audioDevice || '').trim(),
     };
 };
 
@@ -2394,17 +2396,35 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     if (options.sourceType === 'device') {
         let activePreview = null;
         for (const [pId, prev] of devicePreviewProcesses.entries()) {
-            if (!prev.closed && (!options.videoDevice || prev.videoDevice === options.videoDevice) && (!options.audioDevice || prev.audioDevice === options.audioDevice)) {
-                activePreview = { pId, ...prev };
-                break;
+            if (!prev.closed) {
+                const sameVideo = !options.videoDevice || prev.videoDevice === options.videoDevice || prev.videoDevice === options.rawVideoDevice || (options.videoDevice && prev.videoDevice && (prev.videoDevice.includes(options.videoDevice) || options.videoDevice.includes(prev.videoDevice)));
+                const sameAudio = !options.audioDevice || prev.audioDevice === options.audioDevice || prev.audioDevice === options.rawAudioDevice || (options.audioDevice && prev.audioDevice && (prev.audioDevice.includes(options.audioDevice) || options.audioDevice.includes(prev.audioDevice)));
+                if (sameVideo || sameAudio) {
+                    activePreview = { pId, ...prev };
+                    break;
+                }
             }
         }
         if (activePreview) {
-            inputUrl = `http://127.0.0.1:${runtimeSettings.mediaPort}/hls/device-preview/${activePreview.pId}/index.m3u8`;
+            const previewHlsFile = path.join(DEVICE_PREVIEW_DIR, activePreview.pId, 'index.m3u8');
+            if (fs.existsSync(previewHlsFile)) {
+                inputUrl = previewHlsFile;
+            } else {
+                inputUrl = `http://127.0.0.1:${runtimeSettings.mediaPort}/hls/device-preview/${activePreview.pId}/index.m3u8`;
+            }
             const originalPrev = devicePreviewProcesses.get(activePreview.pId);
             if (originalPrev) {
                 originalPrev.inUseByRecording = true;
                 if (originalPrev.expiryTimer) clearTimeout(originalPrev.expiryTimer);
+            }
+        } else {
+            // No active preview process — ensure any stale process holding the device is fully stopped and hardware freed!
+            for (const [pId, prev] of devicePreviewProcesses.entries()) {
+                const sameVideo = (options.videoDevice && prev.videoDevice === options.videoDevice) ||
+                                  (options.rawVideoDevice && prev.videoDevice === options.rawVideoDevice);
+                if (sameVideo) {
+                    stopDevicePreview(pId, true);
+                }
             }
         }
     } else {
@@ -3348,6 +3368,8 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         if (options.videoDevice && !devices.video.includes(options.videoDevice)) return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
         if (options.audioDevice && !devices.audio.includes(options.audioDevice)) return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
 
+        options.rawVideoDevice = options.videoDevice;
+        options.rawAudioDevice = options.audioDevice;
         if (options.videoDevice) options.videoDevice = resolveCaptureDevice(devices, options.videoDevice);
         if (options.audioDevice) options.audioDevice = resolveCaptureDevice(devices, options.audioDevice);
     }
