@@ -167,9 +167,10 @@ const teeDestination = (destination: ChannelDestination, channelName: string, se
     case Protocol.HTTP_TS:
       return `[f=mpegts]${teeEscape(url)}`;
     case Protocol.DECKLINK: {
-      const port = (destination as any).decklinkPort || 'hdmi';
-      // DeckLink output via ffmpeg -f decklink
-      return `[f=decklink:video_input=${port}]${teeEscape(url)}`;
+      // DeckLink output cannot be a tee destination — it requires its own
+      // video filter chain (uyvy422 + interlacing) and audio codec (pcm_s16le).
+      // DeckLink destinations are handled as separate outputs in generateCommand().
+      return '';
     }
     case Protocol.RECORDING: {
       const format = destination.recording?.format || 'mp4';
@@ -181,12 +182,87 @@ const teeDestination = (destination: ChannelDestination, channelName: string, se
   }
 };
 
+/**
+ * Build the FFmpeg output flags for a DeckLink destination.
+ * DeckLink output requires:
+ * - Video: scale → setsar → fps → tinterlace (if interlaced) → format=uyvy422
+ * - Pixel format: uyvy422
+ * - Audio: pcm_s16le at 48kHz stereo
+ * - Output: -f decklink "<device_id>"
+ */
+const buildDecklinkOutputFlags = (dest: ChannelDestination, profile?: TranscodingProfile) => {
+  const deviceId = dest.decklinkDeviceId || dest.decklinkDevice || dest.url?.replace('decklink://', '') || '';
+  const formatCode = dest.decklinkFormatCode || 'Hi50';
+
+  // Derive output parameters from the format code
+  // Format codes: Hi50 = 1080i50, Hp25 = 1080p25, hp50 = 720p50, etc.
+  const isInterlaced = formatCode.startsWith('Hi') || formatCode.startsWith('hi')
+    || formatCode === 'ntsc' || formatCode === 'pal';
+
+  // Determine output FPS from format code
+  let outputFps = 50; // default
+  const fpsMatch = formatCode.match(/(\d+)$/);
+  if (fpsMatch) {
+    outputFps = parseInt(fpsMatch[1]);
+  } else if (formatCode === 'pal') {
+    outputFps = 25;
+  } else if (formatCode === 'ntsc') {
+    outputFps = 30;
+  }
+
+  // For interlaced output, the frame rate in the filter chain is double the field rate
+  // e.g. Hi50 = 1080i at 25fps field rate → fps=50 in the filter chain for tinterlace
+  const filterFps = isInterlaced ? outputFps : outputFps;
+
+  // Determine resolution from format code
+  let resolution = profile?.resolution || '1920x1080';
+  if (formatCode.startsWith('4k')) {
+    resolution = '3840x2160';
+  } else if (formatCode.startsWith('hp') || formatCode.startsWith('Hp')) {
+    resolution = formatCode.startsWith('hp') ? '1280x720' : '1920x1080';
+  } else if (formatCode.startsWith('Hi') || formatCode.startsWith('hi')) {
+    resolution = '1920x1080';
+  } else if (formatCode === 'pal') {
+    resolution = '720x576';
+  } else if (formatCode === 'ntsc') {
+    resolution = '720x486';
+  } else if (formatCode.includes('23ps') || formatCode.includes('24ps')) {
+    resolution = '1920x1080';
+  }
+
+  // Build the video filter chain
+  const filters: string[] = [
+    `scale=${resolution.replace('x', ':')}`,
+    'setsar=1',
+    `fps=${filterFps}`,
+  ];
+  if (isInterlaced) {
+    filters.push('tinterlace=mode=interleave_top');
+  }
+  filters.push('format=uyvy422');
+
+  const vf = `-vf "${filters.join(',')}"`;
+  const pixFmt = '-pix_fmt uyvy422';
+  const audioFlags = '-c:a pcm_s16le -ar 48000 -ac 2';
+  const output = `-f decklink ${quote(deviceId)}`;
+
+  return `${vf} ${pixFmt} ${audioFlags} ${output}`;
+};
+
 export const generateCommand = (
   channel: Omit<Channel, 'command'>,
   profile: TranscodingProfile | undefined,
   settings: AppSettings = initialSettings,
 ): string => {
-  if (!profile) return 'Error: Profile not found';
+  const destinations = channel.destinations?.length
+    ? channel.destinations
+    : [{ id: 'legacy', name: channel.outputProtocol, protocol: channel.outputProtocol, url: channel.outputUrl }];
+
+  // Separate DeckLink destinations from non-DeckLink destinations
+  const decklinkDests = destinations.filter(d => d.protocol === Protocol.DECKLINK);
+  const nonDecklinkDests = destinations.filter(d => d.protocol !== Protocol.DECKLINK);
+
+  if (!profile && nonDecklinkDests.length > 0) return 'Error: Profile not found';
 
   let inputFlags = '';
   const isWindows = navigator.platform.includes('Win') || navigator.userAgent.includes('Windows');
@@ -243,8 +319,8 @@ export const generateCommand = (
   if (mapOptions.length === 0) {
     if (channel.programId && channel.inputType === InputType.URL) {
       mapOptions.push(`-map 0:p:${channel.programId}`);
-    } else if (channel.inputType === InputType.DEVICE) {
-      mapOptions.push('-map 0:v:0?', '-map 0:a:0?');
+    } else if (channel.inputType === InputType.DEVICE || decklinkDests.length > 0) {
+      mapOptions.push('-map 0:v:0', '-map 0:a:0?');
     } else {
       mapOptions.push('-map 0');
     }
@@ -263,32 +339,53 @@ export const generateCommand = (
     [Protocol.RECORDING]: '',
   };
 
-  const destinations = channel.destinations?.length
-    ? channel.destinations
-    : [{ id: 'legacy', name: channel.outputProtocol, protocol: channel.outputProtocol, url: channel.outputUrl }];
-
-  const recordingOverride = destinations.find(destination => destination.protocol === Protocol.RECORDING && destination.recording);
-  const sharedVideoFlags = buildVideoFlags(profile, recordingOverride);
-  const sharedAudioFlags = buildAudioFlags(profile);
+  const recordingOverride = nonDecklinkDests.find(destination => destination.protocol === Protocol.RECORDING && destination.recording);
+  const sharedVideoFlags = profile ? buildVideoFlags(profile, recordingOverride) : '';
+  const sharedAudioFlags = profile ? buildAudioFlags(profile) : '';
   const recordingFlags = recordingOverride ? recordingOutputFlags(recordingOverride) : '';
 
-  const hasHls = destinations.some(d => d.protocol === Protocol.HLS);
+  const hasHls = nonDecklinkDests.some(d => d.protocol === Protocol.HLS);
   const slug = sanitizeName(channel.name);
   const hlsPreviewTee = `[f=hls:hls_time=2:hls_list_size=4:hls_flags=delete_segments]${teeEscape(`media/hls/${slug}/index.m3u8`)}`;
 
-  if (destinations.length === 1 && hasHls) {
-    const destination = destinations[0];
-    const url = `media/hls/${slug}/index.m3u8`;
-    return `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${outputFormatOptions[destination.protocol] || ''} ${quote(url)}`.replace(/\s+/g, ' ').trim();
+  // If ONLY DeckLink destinations (no other outputs)
+  if (nonDecklinkDests.length === 0 && decklinkDests.length > 0) {
+    const dk = decklinkDests[0];
+    const dkFlags = buildDecklinkOutputFlags(dk, profile);
+    return `${youtubePrefix}ffmpeg -hide_banner -loglevel info ${inputFlags} ${mapOptions.join(' ')} ${dkFlags}`.replace(/\s+/g, ' ').trim();
   }
 
-  const teeOutputs = destinations.map(destination => teeDestination(destination, channel.name, settings));
-  if (!hasHls) {
-    teeOutputs.push(hlsPreviewTee);
+  // Build the base command for non-DeckLink destinations
+  let baseCommand = '';
+
+  if (nonDecklinkDests.length === 1 && hasHls && decklinkDests.length === 0) {
+    // Single HLS destination, no DeckLink — simple direct output
+    const destination = nonDecklinkDests[0];
+    const url = `media/hls/${slug}/index.m3u8`;
+    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${outputFormatOptions[destination.protocol] || ''} ${quote(url)}`;
+  } else if (nonDecklinkDests.length > 0) {
+    // Multiple non-DeckLink destinations — use tee muxer
+    const teeOutputs = nonDecklinkDests.map(destination => teeDestination(destination, channel.name, settings)).filter(Boolean);
+    if (!hasHls) {
+      teeOutputs.push(hlsPreviewTee);
+    }
+    const teeSpec = teeOutputs.join('|');
+    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f tee ${quote(teeSpec)}`;
+  } else {
+    // No non-DeckLink destinations, just the default HLS preview
+    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f hls -hls_time 2 -hls_list_size 4 -hls_flags delete_segments ${quote(`media/hls/${slug}/index.m3u8`)}`;
   }
-  const teeSpec = teeOutputs.join('|');
-  return `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(' ')} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f tee ${quote(teeSpec)}`.replace(/\s+/g, ' ').trim();
+
+  // Append DeckLink output(s) to the command
+  if (decklinkDests.length > 0) {
+    for (const dk of decklinkDests) {
+      baseCommand += ` ${buildDecklinkOutputFlags(dk, profile)}`;
+    }
+  }
+
+  return baseCommand.replace(/\s+/g, ' ').trim();
 };
+
 
 type PersistentChannel = Omit<Channel, 'status' | 'uptime' | 'speed' | 'speedHistory' | 'outputLog'>;
 

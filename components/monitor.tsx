@@ -672,13 +672,13 @@ const CpuProcessingMatrix: React.FC<{ stats: TelemetryState }> = ({ stats }) => 
 
 const GpuAccelerationMatrix: React.FC<{ stats: TelemetryState }> = ({ stats }) => {
   const gpu = stats.gpuDetails || {
-    model: 'AMD Radeon(TM) 860M Graphics',
-    vendor: 'Advanced Micro Devices, Inc.',
-    vram: 512,
-    vramFmt: '512 MB',
-    load: 4.2,
-    memoryLoad: 18.0,
-    acceleration: 'AMF / D3D11VA (AMD Hardware Acceleration)',
+    model: 'Hardware GPU Video Engine',
+    vendor: 'Host GPU Adapter',
+    vram: 0,
+    vramFmt: 'Dynamic / Shared',
+    load: 0,
+    memoryLoad: 0,
+    acceleration: 'Hardware Acceleration Active',
   };
 
   const gpuLoad = gpu.load || 0;

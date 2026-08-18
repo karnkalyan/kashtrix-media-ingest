@@ -278,13 +278,13 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             withTimeout(si.mem(), 1200, { total: totalMemOs, used: usedMemOs, free: freeMemOs, available: freeMemOs, swaptotal: 0, swapused: 0 }),
             withTimeout(si.fsSize(), 1200, []),
             withTimeout(getCrossPlatformGpuInfo(), 1500, {
-                model: 'AMD Radeon(TM) 860M Graphics',
-                vendor: 'Advanced Micro Devices, Inc.',
-                vram: 512,
-                vramFmt: '512 MB',
-                load: 4.2,
-                memoryLoad: 18.0,
-                acceleration: 'AMF / D3D11VA (AMD Hardware Acceleration)',
+                model: 'Host Video Processor / GPU',
+                vendor: 'Hardware Accelerator',
+                vram: 0,
+                vramFmt: 'Dynamic / Shared',
+                load: 0,
+                memoryLoad: 0,
+                acceleration: 'Hardware Transcode Engine',
             })
         ]);
 
@@ -359,13 +359,13 @@ const _performFullSystemFetch = async (extraContext = {}) => {
         const totalTx = netRates.reduce((sum, item) => sum + (item.tx_sec || 0), 0);
 
         const gpuDetails = gpuInfo || {
-            model: 'AMD Radeon(TM) 860M Graphics',
-            vendor: 'Advanced Micro Devices, Inc.',
-            vram: 512,
-            vramFmt: '512 MB',
-            load: 4.2,
-            memoryLoad: 18.0,
-            acceleration: 'AMF / D3D11VA (AMD Hardware Acceleration)',
+            model: 'Host Video Processor / GPU',
+            vendor: 'Hardware Accelerator',
+            vram: 0,
+            vramFmt: 'Dynamic / Shared',
+            load: 0,
+            memoryLoad: 0,
+            acceleration: 'Hardware Transcode Engine',
         };
 
         const isHealthy = cpuLoad < 90 && memLoad < 90;

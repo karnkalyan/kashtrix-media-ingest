@@ -217,14 +217,19 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
-          liveSyncDurationCount: 2,
-          liveMaxLatencyDurationCount: 5,
-          maxBufferLength: 6,
-          maxMaxBufferLength: 12,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 8,
+          maxBufferLength: 8,
+          maxMaxBufferLength: 16,
           liveDurationInfinity: true,
           highBufferWatchdogPeriod: 2,
-          backBufferLength: 2,
-          lowLatencyMode: true,
+          backBufferLength: 0,
+          lowLatencyMode: false,
+          manifestLoadingTimeOut: 10000,
+          manifestLoadingMaxRetry: 6,
+          levelLoadingTimeOut: 10000,
+          fragLoadingTimeOut: 10000,
+          fragLoadingMaxRetry: 8,
         });
         hls.loadSource(src);
         hls.attachMedia(video);
@@ -260,17 +265,33 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
-            setLoading(false);
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
               hls.startLoad();
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
               hls.recoverMediaError();
             } else {
-              setError('Stream offline or initializing. Retrying…');
+              setLoading(false);
+              setError('Stream initializing or buffering…');
+              setTimeout(() => {
+                if (hlsRef.current) {
+                  hls.loadSource(src);
+                  hls.attachMedia(video);
+                }
+              }, 1200);
             }
-          } else if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          } else if (
+            data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+            data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL ||
+            data.details === Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE
+          ) {
             if (video.buffered.length > 0) {
-              video.currentTime = video.buffered.end(video.buffered.length - 1) - 0.1;
+              const liveEdge = video.buffered.end(video.buffered.length - 1);
+              if (Math.abs(video.currentTime - liveEdge) > 2) {
+                video.currentTime = Math.max(0, liveEdge - 0.4);
+              }
+            }
+            if (video.paused && autoPlayRef.current) {
+              video.play().catch(() => {});
             }
           }
         });

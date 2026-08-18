@@ -94,6 +94,19 @@ export interface RecordingOptions {
   framerate?: number;
 }
 
+export interface DecklinkFormat {
+  code: string;        // e.g. 'Hi50'
+  resolution: string;  // e.g. '1920x1080'
+  width: number;
+  height: number;
+  fps: string;         // e.g. '25'
+  fpsNum: number;
+  fpsDen: number;
+  interlaced: boolean;
+  fieldOrder?: string; // e.g. 'upper field first'
+  description: string; // full human-readable description
+}
+
 export interface IngestRecordingOptions {
   fileName?: string;
   formats: Array<'mp4' | 'mkv' | 'mov' | 'ts' | 'flv'>;
@@ -147,6 +160,9 @@ export interface ChannelDestination {
   recording?: RecordingOptions;
   decklinkPort?: 'hdmi' | 'sdi' | 'optical_sdi' | 'component' | 'composite';
   decklinkDevice?: string;
+  decklinkDeviceId?: string;      // Device handle ID (e.g. '75:05326625:00000000')
+  decklinkDeviceName?: string;    // Friendly name for UI display
+  decklinkFormatCode?: string;    // Output format code (e.g. 'Hi50')
 }
 
 export interface LicenseInfo {

@@ -395,12 +395,22 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     };
   }, []);
 
-  // Sync preview player STRICTLY based on selected same device across different client browsers/tabs
+  // Sync preview player based on selected device across client sessions
   useEffect(() => {
     if (sourceType === 'device' && serverDevicePreview?.active && serverDevicePreview.previewId) {
-      const isSameVideo = Boolean(videoDevice && serverDevicePreview.videoDevice === videoDevice);
-      const isSameAudio = Boolean(!videoDevice && audioDevice && serverDevicePreview.audioDevice === audioDevice);
-      if (isSameVideo || isSameAudio) {
+      const isCurrentSession = Boolean(devicePreviewIdRef.current && serverDevicePreview.previewId === devicePreviewIdRef.current);
+      const isSameVideo = Boolean(videoDevice && (
+        serverDevicePreview.videoDevice === videoDevice ||
+        serverDevicePreview.videoDevice?.includes(videoDevice) ||
+        videoDevice.includes(serverDevicePreview.videoDevice)
+      ));
+      const isSameAudio = Boolean(!videoDevice && audioDevice && (
+        serverDevicePreview.audioDevice === audioDevice ||
+        serverDevicePreview.audioDevice?.includes(audioDevice) ||
+        audioDevice.includes(serverDevicePreview.audioDevice)
+      ));
+
+      if (isCurrentSession || isSameVideo || isSameAudio) {
         devicePreviewIdRef.current = serverDevicePreview.previewId;
         setActiveHlsUrl(serverDevicePreview.hlsUrl || `/hls/device-preview/${serverDevicePreview.previewId}/index.m3u8`);
         setPreviewing(true);
@@ -410,13 +420,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       }
     }
 
-    // If not matching the current selected device, do NOT show or play the other device's stream
-    if (sourceType === 'device') {
+    if (sourceType === 'device' && !serverDevicePreview?.active && !previewStarting) {
       devicePreviewIdRef.current = null;
       setActiveHlsUrl('');
       setPreviewing(false);
     }
-  }, [sourceType, videoDevice, audioDevice, serverDevicePreview]);
+  }, [sourceType, videoDevice, audioDevice, serverDevicePreview, previewStarting]);
 
   const startSourcePreview = async () => {
     if (previewStarting) return;

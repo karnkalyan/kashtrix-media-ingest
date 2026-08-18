@@ -1531,6 +1531,69 @@ app.get('/api/ffmpeg/devices', authMiddleware, async (req, res) => {
     catch (error) { res.status(500).json({ error: error.message || 'Unable to detect capture devices' }); }
 });
 
+// Parse DeckLink -list_formats output into structured format objects
+const parseDeckLinkFormats = (output) => {
+    const formats = [];
+    const lines = output.split('\n');
+    // Match lines like: "Hi50            1920x1080 at 25000/1000 fps (interlaced, upper field first)"
+    const formatRegex = /^\s+(\S+)\s+(\d+)x(\d+)\s+at\s+(\d+)\/(\d+)\s+fps(?:\s+\(([^)]*)\))?\s*$/;
+    for (const line of lines) {
+        const match = line.match(formatRegex);
+        if (!match) continue;
+        const [, code, width, height, fpsNum, fpsDen, flags] = match;
+        const fpsRaw = parseInt(fpsNum) / parseInt(fpsDen);
+        const fps = Math.round(fpsRaw * 100) / 100;
+        const interlaced = (flags || '').toLowerCase().includes('interlaced');
+        const fieldOrder = interlaced
+            ? ((flags || '').toLowerCase().includes('upper') ? 'upper field first'
+                : (flags || '').toLowerCase().includes('lower') ? 'lower field first' : '')
+            : '';
+        const description = `${width}x${height} @ ${fps}fps${interlaced ? ` (interlaced${fieldOrder ? ', ' + fieldOrder : ''})` : ' (progressive)'}`;
+        formats.push({
+            code,
+            resolution: `${width}x${height}`,
+            width: parseInt(width),
+            height: parseInt(height),
+            fps: String(fps),
+            fpsNum: parseInt(fpsNum),
+            fpsDen: parseInt(fpsDen),
+            interlaced,
+            fieldOrder,
+            description,
+        });
+    }
+    return formats;
+};
+
+app.get('/api/ffmpeg/devices/:deviceId/formats', authMiddleware, async (req, res) => {
+    const deviceId = decodeURIComponent(req.params.deviceId);
+    if (!deviceId) return res.status(400).json({ error: 'deviceId is required' });
+    try {
+        const { execFile } = require('child_process');
+        const output = await new Promise((resolve) => {
+            execFile(ffmpegPath, [
+                '-hide_banner',
+                '-i', deviceId,
+                '-f', 'decklink',
+                '-list_formats', '1',
+                deviceId,
+            ], {
+                encoding: 'utf8',
+                windowsHide: true,
+                timeout: 10000,
+                maxBuffer: 1024 * 1024,
+            }, (error, stdout, stderr) => {
+                resolve(`${stdout || ''}\n${stderr || ''}`);
+            });
+        });
+        const formats = parseDeckLinkFormats(output);
+        res.json({ deviceId, formats });
+    } catch (error) {
+        res.status(500).json({ error: error.message || 'Unable to query device formats' });
+    }
+});
+
+
 const resolveCaptureDevice = (devices, selected) => {
     if (!selected || process.platform === 'win32') return selected;
     return devices?.decklinkMap?.[selected] || selected;
@@ -1711,13 +1774,23 @@ const stopDevicePreview = (previewId, force = false) => {
     return true;
 };
 
-const waitForDevicePreview = (preview, playlistPath, timeoutMs = 10000) => new Promise((resolve, reject) => {
+const waitForDevicePreview = (preview, playlistPath, timeoutMs = 12000) => new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const inspect = () => {
-        if (fs.existsSync(playlistPath)) return resolve();
+        if (fs.existsSync(playlistPath)) {
+            try {
+                const segs = fs.readdirSync(preview.outputDir).filter(f => f.endsWith('.ts'));
+                if (segs.length >= 1) {
+                    const firstSeg = path.join(preview.outputDir, segs[0]);
+                    if (fs.existsSync(firstSeg) && fs.statSync(firstSeg).size > 1024) {
+                        return resolve();
+                    }
+                }
+            } catch (_) {}
+        }
         if (preview.closed) return reject(new Error(formatUserFriendlyFfmpegError(preview.lastError)));
         if (Date.now() - startedAt >= timeoutMs) return reject(new Error(formatUserFriendlyFfmpegError(preview.lastError || 'Timed out waiting for capture device signal')));
-        setTimeout(inspect, 100);
+        setTimeout(inspect, 80);
     };
     inspect();
 });
@@ -1816,7 +1889,7 @@ app.post('/api/ingest/device-preview/start', authMiddleware, async (req, res) =>
             '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
             '-max_muxing_queue_size', '4096',
             '-f', 'hls', '-hls_time', '1', '-hls_list_size', '8',
-            '-hls_flags', 'delete_segments+omit_endlist+independent_segments',
+            '-hls_flags', 'delete_segments+omit_endlist+independent_segments+temp_file',
             '-hls_segment_filename', segmentPattern,
             playlistPath,
         ];

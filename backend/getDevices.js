@@ -25,8 +25,10 @@ function parseDeckLink(output) {
     const video = [];
     const audio = [];
     const decklinkMap = {};
+    const decklinkDevices = [];
     const lines = output.split('\n');
     let readingDevices = false;
+    const seenIds = new Set();
 
     for (const line of lines) {
         if (line.trim() === 'Auto-detected sources for decklink:') {
@@ -49,11 +51,18 @@ function parseDeckLink(output) {
 
         decklinkMap[displayName] = handle;
 
+        // video/audio arrays keep display names for backward compatibility
         if (!video.includes(displayName)) video.push(displayName);
         if (!audio.includes(displayName)) audio.push(displayName);
+
+        // decklinkDevices array provides structured {id, name} objects
+        if (!seenIds.has(handle)) {
+            seenIds.add(handle);
+            decklinkDevices.push({ id: handle, name: displayName });
+        }
     }
 
-    return { video, audio, decklinkMap };
+    return { video, audio, decklinkMap, decklinkDevices };
 }
 /**
  * Parse FFmpeg DirectShow device listing output on Windows into structured video/audio device arrays.

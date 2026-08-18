@@ -17,7 +17,7 @@ import {
   X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { AppSettings, Channel, ChannelDestination, InputType, Protocol, TranscodingProfile } from '../types';
+import { AppSettings, Channel, ChannelDestination, DecklinkFormat, InputType, Protocol, TranscodingProfile } from '../types';
 import { LIVE_PROTOCOL_OPTIONS } from '../constants';
 import SegmentedControl from './ui/SegmentedControl';
 import ProtocolBadge from './ui/ProtocolBadge';
@@ -104,7 +104,7 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
     case Protocol.HTTP_TS:
       return `${WEB_ORIGIN}/ts/${slug}.ts`;
     case Protocol.DECKLINK:
-      return `decklink://DeckLink Device`;
+      return '';
     case Protocol.RECORDING:
       return `media/recordings/${slug}.mp4`;
     default:
@@ -180,6 +180,8 @@ export const Configurator: React.FC<Props> = ({
   const [formatCode, setFormatCode] = useState('');
   const [liveStreams, setLiveStreams] = useState<any>({});
   const [loading, setLoading] = useState(false);
+  const [decklinkDevicesList, setDecklinkDevicesList] = useState<{id: string; name: string}[]>([]);
+  const [decklinkFormats, setDecklinkFormats] = useState<Record<string, DecklinkFormat[]>>({});
   const [destinations, setDestinations] = useState<ChannelDestination[]>([
     {
       id: uniqueId(),
@@ -291,6 +293,14 @@ export const Configurator: React.FC<Props> = ({
     if (message.type !== 'capture_devices') return;
     setVideoDevices(message.payload?.video || []);
     setAudioDevices(message.payload?.audio || []);
+    // Capture structured DeckLink device list with IDs
+    if (message.payload?.decklinkDevices?.length) {
+      setDecklinkDevicesList(message.payload.decklinkDevices);
+    } else if (message.payload?.decklinkMap) {
+      // Fallback: build from decklinkMap
+      const devs = Object.entries(message.payload.decklinkMap).map(([name, id]) => ({ id: id as string, name }));
+      setDecklinkDevicesList(devs);
+    }
   }), []);
 
   // HTTP fallback for device list
@@ -304,9 +314,32 @@ export const Configurator: React.FC<Props> = ({
         const data = await res.json();
         if (data.video?.length) setVideoDevices(prev => Array.from(new Set([...prev, ...data.video])));
         if (data.audio?.length) setAudioDevices(prev => Array.from(new Set([...prev, ...data.audio])));
+        // Capture structured DeckLink device list
+        if (data.decklinkDevices?.length) {
+          setDecklinkDevicesList(data.decklinkDevices);
+        } else if (data.decklinkMap) {
+          const devs = Object.entries(data.decklinkMap).map(([name, id]) => ({ id: id as string, name }));
+          setDecklinkDevicesList(devs);
+        }
       }
     } catch {}
   }, []);
+
+  const fetchDecklinkFormats = useCallback(async (deviceId: string) => {
+    if (!deviceId || decklinkFormats[deviceId]) return;
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch(`/api/ffmpeg/devices/${encodeURIComponent(deviceId)}/formats`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.formats?.length) {
+          setDecklinkFormats(prev => ({ ...prev, [deviceId]: data.formats }));
+        }
+      }
+    } catch {}
+  }, [decklinkFormats]);
 
   const refreshLive = useCallback(async () => {
     setLoading(true);
@@ -324,7 +357,11 @@ export const Configurator: React.FC<Props> = ({
     if (inputType === InputType.VOD) refreshVod();
     if (inputType === InputType.DEVICE) { refreshDevices(); fetchDevicesHttp(); }
     if (inputType === InputType.LIVE) refreshLive();
-  }, [inputType, refreshDevices, refreshVod, refreshLive, fetchDevicesHttp]);
+    // Also fetch devices if any destination is DeckLink
+    if (destinations.some(d => d.protocol === Protocol.DECKLINK)) {
+      refreshDevices(); fetchDevicesHttp();
+    }
+  }, [inputType, refreshDevices, refreshVod, refreshLive, fetchDevicesHttp, destinations]);
 
   useEffect(() => {
     setDestinations(prev => prev.map(dest => {
@@ -671,12 +708,21 @@ export const Configurator: React.FC<Props> = ({
             />
           </div>
 
-          <Select
-            label="Transcoding Profile *"
-            value={profileId}
-            onChange={e => setProfileId(e.target.value)}
-            options={profiles.map(p => ({ value: p.id, label: `${p.name} (${p.resolution || '1080p'})` }))}
-          />
+          {destinations.length > 0 && destinations.every(d => d.protocol === Protocol.DECKLINK) ? (
+            <div className="rounded-lg border border-purple-200 bg-purple-50/60 p-2.5 dark:border-purple-900/40 dark:bg-purple-950/20 text-[11px] text-purple-900 dark:text-purple-200">
+              <span className="font-semibold block text-[12px] text-purple-950 dark:text-purple-100">DeckLink Baseband Output (Direct Playout)</span>
+              <p className="mt-0.5 text-[10px] text-purple-700 dark:text-purple-300">
+                DeckLink card playout bypasses standard H.264/NVENC transcoding profiles and renders direct uncompressed video (uyvy422) & audio (pcm_s16le) to your selected hardware format below.
+              </p>
+            </div>
+          ) : (
+            <Select
+              label="Transcoding Profile *"
+              value={profileId}
+              onChange={e => setProfileId(e.target.value)}
+              options={profiles.map(p => ({ value: p.id, label: `${p.name} (${p.resolution || '1080p'})` }))}
+            />
+          )}
         </div>
 
         {/* 4. Output Destinations */}
@@ -744,29 +790,43 @@ export const Configurator: React.FC<Props> = ({
                 />
 
                 {dest.protocol === Protocol.DECKLINK && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
                     <Select
-                      label="DeckLink Output Port"
-                      value={dest.decklinkPort || 'hdmi'}
-                      onChange={e => setDestination(dest.id, { decklinkPort: e.target.value as any })}
-                      options={[
-                        { value: 'hdmi', label: 'HDMI' },
-                        { value: 'sdi', label: 'SDI' },
-                        { value: 'optical_sdi', label: 'Optical SDI' },
-                        { value: 'component', label: 'Component (YPbPr)' },
-                        { value: 'composite', label: 'Composite (CVBS)' },
-                      ]}
-                    />
-                    <Select
-                      label="DeckLink Device"
-                      value={dest.decklinkDevice || ''}
+                      label="DeckLink Output Device"
+                      value={dest.decklinkDeviceId || ''}
                       onChange={e => {
-                        const devName = e.target.value;
-                        setDestination(dest.id, { decklinkDevice: devName, url: `decklink://${devName || 'DeckLink Device'}` });
+                        const devId = e.target.value;
+                        const dev = decklinkDevicesList.find(d => d.id === devId);
+                        setDestination(dest.id, {
+                          decklinkDeviceId: devId,
+                          decklinkDeviceName: dev?.name || devId,
+                          url: devId,
+                        });
+                        if (devId) fetchDecklinkFormats(devId);
                       }}
                       placeholder="Select output device"
-                      options={videoDevices.map(d => ({ value: d, label: d }))}
+                      options={decklinkDevicesList.map(d => ({
+                        value: d.id,
+                        label: `${d.name} (${d.id})`,
+                      }))}
                     />
+                    {dest.decklinkDeviceId && (
+                      <Select
+                        label="Output Format"
+                        value={dest.decklinkFormatCode || ''}
+                        onChange={e => setDestination(dest.id, { decklinkFormatCode: e.target.value })}
+                        placeholder="Select output format"
+                        options={(decklinkFormats[dest.decklinkDeviceId] || []).map(f => ({
+                          value: f.code,
+                          label: `${f.code} — ${f.description}`,
+                        }))}
+                      />
+                    )}
+                    {!decklinkDevicesList.length && (
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                        No DeckLink devices detected. Ensure drivers are installed and the device is connected.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
