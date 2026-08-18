@@ -340,13 +340,17 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                       {recording.file_name}
                     </td>
                     <td className="px-4 py-3 text-[#6F6078]">
-                      <span className="font-semibold text-[#1B1024]">{recording.app}/{recording.stream}</span>
-                      <span className="block text-[10px] text-[#6F6078]">{recording.encoder || 'copy'} • {recording.resolution || 'source'}</span>
+                      <span className="font-semibold text-[#1B1024] dark:text-white">{recording.app}/{recording.stream}</span>
+                      <span className="block text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                        {String(recording.encoder || '').includes('rawvideo') || String(recording.encoder || '').includes('Uncompressed')
+                          ? <span className="font-semibold text-emerald-600 dark:text-emerald-400">Uncompressed Master (rawvideo)</span>
+                          : (recording.encoder || 'copy')} • {recording.resolution || 'source'}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078]">
+                    <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
                       {new Date(recording.start_time).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 font-mono text-[#6F6078]">
+                    <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
                       {recording.is_active ? (
                         <span className="text-[#E11D72] font-semibold">LIVE • {formatDuration(durationSeconds(recording))}</span>
                       ) : (
@@ -354,7 +358,14 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <ProtocolBadge protocol={getRecordingFormat(recording).toUpperCase()} />
+                      <div className="flex items-center gap-1.5">
+                        <ProtocolBadge protocol={getRecordingFormat(recording).toUpperCase()} />
+                        {(getRecordingFormat(recording) === 'mov' || getRecordingFormat(recording) === 'mkv') && (
+                          <span className="rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-bold uppercase text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+                            Raw
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-[#6F6078]">
                       {formatBytes(Number(recording.size || 0))}
@@ -412,10 +423,17 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                     <h3 className="font-semibold text-[#1B1024] truncate text-[13px] dark:text-white" title={recording.file_name}>
                       {recording.file_name}
                     </h3>
-                    <ProtocolBadge protocol={getRecordingFormat(recording).toUpperCase()} size="sm" />
+                    <div className="flex items-center gap-1">
+                      <ProtocolBadge protocol={getRecordingFormat(recording).toUpperCase()} size="sm" />
+                      {(getRecordingFormat(recording) === 'mov' || getRecordingFormat(recording) === 'mkv') && (
+                        <span className="rounded bg-emerald-50 px-1 py-0.2 text-[8px] font-bold uppercase text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+                          Raw
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="mt-1 text-[11px] text-[#6F6078] truncate dark:text-[#B9A5CD]">
-                    {recording.app}/{recording.stream} • {recording.resolution || 'source'}
+                    {recording.app}/{recording.stream} • {String(recording.encoder || '').includes('rawvideo') || String(recording.encoder || '').includes('Uncompressed') ? 'Uncompressed Master' : (recording.encoder || 'copy')}
                   </p>
                   <div className="mt-2 flex items-center justify-between text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
                     <span className="font-mono">{formatDuration(durationSeconds(recording))}</span>

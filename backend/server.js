@@ -2267,92 +2267,117 @@ const recordingInputArgs = (inputUrl, options) => {
     return args;
 };
 
-const recordingArgs = (inputUrl, filePath, options) => {
+const buildSingleOutputArgs = (output, options, isDeviceDirect, targetFps) => {
+    const { filePath, format } = output;
+    const isUncompressed = format !== 'mp4';
+    const outArgs = [];
+
+    // Map input video and audio streams
+    outArgs.push('-map', '0:v:0?', '-map', '0:a:0?');
+
+    // Video filters (yadif de-interlace, fps, pts, scaling)
+    const vfFilters = [];
+    if (isDeviceDirect) {
+        vfFilters.push('yadif=0:-1:1', `fps=${targetFps}`, `setpts=N/(${targetFps}*TB)`);
+    }
+    if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
+        vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
+    } else if (isDeviceDirect) {
+        vfFilters.push('scale=trunc(iw/2)*2:trunc(ih/2)*2');
+    }
+    if (vfFilters.length > 0) {
+        outArgs.push('-vf', vfFilters.join(','));
+    }
+    if (targetFps > 0) {
+        outArgs.push('-r', String(targetFps));
+    }
+    outArgs.push('-vsync', '1');
+
+    // Audio filters (device clock re-sync)
+    if (isDeviceDirect) {
+        outArgs.push('-af', 'asetpts=PTS-STARTPTS,aresample=async=1000:first_pts=0');
+    }
+
+    if (isUncompressed) {
+        // Uncompressed master quality for MOV, MKV, AVI, and other non-MP4 archival formats
+        if (format === 'ts') {
+            // MPEG-TS container specification requires elementary video streams (H.264/HEVC)
+            if (options.encoder === 'copy') {
+                outArgs.push('-c:v', 'copy', '-c:a', 'copy');
+            } else {
+                const videoEncoder = RECORDING_ENCODERS[options.encoder]?.[options.videoCodec] || 'libx264';
+                outArgs.push('-c:v', videoEncoder, '-b:v', `${Math.max(50000, options.videoBitrate || 50000)}k`);
+                outArgs.push('-c:a', 'aac', '-b:a', '320k', '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
+            }
+            outArgs.push('-mpegts_flags', '+resend_headers', '-mpegts_copyts', '1');
+        } else if (format === 'flv') {
+            // FLV container specification requires H.264/AAC
+            const videoEncoder = RECORDING_ENCODERS[options.encoder]?.[options.videoCodec] || 'libx264';
+            outArgs.push('-c:v', videoEncoder, '-b:v', `${Math.max(50000, options.videoBitrate || 50000)}k`);
+            outArgs.push('-c:a', 'aac', '-b:a', '320k', '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
+            outArgs.push('-f', 'flv');
+        } else {
+            // True broadcast uncompressed video (rawvideo) + uncompressed PCM audio (pcm_s16le) for MOV, MKV, AVI
+            outArgs.push('-c:v', 'rawvideo');
+            const uncompressedPixFmt = options.pixelFormat && options.pixelFormat !== 'yuv420p' ? options.pixelFormat : 'yuv422p';
+            outArgs.push('-pix_fmt', uncompressedPixFmt);
+            outArgs.push('-c:a', 'pcm_s16le', '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
+            if (format === 'mov') {
+                outArgs.push('-movflags', '+faststart+frag_keyframe+empty_moov+default_base_moof');
+            }
+        }
+    } else {
+        // Compressed MP4 format using configured hardware or CPU encoder and audio codec
+        if (options.encoder === 'copy') {
+            outArgs.push('-c', 'copy');
+        } else {
+            const videoEncoder = RECORDING_ENCODERS[options.encoder]?.[options.videoCodec] || 'libx264';
+            outArgs.push('-c:v', videoEncoder);
+            if (options.rateControl === 'crf') {
+                outArgs.push(options.encoder === 'cpu' ? '-crf' : '-cq', String(options.crf));
+            } else {
+                outArgs.push('-b:v', `${options.videoBitrate}k`, '-maxrate', `${options.rateControl === 'cbr' ? options.videoBitrate : options.maxBitrate}k`, '-bufsize', `${options.maxBitrate * 2}k`);
+            }
+            if (videoEncoder === 'libx264' || videoEncoder === 'libx265') {
+                if (options.preset) outArgs.push('-preset', options.preset);
+                outArgs.push('-tune', 'zerolatency');
+            } else if (videoEncoder === 'h264_nvenc' || videoEncoder === 'hevc_nvenc') {
+                const nvMap = { ultrafast: 'llhp', fast: 'fast', medium: 'medium', slow: 'slow', p1: 'llhp', p2: 'fast', p3: 'fast', p4: 'medium', p5: 'slow', p6: 'slow', p7: 'hq' };
+                outArgs.push('-preset', nvMap[options.preset] || 'medium', '-zerolatency', '1');
+            } else if (videoEncoder.includes('qsv')) {
+                const qsvMap = { ultrafast: 'veryfast', fast: 'faster', medium: 'medium', slow: 'veryslow' };
+                outArgs.push('-preset', qsvMap[options.preset] || 'medium');
+            } else if (videoEncoder.includes('amf')) {
+                outArgs.push('-quality', options.preset === 'slow' ? 'quality' : options.preset === 'ultrafast' ? 'speed' : 'balanced');
+            }
+            outArgs.push('-g', String(options.gopSize || 60), '-keyint_min', '25', '-sc_threshold', '0', '-pix_fmt', options.pixelFormat || 'yuv420p');
+            outArgs.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
+        }
+        outArgs.push('-movflags', '+faststart+frag_keyframe+empty_moov+default_base_moof');
+    }
+
+    outArgs.push(filePath);
+    return outArgs;
+};
+
+const recordingExecutionArgs = (inputUrl, outputs, options) => {
     const isDeviceDirect = options.sourceType === 'device' && !inputUrl.includes('.m3u8');
-    const isHlsInput = inputUrl && inputUrl.includes('.m3u8');
     const targetFps = (options.framerate && Number(options.framerate) > 0) ? Number(options.framerate) : 50;
-    const args = [
+
+    const baseArgs = [
         '-y',
         '-hide_banner',
         '-loglevel', 'warning',
         ...(isDeviceDirect ? ['-fflags', '+genpts+discardcorrupt', '-avoid_negative_ts', 'make_zero'] : []),
         ...recordingInputArgs(inputUrl, options),
-        '-map', '0:v:0?',
-        '-map', '0:a:0?',
-        '-max_muxing_queue_size', '8192'
+        '-max_muxing_queue_size', '8192',
     ];
-    if (options.encoder === 'copy') {
-        args.push('-c', 'copy');
-    } else {
-        const videoEncoder = RECORDING_ENCODERS[options.encoder]?.[options.videoCodec] || 'libx264';
-        args.push('-c:v', videoEncoder);
-        if (options.rateControl === 'crf') {
-            args.push(options.encoder === 'cpu' ? '-crf' : '-cq', String(options.crf));
-        } else {
-            args.push('-b:v', `${options.videoBitrate}k`, '-maxrate', `${options.rateControl === 'cbr' ? options.videoBitrate : options.maxBitrate}k`, '-bufsize', `${options.maxBitrate * 2}k`);
-        }
-        if (videoEncoder === 'libx264' || videoEncoder === 'libx265') {
-            if (options.preset) args.push('-preset', options.preset);
-            args.push('-tune', 'zerolatency');
-        } else if (videoEncoder === 'h264_nvenc' || videoEncoder === 'hevc_nvenc') {
-            const nvMap = { ultrafast: 'llhp', fast: 'fast', medium: 'medium', slow: 'slow', p1: 'llhp', p2: 'fast', p3: 'fast', p4: 'medium', p5: 'slow', p6: 'slow', p7: 'hq' };
-            args.push('-preset', nvMap[options.preset] || 'medium', '-zerolatency', '1');
-        } else if (videoEncoder.includes('qsv')) {
-            const qsvMap = { ultrafast: 'veryfast', fast: 'faster', medium: 'medium', slow: 'veryslow' };
-            args.push('-preset', qsvMap[options.preset] || 'medium');
-        } else if (videoEncoder.includes('amf')) {
-            args.push('-quality', options.preset === 'slow' ? 'quality' : options.preset === 'ultrafast' ? 'speed' : 'balanced');
-        }
-        const vfFilters = [];
-        if (isDeviceDirect) {
-            vfFilters.push('yadif=0:-1:1', `fps=${targetFps}`, `setpts=N/(${targetFps}*TB)`);
-        }
-        if (options.resolution && !['source', 'auto', 'original', 'n/a'].includes(String(options.resolution).toLowerCase())) {
-            vfFilters.push(`scale=${options.resolution.replace('x', ':')}`);
-        } else if (isDeviceDirect) {
-            vfFilters.push('scale=trunc(iw/2)*2:trunc(ih/2)*2');
-        }
-        if (vfFilters.length > 0) {
-            args.push('-vf', vfFilters.join(','));
-        }
-        args.push('-r', String(targetFps));
-        args.push('-vsync', '1');
-        args.push('-g', String(options.gopSize || 60), '-keyint_min', '25', '-sc_threshold', '0', '-pix_fmt', options.pixelFormat || 'yuv420p');
-        args.push('-c:a', options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac', '-b:a', `${options.audioBitrate}k`, '-ar', String(options.sampleRate || 48000), '-ac', String(options.audioChannels || 2));
-        if (isDeviceDirect) {
-            args.push('-af', 'asetpts=PTS-STARTPTS,aresample=async=1000:first_pts=0');
-        }
-    }
-    if (filePath.endsWith('.mp4') || filePath.endsWith('.mov')) {
-        args.push('-movflags', '+faststart+frag_keyframe+empty_moov+default_base_moof');
-    } else if (filePath.endsWith('.ts')) {
-        args.push('-mpegts_flags', '+resend_headers', '-mpegts_copyts', '1');
-    } else if (filePath.endsWith('.flv')) {
-        args.push('-f', 'flv');
-    }
-    args.push(filePath);
-    return args;
-};
 
-const recordingExecutionArgs = (inputUrl, outputs, options) => {
-    if (outputs.length === 1) {
-        return recordingArgs(inputUrl, outputs[0].filePath, options);
+    for (const output of outputs) {
+        baseArgs.push(...buildSingleOutputArgs(output, options, isDeviceDirect, targetFps));
     }
-    const args = recordingArgs(inputUrl, 'recording-output.mkv', options);
-    args.pop();
-    const muxers = { mp4: 'mp4', mkv: 'matroska', mov: 'mov', ts: 'mpegts', flv: 'flv' };
-    const teeSpec = outputs.map(output => {
-        const safePath = output.filePath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/\|/g, '\\|');
-        let extraMuxFlags = '';
-        if (output.format === 'mp4' || output.format === 'mov') {
-            extraMuxFlags = ':movflags=+frag_keyframe+empty_moov+default_base_moof';
-        } else if (output.format === 'ts') {
-            extraMuxFlags = ':mpegts_flags=+resend_headers:mpegts_copyts=1';
-        }
-        return `[f=${muxers[output.format] || 'mp4'}${extraMuxFlags}:onfail=ignore]${safePath}`;
-    }).join('|');
-    args.push('-flags', '+global_header', '-f', 'tee', teeSpec);
-    return args;
+
+    return baseArgs;
 };
 
 let isNvidiaSupported = null;
@@ -2442,10 +2467,14 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     const outputs = options.formats.map(format => {
         const fileName = `${fileBase}.${format}`;
         const filePath = path.join(dir, fileName);
+        const isUncompressed = format !== 'mp4' && format !== 'ts' && format !== 'flv';
+        const encoderVal = isUncompressed ? 'rawvideo (Uncompressed)' : options.encoder;
+        const videoBitrateVal = isUncompressed ? 0 : (options.encoder === 'copy' ? 0 : options.videoBitrate);
+        const audioBitrateVal = isUncompressed ? 1536 : (options.encoder === 'copy' ? 0 : options.audioBitrate);
         const result = db.prepare(`INSERT INTO stream_recordings
             (app, stream, file_path, file_name, start_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, settings_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-            .run(appName, stream, filePath, fileName, startTime, format, options.encoder === 'copy' ? 0 : options.videoBitrate, options.encoder === 'copy' ? 0 : options.audioBitrate, options.encoder, options.resolution, options.continuous ? 1 : 0, options.sourceType, JSON.stringify(options));
+            .run(appName, stream, filePath, fileName, startTime, format, videoBitrateVal, audioBitrateVal, encoderVal, options.resolution, options.continuous ? 1 : 0, options.sourceType, JSON.stringify(options));
         return { filePath, fileName, format, recordId: result.lastInsertRowid };
     });
 

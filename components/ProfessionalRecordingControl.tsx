@@ -772,23 +772,43 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
     <div className="contents">
       <section className="rounded-2xl border border-slate-200 p-4"><h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">3. Professional audio</h3><div className="grid grid-cols-1 gap-4 sm:grid-cols-2"><Label>Audio codec<select value={activeConfig.audioCodec} onChange={event => patch({ audioCodec: event.target.value as any })} className={selectClass}><option value="aac">AAC</option><option value="mp3">MP3</option><option value="opus">Opus</option></select></Label><Label>Audio bitrate (Kbps)<input type="number" min="32" max="1024" value={activeConfig.audioBitrate} onChange={event => patch({ audioBitrate: Number(event.target.value) })} className={inputClass} /></Label><Label>Sample rate<select value={activeConfig.sampleRate} onChange={event => patch({ sampleRate: Number(event.target.value) })} className={selectClass}><option value="32000">32 kHz</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz broadcast</option><option value="96000">96 kHz</option></select></Label><Label>Audio channels<select value={activeConfig.audioChannels} onChange={event => patch({ audioChannels: Number(event.target.value) })} className={selectClass}><option value="1">Mono</option><option value="2">Stereo</option><option value="6">5.1 surround</option><option value="8">7.1 surround</option></select></Label></div></section>
-      <section className="rounded-2xl border border-slate-200 p-4">
-        <h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">4. Simultaneous output formats</h3>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-          {(['mp4', 'mkv', 'mov', 'ts', 'flv'] as const).map(format => (
-            <button
-              type="button"
-              key={format}
-              onClick={() => toggleFormat(format)}
-              className={`rounded-xl border px-2 py-3 text-xs font-black uppercase transition-all ${activeFormats.includes(format) ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-            >
-              {format}
-            </button>
-          ))}
+      <section className="rounded-2xl border border-slate-200 p-4 dark:border-[#311B4E] dark:bg-[#1E1130]/40">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">4. Simultaneous output formats</h3>
+          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+            MOV / MKV = Uncompressed Master
+          </span>
         </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-          MKV and TS are recommended for 24/7 television capture because interrupted files remain recoverable.
-        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {(['mp4', 'mkv', 'mov', 'ts', 'flv'] as const).map(format => {
+            const isSelected = activeFormats.includes(format);
+            const isUncompressed = format !== 'mp4' && format !== 'ts' && format !== 'flv';
+            return (
+              <button
+                type="button"
+                key={format}
+                onClick={() => toggleFormat(format)}
+                className={`flex flex-col items-center justify-center rounded-xl border p-2.5 text-center transition-all ${
+                  isSelected
+                    ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs dark:border-[#7C3AED] dark:bg-[#7C3AED]'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2B1744]'
+                }`}
+              >
+                <span className="text-xs font-black uppercase tracking-wide">{format}</span>
+                <span className={`mt-1 text-[9px] font-medium leading-tight ${isSelected ? 'text-indigo-100 dark:text-violet-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {format === 'mp4' ? 'Compressed' : isUncompressed ? 'Uncompressed' : 'Stream'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-2.5 text-[10px] leading-relaxed text-slate-600 dark:bg-[#211335]/40 dark:border-[#371F59] dark:text-slate-300">
+          <p className="font-semibold text-slate-700 dark:text-slate-200">Broadcast Quality Architecture:</p>
+          <ul className="mt-1 list-disc list-inside space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+            <li><b className="text-slate-700 dark:text-slate-200">MOV & MKV:</b> 100% Uncompressed Master Quality (<code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">rawvideo</code> 4:2:2 + <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">pcm_s16le</code> audio).</li>
+            <li><b className="text-slate-700 dark:text-slate-200">MP4:</b> Compressed streaming quality (H.264/HEVC + AAC) using the encoding settings above.</li>
+          </ul>
+        </div>
       </section>
     </div></div>
 
@@ -1028,8 +1048,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || (detectedResolution ? `${detectedResolution}${detectedFramerate ? ` @ ${detectedFramerate}` : ''} (Detected)` : 'Auto Detect (Native Signal)')}</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[9px]">Encoding Bitrate:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.videoBitrate} Kbps ({activeFormats.join(', ').toUpperCase()})</span>
+              <span className="text-slate-400 block text-[9px]">Recording Quality:</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-100">
+                {activeFormats.map(f => f === 'mp4' ? `MP4 (${activeConfig.videoBitrate}k)` : `${f.toUpperCase()} (Uncompressed Master)`).join(', ')}
+              </span>
             </div>
           </div>
         </div>
