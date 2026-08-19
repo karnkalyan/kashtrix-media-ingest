@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const { normalizeUserRole } = require('./securityPolicy');
 
-const toPrismaRole = role => ({ superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER' })[normalizeUserRole(role)];
+const toPrismaRole = role => ({ superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER', operator: 'USER', archive: 'USER' })[normalizeUserRole(role)] || 'USER';
 const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: normalizeUserRole(row.role), is_active: row.isActive !== false, created_at: row.createdAt });
 const snakeLicense = row => row && ({ id: row.id, customer_name: row.customerName, customer_email: row.customerEmail, license_key: row.licenseKey, status: row.status, expires_at: row.expiresAt, created_at: row.createdAt });
 const snakeSession = row => row && ({ id: row.id, app: row.app, stream: row.stream, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, max_viewers: row.maxViewers, total_bytes: Number(row.totalBytes), outgoing_bytes: Number(row.outgoingBytes), video_info: row.videoInfo, audio_info: row.audioInfo });

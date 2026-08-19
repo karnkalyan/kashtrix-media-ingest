@@ -12,17 +12,17 @@ export default defineConfig(({ mode }) => {
         proxy: {
           // Main backend API
           '/api': {
-            target: 'http://localhost:3005',
+            target: 'http://127.0.0.1:3005',
             changeOrigin: true,
           },
           // Main backend WebSocket
           '/ws': {
-            target: 'ws://localhost:3005',
+            target: 'ws://127.0.0.1:3005',
             ws: true,
           },
           // Media paths use the same URLs locally and in production.
           '^/(live|dash|hls|recordings|recording-thumbnail|recording-preview|vod|ts|media)': {
-            target: 'http://localhost:3005',
+            target: 'http://127.0.0.1:3005',
             changeOrigin: true,
           },
         },

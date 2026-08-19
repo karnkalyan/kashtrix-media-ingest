@@ -191,7 +191,7 @@ export interface AppSettings {
 
 export interface AuthUser {
   username: string;
-  role: 'user' | 'admin' | 'superadmin';
+  role: 'user' | 'admin' | 'superadmin' | 'operator' | 'archive';
 }
 
 export interface AuthState {
@@ -246,4 +246,49 @@ export interface StorageDetails {
 export interface StorageStatusResponse extends StorageDetails {
   success: boolean;
   message: string;
+}
+
+export interface TranscodeJobOptions {
+  format?: 'mp4' | 'mkv' | 'mov' | 'ts';
+  videoCodec?: 'h264' | 'hevc' | 'copy';
+  encoder?: 'nvidia' | 'amd' | 'qsv' | 'cpu' | 'copy';
+  resolution?: string;
+  framerate?: number | string;
+  rateControl?: 'cbr' | 'vbr' | 'crf';
+  videoBitrate?: number;
+  maxBitrate?: number;
+  crf?: number;
+  preset?: 'ultrafast' | 'fast' | 'medium' | 'slow';
+  pixelFormat?: 'yuv420p' | 'yuv422p';
+  audioCodec?: 'aac' | 'mp3' | 'opus' | 'copy';
+  audioBitrate?: number;
+  sampleRate?: number;
+  audioChannels?: number;
+  deinterlace?: boolean;
+}
+
+export interface ConversionJob {
+  id: string;
+  recordingId: number | string;
+  originalFileName: string;
+  originalFilePath: string;
+  sourceFormat: string;
+  targetFormat: string;
+  targetFileName: string;
+  targetFilePath: string;
+  status: 'queued' | 'converting' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  speed: string;
+  fps: number;
+  currentFrame?: number;
+  totalFrames?: number;
+  currentTime?: number;
+  duration?: number;
+  etaSeconds?: number;
+  outputSize?: number;
+  outputSizeFmt?: string;
+  startTime: string;
+  endTime?: string;
+  error?: string;
+  options: TranscodeJobOptions;
 }

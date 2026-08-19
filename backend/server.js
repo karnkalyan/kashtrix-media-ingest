@@ -948,6 +948,12 @@ const requireActiveLicense = (req, res, next) => {
     }
     next();
 };
+const requireRole = (...allowedRoles) => (req, res, next) => {
+    const userRole = normalizeUserRole(req.user?.role);
+    if (userRole === 'superadmin') return next();
+    if (allowedRoles.includes(userRole)) return next();
+    return res.status(403).json({ error: `Access denied. Required role: ${allowedRoles.join(' or ')}` });
+};
 
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body || {};
@@ -967,6 +973,16 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authMiddleware, (req, res) => {
     res.json({ user: { username: req.user.sub, role: req.user.role }, license: getLicense() });
 });
+
+// --- Recording Conversion / Transcode API ---
+// Generic WebSocket broadcast helper for conversion progress
+const broadcastWs = (message) => {
+    if (typeof wss === 'undefined' || !wss?.clients) return;
+    const data = JSON.stringify(message);
+    wss.clients.forEach(client => {
+        if (client.readyState === 1) client.send(data);
+    });
+};
 
 // --- VOD API ---
 const vodStorage = multer.diskStorage({
@@ -1119,7 +1135,7 @@ app.get('/api/settings', authMiddleware, (req, res) => {
     res.json(getSettings());
 });
 
-app.put('/api/settings', authMiddleware, (req, res) => {
+app.put('/api/settings', authMiddleware, requireRole('admin'), (req, res) => {
     const prev = getSettings();
     const storageSafetyEnabled = req.body?.storageSafetyEnabled !== undefined
         ? Boolean(req.body.storageSafetyEnabled)
@@ -3801,6 +3817,384 @@ app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, a
     }
 });
 
+// === RECORDING TRANSCODING & CONVERSION ENGINE ===
+const activeConversions = new Map();
+
+const getDurationFromFfprobe = async (filePath) => {
+    return new Promise((resolve) => {
+        const proc = spawn(ffprobePath, [
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            filePath
+        ], { windowsHide: true });
+        let out = '';
+        proc.stdout.on('data', d => { out += d.toString(); });
+        proc.on('close', () => {
+            const dur = parseFloat(out.trim());
+            resolve(isNaN(dur) ? 0 : dur);
+        });
+        proc.on('error', () => resolve(0));
+    });
+};
+
+const getConversionPayload = (job) => {
+    return {
+        id: job.id,
+        recordingId: job.recordingId,
+        originalFileName: job.originalFileName,
+        originalFilePath: job.originalFilePath,
+        sourceFormat: job.sourceFormat,
+        targetFormat: job.targetFormat,
+        targetFileName: job.targetFileName,
+        targetFilePath: job.targetFilePath,
+        status: job.status,
+        progress: job.progress || 0,
+        speed: job.speed || '0x',
+        fps: job.fps || 0,
+        currentFrame: job.currentFrame || 0,
+        totalFrames: job.totalFrames || 0,
+        currentTime: job.currentTime || 0,
+        duration: job.duration || 0,
+        etaSeconds: job.etaSeconds || 0,
+        outputSize: job.outputSize || 0,
+        outputSizeFmt: job.outputSizeFmt || '0 B',
+        startTime: job.startTime,
+        endTime: job.endTime,
+        error: job.error,
+        options: job.options,
+    };
+};
+
+const startConversionJob = async (recordingId, requestedOptions = {}) => {
+    const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(recordingId);
+    if (!recording) throw new Error(`Recording with ID ${recordingId} not found`);
+    if (!recording.file_path || !fs.existsSync(recording.file_path)) {
+        throw new Error(`Recording file not found on disk: ${recording.file_path || 'unknown'}`);
+    }
+
+    const inputPath = path.resolve(recording.file_path);
+    const inputDir = path.dirname(inputPath);
+    const targetFormat = (requestedOptions.format || 'mp4').toLowerCase();
+
+    let totalDuration = recording.duration || 0;
+    if (!totalDuration) {
+        totalDuration = await getDurationFromFfprobe(inputPath);
+    }
+
+    const baseName = path.basename(inputPath, path.extname(inputPath));
+    const targetFileName = `${baseName}_transcode_${Date.now()}.${targetFormat}`;
+    const targetPath = path.join(inputDir, targetFileName);
+
+    const jobId = `conv-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+
+    const options = {
+        format: targetFormat,
+        videoCodec: requestedOptions.videoCodec === 'hevc' ? 'hevc' : requestedOptions.videoCodec === 'copy' ? 'copy' : 'h264',
+        encoder: requestedOptions.encoder || 'nvidia',
+        resolution: requestedOptions.resolution || 'source',
+        framerate: requestedOptions.framerate || 'source',
+        rateControl: ['cbr', 'vbr', 'crf'].includes(requestedOptions.rateControl) ? requestedOptions.rateControl : 'cbr',
+        videoBitrate: Math.min(100000, Math.max(500, Number(requestedOptions.videoBitrate) || 12000)),
+        maxBitrate: Math.min(120000, Math.max(500, Number(requestedOptions.maxBitrate) || 15000)),
+        crf: Math.min(51, Math.max(0, Number(requestedOptions.crf) || 20)),
+        preset: ['ultrafast', 'fast', 'medium', 'slow'].includes(requestedOptions.preset) ? requestedOptions.preset : 'fast',
+        pixelFormat: requestedOptions.pixelFormat === 'yuv422p' ? 'yuv422p' : 'yuv420p',
+        audioCodec: requestedOptions.audioCodec === 'mp3' ? 'mp3' : requestedOptions.audioCodec === 'opus' ? 'opus' : requestedOptions.audioCodec === 'copy' ? 'copy' : 'aac',
+        audioBitrate: Math.min(512, Math.max(64, Number(requestedOptions.audioBitrate) || 192)),
+        sampleRate: Number(requestedOptions.sampleRate) || 48000,
+        audioChannels: Number(requestedOptions.audioChannels) || 2,
+        deinterlace: requestedOptions.deinterlace !== false,
+    };
+
+    if (options.encoder === 'nvidia' && !checkNvidiaSupport()) {
+        options.encoder = 'cpu';
+    }
+    if (options.encoder === 'amd' && !checkAmdSupport()) {
+        options.encoder = 'cpu';
+    }
+
+    const ffmpegArgs = [
+        '-y',
+        '-hide_banner',
+        '-loglevel', 'info',
+        '-i', inputPath,
+        '-progress', 'pipe:1',
+    ];
+
+    const vf = [];
+    if (options.deinterlace) {
+        vf.push('yadif=0:-1:1');
+    }
+    if (options.resolution && options.resolution !== 'source' && options.resolution !== 'original') {
+        vf.push(`scale=${options.resolution.replace('x', ':')}`);
+    } else {
+        vf.push('scale=trunc(iw/2)*2:trunc(ih/2)*2');
+    }
+    if (vf.length > 0) {
+        ffmpegArgs.push('-vf', vf.join(','));
+    }
+
+    if (options.framerate && options.framerate !== 'source') {
+        ffmpegArgs.push('-r', String(options.framerate));
+    }
+
+    if (options.videoCodec === 'copy' && targetFormat === 'mp4') {
+        ffmpegArgs.push('-c:v', 'copy');
+    } else {
+        const encMap = {
+            nvidia: options.videoCodec === 'hevc' ? 'hevc_nvenc' : 'h264_nvenc',
+            amd: options.videoCodec === 'hevc' ? 'hevc_amf' : 'h264_amf',
+            qsv: options.videoCodec === 'hevc' ? 'hevc_qsv' : 'h264_qsv',
+            cpu: options.videoCodec === 'hevc' ? 'libx265' : 'libx264',
+        };
+        const selectedEnc = encMap[options.encoder] || 'libx264';
+        ffmpegArgs.push('-c:v', selectedEnc);
+
+        if (options.rateControl === 'crf') {
+            ffmpegArgs.push(options.encoder === 'cpu' ? '-crf' : '-cq', String(options.crf));
+        } else {
+            ffmpegArgs.push(
+                '-b:v', `${options.videoBitrate}k`,
+                '-maxrate', `${options.rateControl === 'cbr' ? options.videoBitrate : options.maxBitrate}k`,
+                '-bufsize', `${options.maxBitrate * 2}k`
+            );
+        }
+
+        if (selectedEnc === 'libx264' || selectedEnc === 'libx265') {
+            ffmpegArgs.push('-preset', options.preset);
+        } else if (selectedEnc.includes('nvenc')) {
+            const nvMap = { ultrafast: 'p1', fast: 'p2', medium: 'p4', slow: 'p6' };
+            ffmpegArgs.push('-preset', nvMap[options.preset] || 'p3');
+        } else if (selectedEnc.includes('amf')) {
+            ffmpegArgs.push('-quality', options.preset === 'slow' ? 'quality' : options.preset === 'ultrafast' ? 'speed' : 'balanced');
+        }
+
+        ffmpegArgs.push('-g', '60', '-pix_fmt', options.pixelFormat || 'yuv420p');
+    }
+
+    if (options.audioCodec === 'copy') {
+        ffmpegArgs.push('-c:a', 'copy');
+    } else {
+        const audioEnc = options.audioCodec === 'mp3' ? 'libmp3lame' : options.audioCodec === 'opus' ? 'libopus' : 'aac';
+        ffmpegArgs.push(
+            '-c:a', audioEnc,
+            '-b:a', `${options.audioBitrate}k`,
+            '-ar', String(options.sampleRate),
+            '-ac', String(options.audioChannels)
+        );
+    }
+
+    if (targetFormat === 'mp4' || targetFormat === 'mov') {
+        ffmpegArgs.push('-movflags', '+faststart');
+    }
+
+    ffmpegArgs.push(targetPath);
+
+    const job = {
+        id: jobId,
+        recordingId,
+        originalFileName: recording.file_name || path.basename(inputPath),
+        originalFilePath: inputPath,
+        sourceFormat: recording.format || path.extname(inputPath).slice(1) || 'mov',
+        targetFormat,
+        targetFileName,
+        targetFilePath: targetPath,
+        status: 'converting',
+        progress: 0,
+        speed: '0x',
+        fps: 0,
+        currentFrame: 0,
+        currentTime: 0,
+        duration: totalDuration,
+        etaSeconds: 0,
+        outputSize: 0,
+        outputSizeFmt: '0 B',
+        startTime: new Date().toISOString(),
+        options,
+    };
+
+    const proc = spawn(ffmpegPath, ffmpegArgs, { windowsHide: true });
+    job.proc = proc;
+    activeConversions.set(jobId, job);
+
+    broadcastConversionProgress(getConversionPayload(job));
+
+    proc.stdout.on('data', data => {
+        const str = data.toString();
+        const lines = str.split('\n');
+        for (const line of lines) {
+            const [k, v] = line.split('=');
+            if (!k || !v) continue;
+            const key = k.trim();
+            const val = v.trim();
+
+            if (key === 'frame') {
+                job.currentFrame = parseInt(val) || 0;
+            } else if (key === 'fps') {
+                job.fps = parseFloat(val) || 0;
+            } else if (key === 'out_time_ms') {
+                const ms = parseInt(val) || 0;
+                job.currentTime = Math.round(ms / 1000000);
+                if (totalDuration > 0) {
+                    job.progress = Math.min(99.5, Math.max(0, Math.round((job.currentTime / totalDuration) * 1000) / 10));
+                }
+            } else if (key === 'speed') {
+                job.speed = val;
+                const speedNum = parseFloat(val.replace('x', ''));
+                if (speedNum > 0 && totalDuration > 0 && job.currentTime < totalDuration) {
+                    job.etaSeconds = Math.max(0, Math.round((totalDuration - job.currentTime) / speedNum));
+                }
+            } else if (key === 'total_size') {
+                job.outputSize = parseInt(val) || 0;
+                job.outputSizeFmt = systemApi.formatBytes ? systemApi.formatBytes(job.outputSize) : `${Math.round(job.outputSize / 1048576)} MB`;
+            }
+        }
+        broadcastConversionProgress(getConversionPayload(job));
+    });
+
+    proc.stderr.on('data', data => {
+        job.lastStderr = data.toString().slice(-1000);
+    });
+
+    proc.on('close', async (code) => {
+        job.endTime = new Date().toISOString();
+        if (code === 0 && fs.existsSync(targetPath)) {
+            const stat = fs.statSync(targetPath);
+            job.status = 'completed';
+            job.progress = 100;
+            job.outputSize = stat.size;
+            job.outputSizeFmt = systemApi.formatBytes ? systemApi.formatBytes(stat.size) : `${Math.round(stat.size / 1048576)} MB`;
+
+            try {
+                const res = db.prepare(`INSERT INTO stream_recordings
+                    (app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, duration, settings_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                    .run(
+                        recording.app || 'transcoded',
+                        recording.stream || 'archive',
+                        targetPath,
+                        targetFileName,
+                        job.startTime,
+                        job.endTime,
+                        targetFormat,
+                        options.videoBitrate,
+                        options.audioBitrate,
+                        options.encoder,
+                        options.resolution,
+                        0,
+                        'transcode',
+                        stat.size,
+                        totalDuration,
+                        JSON.stringify({ ...options, originalRecordingId: recordingId, originalFileName: job.originalFileName })
+                    );
+                job.newRecordingId = res.lastInsertRowid;
+            } catch (dbErr) {
+                console.error('[Transcode] Error saving transcoded recording in DB:', dbErr);
+            }
+
+            broadcastConversionCompleted(getConversionPayload(job));
+            broadcastRecordings(listRecordings(100));
+        } else {
+            job.status = job.status === 'cancelled' ? 'cancelled' : 'failed';
+            job.error = job.lastStderr || `FFmpeg process exited with code ${code}`;
+            broadcastConversionProgress(getConversionPayload(job));
+            try { if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath); } catch (_) {}
+        }
+    });
+
+    proc.on('error', (err) => {
+        job.status = 'failed';
+        job.error = err.message;
+        broadcastConversionProgress(getConversionPayload(job));
+    });
+
+    return job;
+};
+
+// Endpoints for conversions
+app.get('/api/ingest/recordings/conversions', authMiddleware, (req, res) => {
+    const list = Array.from(activeConversions.values()).map(getConversionPayload);
+    res.json({ success: true, conversions: list });
+});
+
+app.post(['/api/ingest/recordings/:id/convert', '/api/ingest/recordings/:id/transcode'], authMiddleware, requireActiveLicense, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const job = await startConversionJob(id, req.body || {});
+        res.status(201).json({ success: true, message: 'Conversion started', job: getConversionPayload(job) });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.post('/api/ingest/recordings/conversions/:jobId/cancel', authMiddleware, requireActiveLicense, (req, res) => {
+    const { jobId } = req.params;
+    const job = activeConversions.get(jobId);
+    if (!job) return res.status(404).json({ error: 'Conversion job not found' });
+    if (job.status === 'converting' && job.proc) {
+        job.status = 'cancelled';
+        try { job.proc.kill('SIGTERM'); } catch (_) {}
+    }
+    res.json({ success: true, message: 'Conversion cancelled' });
+});
+
+app.delete('/api/ingest/recordings/conversions/:jobId', authMiddleware, (req, res) => {
+    const { jobId } = req.params;
+    const job = activeConversions.get(jobId);
+    if (job && job.status === 'converting' && job.proc) {
+        try { job.proc.kill('SIGTERM'); } catch (_) {}
+    }
+    activeConversions.delete(jobId);
+    res.json({ success: true, message: 'Conversion job cleared' });
+});
+
+// File streaming and download endpoints
+app.get(['/api/ingest/recordings/:id/download', '/api/ingest/recordings/:id/file'], authMiddleware, (req, res) => {
+    const { id } = req.params;
+    let recording = null;
+    try {
+        recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(id);
+    } catch (e) {}
+
+    if (!recording || !recording.file_path || !fs.existsSync(recording.file_path)) {
+        return res.status(404).json({ error: 'Recording file not found' });
+    }
+
+    const resolvedPath = path.resolve(recording.file_path);
+    const fileName = recording.file_name || path.basename(resolvedPath);
+
+    if (req.query.download === '1' || req.path.includes('/download')) {
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    }
+
+    res.sendFile(resolvedPath);
+});
+
+app.get(['/api/ingest/recordings/file/:fileName', '/api/ingest/recordings/file/:fileName/download'], authMiddleware, (req, res) => {
+    const { fileName } = req.params;
+    let recording = null;
+    try {
+        recording = db.prepare('SELECT * FROM stream_recordings WHERE file_name = ?').get(fileName);
+    } catch (e) {}
+
+    let resolvedPath = recording?.file_path ? path.resolve(recording.file_path) : null;
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+        const candidate = path.join(RECORDINGS_DIR, fileName);
+        if (fs.existsSync(candidate)) resolvedPath = candidate;
+    }
+
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+        return res.status(404).json({ error: 'Recording file not found' });
+    }
+
+    if (req.query.download === '1' || req.path.includes('/download')) {
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    }
+
+    res.sendFile(resolvedPath);
+});
+
 app.get('/api/ingest/processes', authMiddleware, (req, res) => {
     res.json({
         success: true, processes: Array.from(activeIngestProcesses.entries()).map(([id, p]) => ({
@@ -4037,6 +4431,22 @@ const broadcastRecordings = (recordings) => {
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN && websocketCanAccess(client, ['recording-library', 'ingest-server'])) {
             client.send(JSON.stringify({ type: 'recordings_list', payload: recordings }));
+        }
+    });
+};
+
+const broadcastConversionProgress = (payload) => {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'conversion_progress', payload }));
+        }
+    });
+};
+
+const broadcastConversionCompleted = (payload) => {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'conversion_completed', payload }));
         }
     });
 };

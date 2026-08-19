@@ -14,12 +14,15 @@ const normalizeUserRole = role => {
   const normalized = String(role || 'user').trim().toLowerCase().replace(/[_-]/g, '');
   if (normalized === 'superadmin') return 'superadmin';
   if (normalized === 'admin') return 'admin';
+  if (normalized === 'operator') return 'operator';
+  if (normalized === 'archive') return 'archive';
   return 'user';
 };
 
 const parseManagedRole = role => {
   const normalized = String(role || '').trim().toLowerCase();
-  return normalized === 'admin' || normalized === 'user' ? normalized : null;
+  if (['admin', 'user', 'operator', 'archive'].includes(normalized)) return normalized;
+  return null;
 };
 
 const resolvePersistedIdentity = (claims, findUser) => {

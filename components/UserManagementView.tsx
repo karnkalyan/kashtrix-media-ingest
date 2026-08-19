@@ -251,7 +251,11 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
                       <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold ${
                         user.role === 'superadmin' || user.role === 'admin'
                           ? 'border-[#D8C6E8] bg-[#F4EEFF] text-[#4A1B7A] dark:border-[#3B225E] dark:bg-[#281542] dark:text-[#E2D1F9]'
-                          : 'border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] dark:border-[#371F59] dark:bg-[#211335] dark:text-[#B9A5CD]'
+                          : user.role === 'operator'
+                            ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300'
+                            : user.role === 'archive'
+                              ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                              : 'border-[#E8DFF0] bg-[#F8F7FA] text-[#6F6078] dark:border-[#371F59] dark:bg-[#211335] dark:text-[#B9A5CD]'
                       }`}>
                         <Shield size={12} />
                         {(user.role || 'ADMIN').toUpperCase()}
@@ -361,7 +365,9 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#1B1024] outline-none dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             >
               <option value="admin">Administrator (Full Access)</option>
-              <option value="user">Operator (Standard Access)</option>
+              <option value="operator">Operator (Operations Access)</option>
+              <option value="archive">Archive (Recordings Only)</option>
+              <option value="user">Standard User</option>
             </select>
           </div>
         </div>

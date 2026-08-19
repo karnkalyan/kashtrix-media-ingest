@@ -888,19 +888,20 @@ interface NavItem {
   badge?: string;
   badgeColor?: string;
   licenseModule?: string;
+  allowedRoles?: string[];
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Main', iconColor: 'text-[#7C3AED]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]' },
-  { id: 'channels', label: 'Channels Playout', icon: FiTv, group: 'Operations', iconColor: 'text-[#9333EA]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(147,51,234,0.45)]', licenseModule: 'live-tv' },
-  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', iconColor: 'text-[#E11D48]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(225,29,72,0.45)]', badge: 'REC', badgeColor: 'bg-[#E11D48]', licenseModule: 'ingest-server' },
-  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', iconColor: 'text-[#059669]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(5,150,105,0.45)]', badge: 'LIVE', badgeColor: 'bg-[#059669]', licenseModule: 'live-server' },
-  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media & Archive', iconColor: 'text-[#EA580C]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]', licenseModule: 'recording-library' },
-  { id: 'monitor', label: 'System Telemetry', icon: FiActivity, group: 'Observability', iconColor: 'text-[#0284C7]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(2,132,199,0.45)]', licenseModule: 'system-monitor' },
-  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability', iconColor: 'text-[#EA580C]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]' },
-  { id: 'users', label: 'User Management', icon: FiUsers, group: 'System & Admin', iconColor: 'text-[#7C3AED]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]' },
-  { id: 'settings', label: 'Engine Settings', icon: FiSettings, group: 'System & Admin', iconColor: 'text-[#475569]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(71,85,105,0.4)]' },
-  { id: 'license', label: 'License Admin', icon: FiKey, group: 'System & Admin', iconColor: 'text-[#E11D48]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(225,29,72,0.45)]' },
+  { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, group: 'Main', iconColor: 'text-[#7C3AED]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]', allowedRoles: ['superadmin', 'admin', 'user', 'operator'] },
+  { id: 'channels', label: 'Channels Playout', icon: FiTv, group: 'Operations', iconColor: 'text-[#9333EA]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(147,51,234,0.45)]', licenseModule: 'live-tv', allowedRoles: ['superadmin', 'admin', 'user', 'operator'] },
+  { id: 'ingest', label: 'Ingest Server', icon: FaBroadcastTower, group: 'Operations', iconColor: 'text-[#E11D48]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(225,29,72,0.45)]', badge: 'REC', badgeColor: 'bg-[#E11D48]', licenseModule: 'ingest-server', allowedRoles: ['superadmin', 'admin', 'user', 'operator'] },
+  { id: 'live-server', label: 'Live Server', icon: FiServer, group: 'Operations', iconColor: 'text-[#059669]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(5,150,105,0.45)]', badge: 'LIVE', badgeColor: 'bg-[#059669]', licenseModule: 'live-server', allowedRoles: ['superadmin', 'admin', 'user', 'operator'] },
+  { id: 'recordings', label: 'Recording Library', icon: FiArchive, group: 'Media & Archive', iconColor: 'text-[#EA580C]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]', licenseModule: 'recording-library', allowedRoles: ['superadmin', 'admin', 'user', 'operator', 'archive'] },
+  { id: 'monitor', label: 'System Telemetry', icon: FiActivity, group: 'Observability', iconColor: 'text-[#0284C7]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(2,132,199,0.45)]', licenseModule: 'system-monitor', allowedRoles: ['superadmin', 'admin', 'user', 'operator'] },
+  { id: 'events', label: 'Events & Alerts', icon: FiBell, group: 'Observability', iconColor: 'text-[#EA580C]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]', allowedRoles: ['superadmin', 'admin', 'user', 'operator'] },
+  { id: 'users', label: 'User Management', icon: FiUsers, group: 'System & Admin', iconColor: 'text-[#7C3AED]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]', allowedRoles: ['superadmin'] },
+  { id: 'settings', label: 'Engine Settings', icon: FiSettings, group: 'System & Admin', iconColor: 'text-[#475569]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(71,85,105,0.4)]', allowedRoles: ['superadmin', 'admin'] },
+  { id: 'license', label: 'License Admin', icon: FiKey, group: 'System & Admin', iconColor: 'text-[#E11D48]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(225,29,72,0.45)]', allowedRoles: ['superadmin', 'admin'] },
   { id: 'account', label: 'Account Profile', icon: FiUser, group: 'System & Admin', iconColor: 'text-[#0D9488]', iconShadow: 'drop-shadow-[0_4px_6px_rgba(13,148,136,0.45)]' },
 ];
 
@@ -921,8 +922,13 @@ const Sidebar: React.FC<{
 }> = ({ activeView, setActiveView, collapsed, onToggle, licenseStatus, customerName, license, userRole, mobileOpen, onMobileClose }) => {
   const visibleItems = useMemo(() => {
     return navItems.filter(item => {
+      // Role-based filtering: if allowedRoles is defined, user's role must be in the list
+      if (item.allowedRoles && userRole && !item.allowedRoles.includes(userRole)) return false;
+      // Legacy superadmin-only check for user management
       if (item.id === 'users' && userRole !== 'superadmin') return false;
-      return userRole === 'superadmin' || hasLicenseModule(license, item.licenseModule);
+      // License module check (superadmin bypasses)
+      if (userRole === 'superadmin') return true;
+      return hasLicenseModule(license, item.licenseModule);
     });
   }, [license, userRole]);
 
@@ -1759,14 +1765,23 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!engine.auth.token || !engine.auth.user) return;
+    const role = engine.auth.user?.role;
     const item = navItems.find(navItem => navItem.id === activeView);
-    const isSuperadmin = engine.auth.user?.role === 'superadmin';
+    const isSuperadmin = role === 'superadmin';
+    const defaultView = role === 'archive' ? 'recordings' : 'dashboard';
+
+    // Role-based view guard: if the current nav item has allowedRoles and user's role is not in it, redirect
+    if (item?.allowedRoles && role && !item.allowedRoles.includes(role)) {
+      setActiveView(defaultView as ActiveView);
+      return;
+    }
+    // License module check
     if (item?.licenseModule && engine.auth.license?.status === 'activated') {
       if (!isSuperadmin && !hasLicenseModule(engine.auth.license, item.licenseModule)) {
-        setActiveView('dashboard');
+        setActiveView(defaultView as ActiveView);
       }
     } else if (item?.id === 'users' && !isSuperadmin) {
-      setActiveView('dashboard');
+      setActiveView(defaultView as ActiveView);
     }
   }, [activeView, engine.auth.token, engine.auth.user, engine.auth.license]);
 
