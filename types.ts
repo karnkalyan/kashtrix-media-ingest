@@ -183,6 +183,10 @@ export interface AppSettings {
   mediaPort: number;
   httpPort: number;
   apiPort: number;
+  storageSafetyEnabled?: boolean;
+  storageThresholdPercent?: number;
+  storageCriticalThresholdPercent?: number;
+  storageMinFreeMb?: number;
 }
 
 export interface AuthUser {
@@ -229,6 +233,10 @@ export interface StorageDetails {
   isFull: boolean;
   isCritical: boolean;
   canRecord: boolean;
+  safetyEnabled?: boolean;
+  thresholdPercent?: number;
+  criticalThresholdPercent?: number;
+  minFreeMb?: number;
   deadlinePercent?: number;
   sizeFmt: string;
   usedFmt: string;

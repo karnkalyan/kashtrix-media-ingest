@@ -377,6 +377,95 @@ const SettingsView: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
             />
           </div>
         </div>
+
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-4 shadow-xs lg:col-span-2 dark:bg-[#190E28] dark:border-[#311B4E]">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#E8DFF0]/60 pb-3 dark:border-[#311B4E]/60">
+            <div>
+              <h2 className="font-display text-[14px] font-bold text-[#1B1024] dark:text-white">Harddisk Storage & Safety Thresholds</h2>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Configure harddisk safety limits to prevent disk exhaustion, filesystem write locks, and corruption</p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className={`text-[12px] font-semibold px-2 py-0.5 rounded ${
+                form.storageSafetyEnabled !== false
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+              }`}>
+                {form.storageSafetyEnabled !== false ? 'Safety Thresholds Enabled' : 'Safety Disabled'}
+              </span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-[#4A1B7A] focus:ring-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59]"
+                checked={form.storageSafetyEnabled !== false}
+                onChange={e => setForm(p => ({ ...p, storageSafetyEnabled: e.target.checked }))}
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
+                Disable New Recordings (% Used)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={50}
+                  max={99}
+                  className={inputClass}
+                  disabled={form.storageSafetyEnabled === false}
+                  value={form.storageThresholdPercent ?? 90}
+                  onChange={e => setForm(p => ({ ...p, storageThresholdPercent: Math.max(50, Math.min(99, Number(e.target.value))) }))}
+                />
+                <span className="absolute right-3 top-2 text-[11px] font-bold text-[#6F6078] dark:text-[#B9A5CD]">%</span>
+              </div>
+              <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#8E78A6]">
+                Default 90% (10% reserve). Blocks new recordings when disk reaches this percentage.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
+                Emergency Stop Active Recordings (% Used)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={60}
+                  max={99}
+                  className={inputClass}
+                  disabled={form.storageSafetyEnabled === false}
+                  value={form.storageCriticalThresholdPercent ?? 95}
+                  onChange={e => setForm(p => ({ ...p, storageCriticalThresholdPercent: Math.max(60, Math.min(99, Number(e.target.value))) }))}
+                />
+                <span className="absolute right-3 top-2 text-[11px] font-bold text-[#6F6078] dark:text-[#B9A5CD]">%</span>
+              </div>
+              <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#8E78A6]">
+                Default 95% (5% reserve). Stops running recordings before 100% full crash.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
+                Minimum Free Space Reserve (MB)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={100}
+                  step={100}
+                  className={inputClass}
+                  disabled={form.storageSafetyEnabled === false}
+                  value={form.storageMinFreeMb ?? 500}
+                  onChange={e => setForm(p => ({ ...p, storageMinFreeMb: Math.max(100, Number(e.target.value)) }))}
+                />
+                <span className="absolute right-3 top-2 text-[11px] font-bold text-[#6F6078] dark:text-[#B9A5CD]">MB</span>
+              </div>
+              <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#8E78A6]">
+                Default 500 MB. Minimum absolute free space required on target drive.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1721,40 +1810,62 @@ const App: React.FC = () => {
         />
 
         {/* Harddisk Storage Capacity Alert Banner */}
-        {telemetry.diskLoad >= 85 && (
-          <div className={`mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs transition-all ${
-            telemetry.diskLoad >= 90
-              ? 'border-rose-300 bg-rose-50 text-rose-900 shadow-xs dark:border-rose-900/60 dark:bg-rose-950/80 dark:text-rose-200'
-              : 'border-amber-300 bg-amber-50 text-amber-900 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/80 dark:text-amber-200'
+        {telemetry.diskLoad >= (engine.state.settings.storageThresholdPercent ? engine.state.settings.storageThresholdPercent - 5 : 85) && (
+          <div className={`mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs transition-all ${
+            telemetry.diskLoad >= (engine.state.settings.storageThresholdPercent || 90)
+              ? 'border-rose-300 bg-rose-50/95 text-rose-950 shadow-xs dark:border-rose-700/70 dark:bg-gradient-to-r dark:from-rose-950/90 dark:via-[#200a15] dark:to-[#17070f] dark:text-rose-100 dark:shadow-[0_0_24px_rgba(225,29,72,0.12)]'
+              : 'border-amber-300 bg-amber-50/95 text-amber-950 shadow-xs dark:border-amber-700/70 dark:bg-gradient-to-r dark:from-amber-950/90 dark:via-[#221204] dark:to-[#180c03] dark:text-amber-100 dark:shadow-[0_0_24px_rgba(245,158,11,0.12)]'
           }`}>
-            <div className="flex items-center gap-2.5">
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${
-                telemetry.diskLoad >= 90 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+            <div className="flex items-center gap-3">
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm ring-2 ${
+                telemetry.diskLoad >= (engine.state.settings.storageThresholdPercent || 90)
+                  ? 'bg-rose-600 ring-rose-300/60 dark:ring-rose-500/40 animate-pulse'
+                  : 'bg-amber-600 ring-amber-300/60 dark:ring-amber-500/40'
               }`}>
                 !
               </span>
-              <div>
-                <span className="font-bold">
-                  {telemetry.diskLoad >= 95
-                    ? 'CRITICAL STORAGE EMERGENCY (<5% free): '
-                    : telemetry.diskLoad >= 90
-                    ? 'STORAGE FULL DEADLINE (5-10% Reserve Enforced): '
-                    : 'STORAGE CAPACITY WARNING: '}
-                </span>
-                <span>
-                  Harddisk storage is <strong>{telemetry.diskLoad.toFixed(1)}% full</strong>
-                  {telemetry.storageDetails ? ` (${telemetry.storageDetails.usedFmt} / ${telemetry.storageDetails.sizeFmt}, ${telemetry.storageDetails.availableFmt} free)` : ''}.
-                  {telemetry.diskLoad >= 90
-                    ? ' Starting new recordings is blocked to protect disk integrity. Please delete old recordings or free disk space.'
-                    : ' Please monitor free storage space.'}
-                </span>
+              <div className="space-y-0.5">
+                <p className="font-bold leading-snug">
+                  {engine.state.settings.storageSafetyEnabled === false ? (
+                    <span className="text-amber-700 dark:text-amber-300 font-bold">
+                      STORAGE CAPACITY NOTICE (Safety Enforcement Disabled):{' '}
+                    </span>
+                  ) : telemetry.diskLoad >= (engine.state.settings.storageCriticalThresholdPercent || 95) ? (
+                    <span className="text-rose-700 dark:text-rose-300 font-extrabold">
+                      CRITICAL STORAGE EMERGENCY (&lt;{100 - (engine.state.settings.storageCriticalThresholdPercent || 95)}% free):{' '}
+                    </span>
+                  ) : telemetry.diskLoad >= (engine.state.settings.storageThresholdPercent || 90) ? (
+                    <span className="text-rose-700 dark:text-rose-300 font-bold">
+                      STORAGE LIMIT REACHED ({100 - (engine.state.settings.storageThresholdPercent || 90)}% Reserve Enforced):{' '}
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 dark:text-amber-300 font-bold">
+                      STORAGE CAPACITY WARNING:{' '}
+                    </span>
+                  )}
+                  <span className="text-rose-900 dark:text-rose-100 font-normal">
+                    Harddisk storage is <strong className="font-bold text-rose-950 dark:text-white">{telemetry.diskLoad.toFixed(1)}% full</strong>
+                    {telemetry.storageDetails ? ` (${telemetry.storageDetails.usedFmt} / ${telemetry.storageDetails.sizeFmt}, ${telemetry.storageDetails.availableFmt} free)` : ''}.
+                  </span>
+                </p>
+                <p className="text-[11px] text-rose-800/90 dark:text-rose-200/80">
+                  {engine.state.settings.storageSafetyEnabled === false
+                    ? 'Storage safety threshold enforcement is turned off in Settings. Filesystem capacity is approaching limit.'
+                    : telemetry.diskLoad >= (engine.state.settings.storageThresholdPercent || 90)
+                    ? 'Starting new recordings is blocked to protect disk integrity. Please delete old recordings or free disk space.'
+                    : 'Please monitor free storage space and archive or clean up old recordings.'}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveView('recordings')}
-                className="rounded-md bg-white/90 dark:bg-[#1E1130] border border-current px-2.5 py-1 text-[11px] font-bold hover:bg-white transition-colors"
+                className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-colors shadow-xs ${
+                  telemetry.diskLoad >= (engine.state.settings.storageThresholdPercent || 90)
+                    ? 'border-rose-300 bg-white text-rose-900 hover:bg-rose-100 dark:border-rose-700/80 dark:bg-rose-900/50 dark:text-rose-100 dark:hover:bg-rose-800 dark:hover:text-white'
+                    : 'border-amber-300 bg-white text-amber-900 hover:bg-amber-100 dark:border-amber-700/80 dark:bg-amber-900/50 dark:text-amber-100 dark:hover:bg-amber-800 dark:hover:text-white'
+                }`}
               >
                 Manage Recordings
               </button>

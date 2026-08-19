@@ -6,7 +6,7 @@ const { getCrossPlatformGpuInfo } = require('./gpu');
 /**
  * Fast & accurate cross-platform drive capacity using Node's native fs.statfsSync.
  */
-const getRealStorageStats = (customPath) => {
+const getRealStorageStats = (customPath, options = {}) => {
     try {
         let checkPath = customPath;
         if (!checkPath || !fs.existsSync(checkPath)) {
@@ -20,10 +20,17 @@ const getRealStorageStats = (customPath) => {
             const used = Math.max(0, total - free);
             const usePercent = total > 0 ? (used / total) * 100 : 0;
             const freePercent = total > 0 ? (available / total) * 100 : 0;
-            const isWarning = usePercent >= 85.0 || freePercent <= 15.0;
-            const isFull = usePercent >= 90.0 || freePercent <= 10.0; // 5-10% deadline threshold
-            const isCritical = usePercent >= 95.0 || freePercent <= 5.0; // Hard emergency deadline
-            const canRecord = !isFull && available >= (500 * 1024 * 1024); // Block recording when >=90% used or <500MB
+
+            const safetyEnabled = options.storageSafetyEnabled !== false;
+            const threshold = Number(options.storageThresholdPercent) || 90.0;
+            const critThreshold = Number(options.storageCriticalThresholdPercent) || 95.0;
+            const minFreeBytes = (Number(options.storageMinFreeMb) || 500) * 1024 * 1024;
+            const warningThreshold = Math.max(50, threshold - 5);
+
+            const isWarning = safetyEnabled && (usePercent >= warningThreshold || freePercent <= (100 - warningThreshold));
+            const isFull = safetyEnabled && (usePercent >= threshold || available <= minFreeBytes);
+            const isCritical = safetyEnabled && (usePercent >= critThreshold || available <= (minFreeBytes / 2));
+            const canRecord = !safetyEnabled || (!isFull && available >= minFreeBytes);
 
             const mount = process.platform === 'win32'
                 ? (pathOrDriveMount(checkPath) || (process.env.SystemDrive || 'C:'))
@@ -42,6 +49,11 @@ const getRealStorageStats = (customPath) => {
                 isFull,
                 isCritical,
                 canRecord,
+                safetyEnabled,
+                thresholdPercent: threshold,
+                criticalThresholdPercent: critThreshold,
+                minFreeMb: Math.round(minFreeBytes / (1024 * 1024)),
+                deadlinePercent: threshold,
                 sizeFmt: formatStorageBytes(total),
                 usedFmt: formatStorageBytes(used),
                 availableFmt: formatStorageBytes(available),
@@ -353,16 +365,16 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             swapUsedFmt: formatStorageBytes(memData.swapused || 0),
         };
 
-        const realStorage = getRealStorageStats();
+        const realStorage = getRealStorageStats(undefined, extraContext);
         const primaryFs = realStorage || ((fsData && fsData.length > 0 && fsData[0].size > 0) ? fsData[0] : { mount: process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/', size: 0, used: 0, available: 0, use: 0 });
         const diskLoad = primaryFs.use !== undefined ? primaryFs.use : 0;
         const totalStorage = primaryFs.size || 0;
         const availableStorage = primaryFs.available || (primaryFs.size - primaryFs.used) || 0;
         const freePercent = totalStorage > 0 ? (availableStorage / totalStorage) * 100 : 0;
-        const isWarning = diskLoad >= 85.0 || freePercent <= 15.0;
-        const isFull = diskLoad >= 90.0 || freePercent <= 10.0;
-        const isCritical = diskLoad >= 95.0 || freePercent <= 5.0;
-        const canRecord = !isFull && availableStorage >= (500 * 1024 * 1024);
+        const isWarning = primaryFs.isWarning !== undefined ? primaryFs.isWarning : (diskLoad >= 85.0 || freePercent <= 15.0);
+        const isFull = primaryFs.isFull !== undefined ? primaryFs.isFull : (diskLoad >= 90.0 || freePercent <= 10.0);
+        const isCritical = primaryFs.isCritical !== undefined ? primaryFs.isCritical : (diskLoad >= 95.0 || freePercent <= 5.0);
+        const canRecord = primaryFs.canRecord !== undefined ? primaryFs.canRecord : (!isFull && availableStorage >= (500 * 1024 * 1024));
 
         const storageDetails = {
             mount: primaryFs.mount || (process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/'),
@@ -376,7 +388,11 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             isFull,
             isCritical,
             canRecord,
-            deadlinePercent: 90,
+            safetyEnabled: primaryFs.safetyEnabled !== undefined ? primaryFs.safetyEnabled : true,
+            thresholdPercent: primaryFs.thresholdPercent || 90,
+            criticalThresholdPercent: primaryFs.criticalThresholdPercent || 95,
+            minFreeMb: primaryFs.minFreeMb || 500,
+            deadlinePercent: primaryFs.deadlinePercent || 90,
             sizeFmt: formatStorageBytes(totalStorage),
             usedFmt: formatStorageBytes(primaryFs.used || 0),
             availableFmt: formatStorageBytes(availableStorage),

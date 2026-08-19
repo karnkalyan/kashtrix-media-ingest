@@ -37,6 +37,24 @@ const {
     verifyPassword,
 } = require('./securityPolicy');
 
+const {
+    stopChildAndWait,
+    recordingPreviewProcesses,
+    recordingThumbnailProcesses,
+    recordingHttpReaders,
+    deletingRecordings,
+    isRecordingLocked,
+    acquireDeletionLock,
+    releaseDeletionLock,
+    registerRecordingPreview,
+    stopRecordingPreviews,
+    registerRecordingThumbnail,
+    stopRecordingThumbnails,
+    registerRecordingHttpReader,
+    closeRecordingHttpReaders,
+    normalizePath,
+} = require('./recordingLifecycle');
+
 const loadEnvFile = () => {
     const envFile = path.join(__dirname, '.env');
     if (!fs.existsSync(envFile)) return;
@@ -290,16 +308,33 @@ const deriveSystemHwid = () => {
 const storedSystemHwid = normalizeHwid(getJsonSetting('system_hwid', ''));
 const SYSTEM_HWID = normalizeHwid(process.env.KTE_HWID) || storedSystemHwid || deriveSystemHwid();
 if (storedSystemHwid !== SYSTEM_HWID) setJsonSetting('system_hwid', SYSTEM_HWID);
-const defaultSettings = { rtmpPort: 1935, mediaPort: MEDIA_PORT, httpPort: 8100, apiPort: API_PORT };
+const defaultSettings = {
+    rtmpPort: 1935,
+    mediaPort: MEDIA_PORT,
+    httpPort: 8100,
+    apiPort: API_PORT,
+    storageSafetyEnabled: true,
+    storageThresholdPercent: 90,
+    storageCriticalThresholdPercent: 95,
+    storageMinFreeMb: 500,
+};
 const clampPort = (value, fallback) => Math.max(1, Math.min(65535, Number(value) || fallback));
 const getSettings = () => {
-    const settings = { ...defaultSettings, ...getJsonSetting('settings', {}) };
+    const raw = getJsonSetting('settings', {});
+    const settings = { ...defaultSettings, ...raw };
+    const threshold = Number(settings.storageThresholdPercent);
+    const criticalThreshold = Number(settings.storageCriticalThresholdPercent);
+    const minFreeMb = Number(settings.storageMinFreeMb);
     return {
         ...settings,
         rtmpPort: clampPort(settings.rtmpPort, 1935),
         mediaPort: clampPort(settings.mediaPort, MEDIA_PORT),
         httpPort: clampPort(settings.httpPort, 8100),
         apiPort: clampPort(settings.apiPort, API_PORT),
+        storageSafetyEnabled: settings.storageSafetyEnabled !== false,
+        storageThresholdPercent: !isNaN(threshold) && threshold >= 50 && threshold <= 99 ? threshold : 90,
+        storageCriticalThresholdPercent: !isNaN(criticalThreshold) && criticalThreshold >= 60 && criticalThreshold <= 99 ? criticalThreshold : 95,
+        storageMinFreeMb: !isNaN(minFreeMb) && minFreeMb >= 100 ? minFreeMb : 500,
     };
 };
 const getLicense = () => {
@@ -508,14 +543,31 @@ app.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/media/hls', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
+const isAllowedMediaPath = (targetPath) => {
+    if (!targetPath) return false;
+    const resolved = path.resolve(targetPath);
+    const allowedRoots = [
+        path.resolve(RECORDINGS_DIR),
+        path.resolve(RECORDED_DIR),
+        path.resolve(MEDIA_ROOT),
+    ];
+    return allowedRoots.some(root => resolved.startsWith(root));
+};
+
 const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
     if (!targetPath || !fs.existsSync(targetPath)) {
         return res.status(404).send('Recording file not found on disk');
     }
-    const stat = fs.statSync(targetPath);
+
+    const normalizedPath = path.resolve(targetPath);
+    if (isRecordingLocked(null, normalizedPath)) {
+        return res.status(409).json({ error: 'Recording is currently being deleted' });
+    }
+
+    const stat = fs.statSync(normalizedPath);
     let fileSize = stat.size;
     const range = req.headers.range;
-    const ext = path.extname(targetPath).slice(1).toLowerCase();
+    const ext = path.extname(normalizedPath).slice(1).toLowerCase();
     const mimeTypes = {
         mp4: 'video/mp4',
         mov: 'video/quicktime',
@@ -525,20 +577,22 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
     const isDownload = req.query.download === '1' || req.query.download === 'true';
-    const fileName = customFileName || path.basename(targetPath);
+    const fileName = customFileName || path.basename(normalizedPath);
 
     // If MP4 was unclosed/interrupted, check if counterpart MKV exists and auto-remux
-    if (ext === 'mp4' && fs.existsSync(targetPath.replace(/\.mp4$/i, '.mkv'))) {
-        const mkvPath = targetPath.replace(/\.mp4$/i, '.mkv');
-        try {
-            const mp4Stat = fs.existsSync(targetPath) ? fs.statSync(targetPath) : { size: 0 };
-            const mkvStat = fs.statSync(mkvPath);
-            if (mkvStat.size > 0 && mp4Stat.size < 1000) {
-                const { execFileSync } = require('child_process');
-                execFileSync(ffmpegPath, ['-y', '-i', mkvPath, '-c', 'copy', '-movflags', '+faststart', targetPath], { windowsHide: true, timeout: 10000 });
-                fileSize = fs.statSync(targetPath).size;
-            }
-        } catch (e) {}
+    if (ext === 'mp4' && fs.existsSync(normalizedPath.replace(/\.mp4$/i, '.mkv'))) {
+        const mkvPath = normalizedPath.replace(/\.mp4$/i, '.mkv');
+        if (!isRecordingLocked(null, mkvPath)) {
+            try {
+                const mp4Stat = fs.existsSync(normalizedPath) ? fs.statSync(normalizedPath) : { size: 0 };
+                const mkvStat = fs.statSync(mkvPath);
+                if (mkvStat.size > 0 && mp4Stat.size < 1000) {
+                    const { execFileSync } = require('child_process');
+                    execFileSync(ffmpegPath, ['-y', '-i', mkvPath, '-c', 'copy', '-movflags', '+faststart', normalizedPath], { windowsHide: true, timeout: 10000 });
+                    fileSize = fs.statSync(normalizedPath).size;
+                }
+            } catch (e) {}
+        }
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -570,7 +624,22 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
             return res.end();
         }
         const chunkSize = (end - start) + 1;
-        const fileStream = fs.createReadStream(targetPath, { start, end });
+        const fileStream = fs.createReadStream(normalizedPath, { start, end });
+
+        const unregister = registerRecordingHttpReader(normalizedPath, { res, req, fileStream });
+        let cleaned = false;
+        const cleanupReader = () => {
+            if (cleaned) return;
+            cleaned = true;
+            unregister();
+            try { fileStream.destroy(); } catch (_) {}
+        };
+        fileStream.on('close', cleanupReader);
+        fileStream.on('error', cleanupReader);
+        req.on('close', cleanupReader);
+        res.on('close', cleanupReader);
+        res.on('finish', cleanupReader);
+
         res.writeHead(206, {
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
             'Accept-Ranges': 'bytes',
@@ -579,18 +648,39 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
         });
         fileStream.pipe(res);
     } else {
+        const fileStream = fs.createReadStream(normalizedPath);
+
+        const unregister = registerRecordingHttpReader(normalizedPath, { res, req, fileStream });
+        let cleaned = false;
+        const cleanupReader = () => {
+            if (cleaned) return;
+            cleaned = true;
+            unregister();
+            try { fileStream.destroy(); } catch (_) {}
+        };
+        fileStream.on('close', cleanupReader);
+        fileStream.on('error', cleanupReader);
+        req.on('close', cleanupReader);
+        res.on('close', cleanupReader);
+        res.on('finish', cleanupReader);
+
         res.writeHead(200, {
             'Content-Length': fileSize,
             'Content-Type': contentType,
             'Accept-Ranges': 'bytes',
         });
-        fs.createReadStream(targetPath).pipe(res);
+        fileStream.pipe(res);
     }
 };
 
 const serveRecordingFile = (req, res, next) => {
     const rawPath = decodeURIComponent(req.path || '').replace(/^\/+/, '');
     if (!rawPath) return next();
+
+    // Prevent path traversal
+    const safeBase = path.basename(rawPath);
+    if (rawPath.includes('..')) return res.status(403).send('Forbidden');
+
     const primaryPath = path.join(RECORDINGS_DIR, rawPath);
     if (fs.existsSync(primaryPath) && fs.statSync(primaryPath).isFile()) {
         return streamOrDownloadFile(req, res, primaryPath);
@@ -599,7 +689,7 @@ const serveRecordingFile = (req, res, next) => {
     if (fs.existsSync(secondaryPath) && fs.statSync(secondaryPath).isFile()) {
         return streamOrDownloadFile(req, res, secondaryPath);
     }
-    const fileName = path.basename(rawPath);
+    const fileName = safeBase;
     try {
         const row = db.prepare('SELECT file_path FROM stream_recordings WHERE file_name = ? ORDER BY id DESC LIMIT 1').get(fileName);
         if (row && row.file_path && fs.existsSync(row.file_path)) {
@@ -678,10 +768,15 @@ const streamRecordingPreviewHandler = (req, res) => {
         return res.status(404).json({ error: 'Recording file not found' });
     }
 
-    const ext = path.extname(targetPath).toLowerCase();
+    const normalizedPath = path.resolve(targetPath);
+    if (isRecordingLocked(recording?.id, normalizedPath)) {
+        return res.status(409).json({ error: 'Recording is currently being deleted' });
+    }
+
+    const ext = path.extname(normalizedPath).toLowerCase();
     // If it's a native MP4/WebM file, serve directly with byte-range streaming for instant seek and zero transcoding delay
     if (ext === '.mp4' || ext === '.webm') {
-        return streamOrDownloadFile(req, res, targetPath, fileName || path.basename(targetPath));
+        return streamOrDownloadFile(req, res, normalizedPath, fileName || path.basename(normalizedPath));
     }
 
     // For non-native formats (MKV, TS, FLV, MOV, AVI), transcode on-the-fly to fragmented MP4
@@ -698,7 +793,7 @@ const streamRecordingPreviewHandler = (req, res) => {
     const args = [
         '-hide_banner', '-loglevel', 'error',
         ...(previewStart > 0 ? ['-ss', String(previewStart)] : []),
-        '-i', targetPath,
+        '-i', normalizedPath,
         '-map', '0:v:0?', '-map', '0:a:0?',
         '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
         '-pix_fmt', 'yuv420p', '-g', '30',
@@ -707,21 +802,49 @@ const streamRecordingPreviewHandler = (req, res) => {
         '-f', 'mp4', 'pipe:1',
     ];
     const preview = spawn(ffmpegPath, args, { windowsHide: true });
+    const recIdKey = recording?.id ? String(recording.id) : normalizedPath;
+
+    const unregister = registerRecordingPreview(recIdKey, {
+        id: recording?.id,
+        proc: preview,
+        res,
+        req,
+        filePath: normalizedPath,
+    });
+
     let stderr = '';
     preview.stderr.on('data', data => { stderr = `${stderr}${data}`.slice(-2000); });
     preview.stdout.pipe(res);
+
+    let cleaned = false;
+    const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        unregister();
+        try { preview.stdout.unpipe(res); } catch (_) {}
+        try {
+            if (preview.exitCode === null && preview.signalCode === null) {
+                preview.kill('SIGTERM');
+            }
+        } catch (_) {}
+        try { preview.stdout?.destroy?.(); } catch (_) {}
+        try { preview.stderr?.destroy?.(); } catch (_) {}
+    };
+
     preview.on('error', error => {
         console.error(`[Preview] Failed to start recording preview:`, error);
+        cleanup();
         if (!res.headersSent) res.status(500).end();
-        else res.end();
+        else if (!res.writableEnded) res.end();
     });
     preview.on('close', code => {
+        cleanup();
         if (code && stderr) console.error(`[Preview] Recording preview: ${stderr.trim()}`);
         if (!res.writableEnded) res.end();
     });
-    req.on('close', () => {
-        try { if (!preview.killed) preview.kill('SIGTERM'); } catch (e) {}
-    });
+    req.on('close', cleanup);
+    res.on('close', cleanup);
+    res.on('finish', cleanup);
 };
 
 app.get('/recording-preview/:id', streamRecordingPreviewHandler);
@@ -740,9 +863,10 @@ app.get(['/api/ingest/recordings/:id/file', '/api/ingest/recordings/:id/download
     } catch (e) {}
 
     if (!targetPath) {
+        const decoded = decodeURIComponent(id);
         const candidates = [
-            path.join(RECORDINGS_DIR, id),
-            path.join(RECORDED_DIR, id),
+            path.join(RECORDINGS_DIR, decoded),
+            path.join(RECORDED_DIR, decoded),
         ];
         for (const c of candidates) {
             if (fs.existsSync(c) && fs.statSync(c).isFile()) {
@@ -995,15 +1119,41 @@ app.get('/api/settings', authMiddleware, (req, res) => {
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
+    const prev = getSettings();
+    const storageSafetyEnabled = req.body?.storageSafetyEnabled !== undefined
+        ? Boolean(req.body.storageSafetyEnabled)
+        : prev.storageSafetyEnabled;
+    const rawThreshold = Number(req.body?.storageThresholdPercent);
+    const storageThresholdPercent = !isNaN(rawThreshold) && rawThreshold >= 50 && rawThreshold <= 99
+        ? rawThreshold
+        : (prev.storageThresholdPercent || 90);
+    const rawCrit = Number(req.body?.storageCriticalThresholdPercent);
+    const storageCriticalThresholdPercent = !isNaN(rawCrit) && rawCrit >= 60 && rawCrit <= 99
+        ? rawCrit
+        : (prev.storageCriticalThresholdPercent || 95);
+    const rawMinFree = Number(req.body?.storageMinFreeMb);
+    const storageMinFreeMb = !isNaN(rawMinFree) && rawMinFree >= 100
+        ? rawMinFree
+        : (prev.storageMinFreeMb || 500);
+
+    const portChanged = clampPort(req.body?.rtmpPort, 1935) !== prev.rtmpPort
+        || clampPort(req.body?.mediaPort, MEDIA_PORT) !== prev.mediaPort
+        || clampPort(req.body?.httpPort, 8100) !== prev.httpPort
+        || clampPort(req.body?.apiPort, API_PORT) !== prev.apiPort;
+
     const nextSettings = {
-        ...getSettings(),
+        ...prev,
         rtmpPort: clampPort(req.body?.rtmpPort, 1935),
         mediaPort: clampPort(req.body?.mediaPort, MEDIA_PORT),
         httpPort: clampPort(req.body?.httpPort, 8100),
         apiPort: clampPort(req.body?.apiPort, API_PORT),
+        storageSafetyEnabled,
+        storageThresholdPercent,
+        storageCriticalThresholdPercent,
+        storageMinFreeMb,
     };
     setJsonSetting('settings', nextSettings);
-    res.json({ ...nextSettings, restartRequired: true });
+    res.json({ ...nextSettings, restartRequired: portChanged });
 });
 
 app.get('/api/state', authMiddleware, (req, res) => {
@@ -2423,7 +2573,8 @@ const checkAmdSupport = () => {
 
 const checkStorageDiskCapacity = (targetPath = RECORDINGS_DIR) => {
     try {
-        const stats = systemApi.getRealStorageStats(targetPath);
+        const settings = getSettings();
+        const stats = systemApi.getRealStorageStats(targetPath, settings);
         if (!stats) {
             return {
                 canRecord: true,
@@ -2441,10 +2592,12 @@ const checkStorageDiskCapacity = (targetPath = RECORDINGS_DIR) => {
                 message: 'Storage disk verified',
             };
         }
-        const message = stats.isCritical
-            ? `CRITICAL: Storage disk reached 95% capacity deadline (${stats.usePercent.toFixed(1)}% full, only ${stats.availableFmt} free). Minimum 5-10% free space required.`
+        const message = !stats.safetyEnabled
+            ? `Storage safety enforcement disabled (Disk ${stats.usePercent.toFixed(1)}% full, ${stats.availableFmt} free).`
+            : stats.isCritical
+            ? `CRITICAL: Storage disk reached ${stats.criticalThresholdPercent}% capacity deadline (${stats.usePercent.toFixed(1)}% full, only ${stats.availableFmt} free).`
             : stats.isFull
-            ? `Storage disk full (${stats.usePercent.toFixed(1)}% used, only ${stats.availableFmt} free). Safety deadline enforced (5-10% free space reserve required).`
+            ? `Storage disk full (${stats.usePercent.toFixed(1)}% used, only ${stats.availableFmt} free). Safety threshold (${stats.thresholdPercent}% / ${stats.minFreeMb}MB) enforced.`
             : stats.isWarning
             ? `Warning: Storage disk is ${stats.usePercent.toFixed(1)}% full (${stats.availableFmt} free).`
             : `Storage disk healthy (${stats.usePercent.toFixed(1)}% used, ${stats.availableFmt} free).`;
@@ -2577,26 +2730,14 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
         active.lastError = message.slice(-2000);
         if (message) console.error(`[Recording][${key}] ${message}`);
     });
-    proc.on('close', () => {
-        setTimeout(() => {
-            for (const output of outputs) {
-                let size = 0;
-                try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
-                db.prepare('UPDATE stream_recordings SET end_time = COALESCE(end_time, ?), size = ? WHERE id = ?')
-                    .run(new Date().toISOString(), size, output.recordId);
+    proc.on('close', async () => {
+        if (activeRecordings.has(key)) {
+            try {
+                await finishRecording(key, 'SIGTERM', false);
+            } catch (e) {
+                console.error(`[Recording] Error finalizing ${key}:`, e);
             }
-            activeRecordings.delete(key);
-            broadcastRecordingEvent('recording_stopped', { key, app: appName, stream });
-            if (options.sourceType === 'device' && activeDevicePreviewState) {
-                activeDevicePreviewState.isRecording = Array.from(activeRecordings.values()).some(r => r.options?.sourceType === 'device');
-                broadcastDevicePreviewState(activeDevicePreviewState);
-            }
-            for (const [pId, prev] of devicePreviewProcesses.entries()) {
-                if (prev.closedByUI && (!options.videoDevice || prev.videoDevice === options.videoDevice)) {
-                    stopDevicePreview(pId, true);
-                }
-            }
-        }, 150);
+        }
     });
     return active;
 };
@@ -2699,64 +2840,66 @@ const listRecordings = (limit = 50) => {
     });
 };
 
-const finishRecording = (key, signal = 'SIGTERM', forceComplete = false) => {
+const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) => {
     const data = activeRecordings.get(key);
     if (!data) return null;
-    activeRecordings.delete(key);
 
-    const proc = data.outputs[0]?.proc;
-    if (proc && !proc.killed) {
-        try {
-            if (proc.stdin && proc.stdin.writable) {
-                proc.stdin.write('q\n');
-                proc.stdin.end();
-            } else {
-                proc.kill('SIGINT');
+    if (data.stopPromise) {
+        return data.stopPromise;
+    }
+
+    data.stopPromise = (async () => {
+        const proc = data.outputs[0]?.proc;
+        if (proc) {
+            await stopChildAndWait(proc, { signal, timeoutMs: 5000, gracefulStdin: true });
+        }
+
+        const startTime = new Date(data.startTime).getTime();
+        const now = Date.now();
+        const durationMs = now - startTime;
+        const minDurationMs = 1000;
+
+        if (forceComplete || durationMs >= minDurationMs) {
+            const endTime = new Date().toISOString();
+            for (const output of data.outputs) {
+                let size = 0;
+                try {
+                    if (fs.existsSync(output.filePath)) {
+                        size = fs.statSync(output.filePath).size;
+                    }
+                } catch (e) {}
+                db.prepare('UPDATE stream_recordings SET end_time = ?, size = ? WHERE id = ? AND end_time IS NULL')
+                    .run(endTime, size, output.recordId);
             }
-        } catch (e) {
-            try { proc.kill(signal); } catch (_) {}
+            console.log(`[Recording] Completed ${key} (${data.outputs.length} format(s), duration: ${durationMs}ms)`);
+        } else {
+            console.log(`[Recording] Marking ${key} as interrupted (duration: ${durationMs}ms)`);
         }
-        setTimeout(() => {
-            try { if (!proc.killed) proc.kill('SIGKILL'); } catch (_) {}
-        }, 2500);
-    }
 
-    const startTime = new Date(data.startTime).getTime();
-    const now = Date.now();
-    const durationMs = now - startTime;
-    const minDurationMs = 1000;
+        activeRecordings.delete(key);
 
-    if (forceComplete || durationMs >= minDurationMs) {
-        const endTime = new Date().toISOString();
-        for (const output of data.outputs) {
-            let size = 0;
-            try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
-            db.prepare('UPDATE stream_recordings SET end_time = ?, size = ? WHERE id = ? AND end_time IS NULL').run(endTime, size, output.recordId);
-        }
-        console.log(`[Recording] Completed ${key} (${data.outputs.length} format(s), duration: ${durationMs}ms)`);
-    } else {
-        console.log(`[Recording] Marking ${key} as interrupted (duration: ${durationMs}ms)`);
-    }
-
-    if (data.options?.sourceType === 'device') {
-        if (activeDevicePreviewState) {
-            activeDevicePreviewState.isRecording = Array.from(activeRecordings.values()).some(r => r.options?.sourceType === 'device');
-            broadcastDevicePreviewState(activeDevicePreviewState);
-        }
-        for (const [pId, prev] of devicePreviewProcesses.entries()) {
-            if (prev.closedByUI && (!data.options.videoDevice || prev.videoDevice === data.options.videoDevice)) {
-                stopDevicePreview(pId, true);
+        if (data.options?.sourceType === 'device') {
+            if (activeDevicePreviewState) {
+                activeDevicePreviewState.isRecording = Array.from(activeRecordings.values()).some(r => r.options?.sourceType === 'device');
+                broadcastDevicePreviewState(activeDevicePreviewState);
+            }
+            for (const [pId, prev] of devicePreviewProcesses.entries()) {
+                if (prev.closedByUI && (!data.options.videoDevice || prev.videoDevice === data.options.videoDevice)) {
+                    stopDevicePreview(pId, true);
+                }
             }
         }
-    }
 
-    broadcastRecordingEvent('recording_stopped', {
-        key,
-        app: data.appName,
-        stream: data.stream,
-    });
+        broadcastRecordingEvent('recording_stopped', {
+            key,
+            app: data.appName,
+            stream: data.stream,
+        });
 
-    return data;
+        return data;
+    })();
+
+    return data.stopPromise;
 };
 
 // FIX: Count recent HLS viewers - use consistent key format and 30s timeout
@@ -3543,7 +3686,7 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
     }
 });
 
-app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, (req, res) => {
+app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, async (req, res) => {
     const { app: appName, stream, key: requestedKey } = req.body || {};
     let targetKey = requestedKey;
     if (!targetKey && appName && stream) {
@@ -3566,25 +3709,94 @@ app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, (req, 
 
     if (!data || !targetKey) return res.json({ success: false, error: 'No active recording found' });
 
-    finishRecording(targetKey, 'SIGTERM', true);
+    await finishRecording(targetKey, 'SIGTERM', true);
 
     res.json({ success: true, message: 'Recording stopped', key: targetKey });
 });
 
-app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, (req, res) => {
+app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, async (req, res) => {
     const { id } = req.params;
+    let recording;
     try {
-        const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(id);
-        if (!recording) return res.status(404).json({ error: 'Recording not found' });
-        const key = getRecordingKey(recording.app, recording.stream);
-        const active = activeRecordings.get(key);
-        if (active?.outputs.some(output => Number(output.recordId) === Number(id))) finishRecording(key, 'SIGTERM', true);
-        if (fs.existsSync(recording.file_path)) fs.unlinkSync(recording.file_path);
+        recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(id);
+    } catch (e) {
+        console.error('[RecordingDelete] DB error looking up recording:', e);
+        return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (!recording) return res.status(404).json({ error: 'Recording not found' });
+
+    const normalizedFilePath = recording.file_path ? path.resolve(recording.file_path) : null;
+    const recIdStr = String(recording.id);
+
+    if (!acquireDeletionLock(recIdStr, normalizedFilePath)) {
+        return res.status(409).json({ error: 'Recording is currently being deleted' });
+    }
+
+    try {
+        console.log(`[RecordingDelete] Starting deletion for recording ${id} (${normalizedFilePath || 'no file'})`);
+
+        // 1. Stop active recorder if this recording is currently active
+        for (const [key, active] of Array.from(activeRecordings.entries())) {
+            const isOwningRecording = active.outputs?.some(output =>
+                Number(output.recordId) === Number(id) ||
+                (normalizedFilePath && output.filePath && path.resolve(output.filePath) === normalizedFilePath)
+            );
+            if (isOwningRecording) {
+                console.log(`[RecordingDelete] stopping active recorder for key: ${key}`);
+                await finishRecording(key, 'SIGTERM', true);
+            }
+        }
+
+        // 2. Stop all preview readers for this recording
+        console.log(`[RecordingDelete] stopping preview readers for recording ${id}`);
+        await stopRecordingPreviews(recording.id, normalizedFilePath);
+
+        // 3. Stop all thumbnail generation processes for this recording
+        console.log(`[RecordingDelete] stopping thumbnail processes for recording ${id}`);
+        await stopRecordingThumbnails(recording.id, normalizedFilePath);
+
+        // 4. Close all active HTTP readers (downloads, byte-range streaming)
+        if (normalizedFilePath) {
+            console.log(`[RecordingDelete] closing HTTP readers for ${normalizedFilePath}`);
+            await closeRecordingHttpReaders(normalizedFilePath);
+        }
+
+        console.log(`[RecordingDelete] all readers closed for recording ${id}`);
+
+        // 5. Unlink recording file
+        if (normalizedFilePath && fs.existsSync(normalizedFilePath)) {
+            console.log(`[RecordingDelete] unlinking ${normalizedFilePath}`);
+            await fs.promises.unlink(normalizedFilePath);
+        }
+
+        // Also check counterpart MKV/MP4 if exists
+        if (normalizedFilePath && normalizedFilePath.endsWith('.mp4')) {
+            const counterpartMkv = normalizedFilePath.replace(/\.mp4$/i, '.mkv');
+            if (fs.existsSync(counterpartMkv)) {
+                try {
+                    await closeRecordingHttpReaders(counterpartMkv);
+                    await fs.promises.unlink(counterpartMkv);
+                } catch (_) {}
+            }
+        }
+
+        // 6. Delete thumbnail cache
+        const thumbnailPath = path.join(RECORDING_THUMBNAILS_DIR, `${recording.id}.jpg`);
+        if (fs.existsSync(thumbnailPath)) {
+            try { await fs.promises.unlink(thumbnailPath); } catch (_) {}
+        }
+
+        // 7. Delete database row only after filesystem unlink succeeded
         db.prepare('DELETE FROM stream_recordings WHERE id = ?').run(id);
+
+        console.log(`[RecordingDelete] completed deletion for recording ${id}`);
         res.json({ success: true, message: 'Recording deleted' });
     } catch (e) {
-        console.error('Failed to delete recording:', e);
-        res.status(500).json({ error: 'Failed to delete recording' });
+        console.error(`[RecordingDelete] Failed to delete recording ${id}:`, e);
+        res.status(500).json({ error: `Failed to delete recording: ${e.message}` });
+    } finally {
+        releaseDeletionLock(recIdStr, normalizedFilePath);
     }
 });
 
@@ -3862,6 +4074,7 @@ const startSystemStatsBroadcast = () => {
             const stats = await systemApi.getFullSystemStats({
                 transcoderActiveStreams: hlsProcesses.size || 0,
                 transcoderIdleStreams: Math.max(0, 16 - (hlsProcesses.size || 0)),
+                ...getSettings(),
             });
             broadcastSystemStats(stats);
         } catch (error) {
@@ -3957,18 +4170,28 @@ mediaApp.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
 mediaApp.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 mediaApp.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 
-// Serve recordings and media static paths
-mediaApp.use('/recordings', express.static(RECORDINGS_DIR), express.static(RECORDED_DIR), serveRecordingFile);
-mediaApp.use('/media/recordings', express.static(RECORDINGS_DIR), express.static(RECORDED_DIR), serveRecordingFile);
-mediaApp.use('/recorded', express.static(RECORDED_DIR), express.static(RECORDINGS_DIR), serveRecordingFile);
-mediaApp.use('/media/recorded', express.static(RECORDED_DIR), express.static(RECORDINGS_DIR), serveRecordingFile);
+// Serve recordings and media static paths through managed handler
+mediaApp.use('/recordings', serveRecordingFile);
+mediaApp.use('/media/recordings', serveRecordingFile);
+mediaApp.use('/recorded', serveRecordingFile);
+mediaApp.use('/media/recorded', serveRecordingFile);
 mediaApp.use('/media', express.static(MEDIA_ROOT));
+
 mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
-    const recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(req.params.id);
-    if (!recording || !fs.existsSync(recording.file_path)) return res.status(404).end();
+    const rawId = req.params.id;
+    let recording = null;
+    try {
+        recording = db.prepare('SELECT * FROM stream_recordings WHERE id = ?').get(rawId);
+    } catch (e) {}
+    if (!recording || !recording.file_path || !fs.existsSync(recording.file_path)) return res.status(404).end();
+
+    const normalizedFilePath = path.resolve(recording.file_path);
+    if (isRecordingLocked(recording.id, normalizedFilePath)) {
+        return res.status(409).end();
+    }
 
     const thumbnailPath = path.join(RECORDING_THUMBNAILS_DIR, `${recording.id}.jpg`);
-    const recordingModified = fs.statSync(recording.file_path).mtimeMs;
+    const recordingModified = fs.statSync(normalizedFilePath).mtimeMs;
     if (fs.existsSync(thumbnailPath) && (recording.end_time || fs.statSync(thumbnailPath).mtimeMs >= recordingModified)) {
         res.setHeader('Cache-Control', recording.end_time ? 'public, max-age=86400' : 'no-cache');
         return res.sendFile(thumbnailPath);
@@ -3976,10 +4199,34 @@ mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
 
     const temporaryPath = path.join(RECORDING_THUMBNAILS_DIR, `${recording.id}-${Date.now()}.jpg`);
     const thumbnail = spawn(ffmpegPath, [
-        '-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', recording.file_path,
+        '-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', normalizedFilePath,
         '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '4', '-y', temporaryPath,
     ], { windowsHide: true });
+
+    const unregister = registerRecordingThumbnail(recording.id, {
+        id: recording.id,
+        proc: thumbnail,
+        res,
+        req,
+        filePath: normalizedFilePath,
+        tempPath: temporaryPath,
+    });
+
+    let cleaned = false;
+    const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        unregister();
+        try {
+            if (thumbnail.exitCode === null && thumbnail.signalCode === null) {
+                thumbnail.kill('SIGTERM');
+            }
+        } catch (_) {}
+        try { if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath); } catch (_) {}
+    };
+
     thumbnail.on('close', code => {
+        unregister();
         if (code === 0 && fs.existsSync(temporaryPath)) {
             try {
                 if (fs.existsSync(thumbnailPath)) fs.unlinkSync(thumbnailPath);
@@ -3993,9 +4240,15 @@ mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
         try { if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath); } catch (e) { }
         if (!res.headersSent) res.status(404).end();
     });
-    thumbnail.on('error', () => { if (!res.headersSent) res.status(500).end(); });
-    req.on('close', () => { if (!res.writableEnded && !thumbnail.killed) thumbnail.kill('SIGTERM'); });
+    thumbnail.on('error', () => {
+        cleanup();
+        if (!res.headersSent) res.status(500).end();
+    });
+    req.on('close', cleanup);
+    res.on('close', cleanup);
+    res.on('finish', cleanup);
 });
+
 mediaApp.get('/recording-preview/:id', streamRecordingPreviewHandler);
 mediaApp.use('/vod', express.static(VOD_DIR));
 
@@ -4304,7 +4557,7 @@ rtmpEmitter.on('donePublish', async (id, StreamPath, args) => {
 
     // FIX: Stop our HLS process when stream ends
     stopHlsProcess(appName, streamName);
-    if (activeRecordings.has(key)) finishRecording(key, 'SIGTERM', true);
+    if (activeRecordings.has(key)) await finishRecording(key, 'SIGTERM', true);
 });
 
 rtmpEmitter.on('postPlay', (id, StreamPath, args) => {
@@ -4357,7 +4610,7 @@ mediaServer.on('error', (err) => {
 
 const startStorageMonitoring = () => {
     let lastStorageAlertNotification = 0;
-    setInterval(() => {
+    setInterval(async () => {
         try {
             const diskStatus = checkStorageDiskCapacity(RECORDINGS_DIR);
             const now = Date.now();
@@ -4368,8 +4621,8 @@ const startStorageMonitoring = () => {
                     console.error(`[STORAGE CRITICAL] Storage reached ${diskStatus.usePercent.toFixed(1)}% used (${diskStatus.availableFmt} free). Stopping all active recordings immediately.`);
                     const stoppedKeys = [];
                     for (const key of Array.from(activeRecordings.keys())) {
-                        finishRecording(key, 'SIGTERM', true);
                         stoppedKeys.push(key);
+                        await finishRecording(key, 'SIGTERM', true);
                     }
                     broadcastRecordingEvent('storage_critical_stop', {
                         level: 'critical',
@@ -4380,21 +4633,54 @@ const startStorageMonitoring = () => {
                     return;
                 }
             }
-
-            // 2. Periodic warning broadcast when disk is full (>= 90% used / < 10% free)
-            if (diskStatus.isFull && (now - lastStorageAlertNotification > 15000)) {
-                broadcastRecordingEvent('storage_alert', {
-                    level: 'warning',
-                    message: `STORAGE FULL ALERT: Storage disk is ${diskStatus.usePercent.toFixed(1)}% full (${diskStatus.availableFmt} free). 5-10% safety reserve enforced — starting new recordings is disabled.`,
-                    storage: diskStatus,
-                });
-                lastStorageAlertNotification = now;
-            }
         } catch (e) {
             console.error('[Storage Monitor] Error during capacity check:', e.message);
         }
     }, 5000);
 };
+
+// Graceful shutdown handling
+let isShuttingDown = false;
+const gracefulShutdown = async (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[Shutdown] Received ${signal}. Starting graceful shutdown...`);
+
+    try {
+        if (activeRecordings.size > 0) {
+            console.log(`[Shutdown] Stopping ${activeRecordings.size} active recording(s)...`);
+            const stopPromises = Array.from(activeRecordings.keys()).map(k => finishRecording(k, 'SIGTERM', true));
+            await Promise.all(stopPromises);
+        }
+
+        await stopRecordingPreviews();
+        await stopRecordingThumbnails();
+
+        for (const filePath of Array.from(recordingHttpReaders.keys())) {
+            await closeRecordingHttpReaders(filePath);
+        }
+
+        for (const pId of Array.from(devicePreviewProcesses.keys())) {
+            stopDevicePreview(pId, true);
+        }
+
+        console.log('[Shutdown] All recording processes and handles released.');
+    } catch (err) {
+        console.error('[Shutdown] Error during cleanup:', err);
+    }
+
+    try {
+        server.close();
+        mediaServer.close();
+    } catch (_) {}
+
+    setTimeout(() => {
+        process.exit(0);
+    }, 500);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start API and WebSocket server
 const apiServer = server.listen(API_PORT, () => {

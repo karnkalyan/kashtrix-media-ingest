@@ -27,7 +27,7 @@ import {
   Film,
   HardDrive
 } from 'lucide-react';
-import { AppSettings, IngestRecordingOptions, TranscodingProfile } from '../types';
+import { AppSettings, IngestRecordingOptions, TranscodingProfile, StorageStatusResponse } from '../types';
 import toast from 'react-hot-toast';
 import ProfessionalRecordingControl from './ProfessionalRecordingControl';
 import ProtocolBadge from './ui/ProtocolBadge';
@@ -193,6 +193,7 @@ export const IngestServerView: React.FC<Props> = ({
   const [audioDevice, setAudioDevice] = useState<string>('');
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<StorageStatusResponse | null>(null);
 
   // Recording Library Preview & Filter state
   const [recSearch, setRecSearch] = useState('');
@@ -212,18 +213,32 @@ export const IngestServerView: React.FC<Props> = ({
   const [relayDestinationUrl, setRelayDestinationUrl] = useState('');
   const [processes, setProcesses] = useState<any[]>([]);
 
+  const fetchStorageStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/storage/status', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStorageStatus(data);
+      }
+    } catch {}
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
       await Promise.all([
         fetchIngestHistory(),
         fetchRecordings(),
         fetchIngestStreams(),
+        fetchStorageStatus(),
       ]);
       fetchProcesses();
     } catch (e) {
       console.error(e);
     }
-  }, [fetchIngestHistory, fetchRecordings, fetchIngestStreams]);
+  }, [fetchIngestHistory, fetchRecordings, fetchIngestStreams, fetchStorageStatus]);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -276,6 +291,9 @@ export const IngestServerView: React.FC<Props> = ({
     fetchData();
     fetchConfig();
     refreshDevices();
+    fetchStorageStatus();
+
+    const storageTimer = setInterval(fetchStorageStatus, 5000);
 
     const unsubscribe = subscribeRealtime(
       msg => {
@@ -286,19 +304,24 @@ export const IngestServerView: React.FC<Props> = ({
           setAudioDevices(prev => Array.from(new Set([...prev, ...a])));
           setDevicesLoading(false);
         }
+        if (msg.type === 'system_stats' && msg.payload?.storageDetails) {
+          setStorageStatus(prev => ({ ...(prev || {}), ...msg.payload.storageDetails, success: true }));
+        }
       },
       isConnected => {
         if (isConnected) {
           sendRealtime({ type: 'capture_devices_request' });
           refreshDevices();
+          fetchStorageStatus();
         }
       }
     );
 
     return () => {
+      clearInterval(storageTimer);
       unsubscribe();
     };
-  }, [fetchData, fetchConfig, refreshDevices]);
+  }, [fetchData, fetchConfig, refreshDevices, fetchStorageStatus]);
 
   const saveConfig = async () => {
     setSavingConfig(true);
@@ -590,21 +613,102 @@ export const IngestServerView: React.FC<Props> = ({
 
         {/* Ingest Summary KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Video Devices</span>
-            <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{videoDevices.length}</p>
+          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Video Devices</span>
+              <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{videoDevices.length}</p>
+            </div>
+            <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1 truncate">
+              {videoDevices.length > 0 ? videoDevices[0] : 'No hardware device'}
+            </span>
           </div>
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Audio Devices</span>
-            <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{audioDevices.length}</p>
+
+          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Audio Devices</span>
+              <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{audioDevices.length}</p>
+            </div>
+            <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1 truncate">
+              {audioDevices.length > 0 ? audioDevices[0] : 'System audio / none'}
+            </span>
           </div>
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Total Recordings</span>
-            <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{recordings.length}</p>
+
+          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Total Recordings</span>
+              <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{recordings.length}</p>
+            </div>
+            <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1">
+              {recordings.filter((r: any) => r.is_active).length > 0
+                ? `${recordings.filter((r: any) => r.is_active).length} recording active`
+                : 'All recordings idle'}
+            </span>
           </div>
-          <div className="rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Storage Used</span>
-            <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">{formatBytes(totalRecordingBytes)}</p>
+
+          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Storage Used</span>
+                {storageStatus && (
+                  <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
+                    storageStatus.isFull
+                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 animate-pulse'
+                      : storageStatus.isWarning
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300'
+                      : 'bg-[#F4EEFF] text-[#4A1B7A] dark:bg-[#2A1744] dark:text-[#C4B5FD]'
+                  }`}>
+                    {storageStatus.usePercent !== undefined ? `${storageStatus.usePercent.toFixed(1)}% Disk` : ''}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">
+                  {formatBytes(totalRecordingBytes)}
+                </p>
+                <span className="text-[10px] font-medium text-[#6F6078] dark:text-[#B9A5CD]">
+                  (Recordings)
+                </span>
+              </div>
+            </div>
+
+            {storageStatus ? (
+              <div className="mt-2 pt-1.5 border-t border-[#E8DFF0]/70 dark:border-[#311B4E]/70 space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[#6F6078] dark:text-[#B9A5CD]">Total Disk:</span>
+                  <span className="font-mono font-semibold text-[#1B1024] dark:text-white">
+                    {storageStatus.usedFmt} / {storageStatus.sizeFmt}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[#6F6078] dark:text-[#B9A5CD]">Remaining:</span>
+                  <span className={`font-mono font-semibold ${
+                    storageStatus.isFull
+                      ? 'text-rose-600 dark:text-rose-400 font-bold'
+                      : storageStatus.isWarning
+                      ? 'text-amber-600 dark:text-amber-400 font-bold'
+                      : 'text-emerald-600 dark:text-emerald-400'
+                  }`}>
+                    {storageStatus.availableFmt} Free
+                  </span>
+                </div>
+                <div className="w-full bg-[#E8DFF0] h-1.5 rounded-full overflow-hidden dark:bg-[#311B4E]">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      storageStatus.isFull
+                        ? 'bg-rose-600'
+                        : storageStatus.isWarning
+                        ? 'bg-amber-500'
+                        : 'bg-[#4A1B7A] dark:bg-[#A78BFA]'
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(0, storageStatus.usePercent || 0))}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1">
+                Recordings directory storage
+              </span>
+            )}
           </div>
         </div>
 

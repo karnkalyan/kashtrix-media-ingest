@@ -500,10 +500,6 @@ const useEngine = () => {
         toast.error(message.payload?.message || 'CRITICAL: Harddisk reached capacity deadline (<5% free). All recordings were stopped to protect disk.', { duration: 9000 });
         return;
       }
-      if (message.type === 'storage_alert') {
-        toast.error(message.payload?.message || 'Storage Alert: Harddisk is over 90% full. New recordings are blocked until space is freed.', { duration: 6000 });
-        return;
-      }
       if (message.type === 'ingest_stats') {
         dispatch({ type: 'UPDATE_INGEST_STATS', payload: message.payload });
         return;

@@ -317,7 +317,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const encodingDisabled = activeConfig.encoder === 'copy';
   const selectedProfile = profiles.find(item => item.id === profileId);
   const profileControlsHardware = !!selectedProfile;
-  const isStorageFull = Boolean(storageStatus && (!storageStatus.canRecord || storageStatus.isFull || (storageStatus.usePercent !== undefined && storageStatus.usePercent >= 90)));
+  const isStorageFull = Boolean(
+    storageStatus &&
+    storageStatus.safetyEnabled !== false &&
+    (!storageStatus.canRecord || storageStatus.isFull || (storageStatus.usePercent !== undefined && storageStatus.usePercent >= (storageStatus.thresholdPercent || 90)))
+  );
   const baseStartDisabled = sourceType === 'device' ? !videoDevice && !audioDevice : !selectedStreamKey;
   const startDisabled = baseStartDisabled || isStorageFull;
   const sourceName = sourceType === 'device'
@@ -630,15 +634,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   return <>
     {/* Harddisk Storage Capacity / Deadline Alert Banner */}
     {isStorageFull && (
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-900 shadow-xs dark:border-rose-900/70 dark:bg-rose-950/80 dark:text-rose-200">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white animate-pulse">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50/95 p-3.5 text-xs text-rose-950 shadow-xs dark:border-rose-700/70 dark:bg-gradient-to-r dark:from-rose-950/90 dark:via-[#200a15] dark:to-[#17070f] dark:text-rose-100 dark:shadow-[0_0_24px_rgba(225,29,72,0.12)]">
+        <div className="flex items-center gap-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white shadow-sm ring-2 ring-rose-300/60 dark:ring-rose-500/40 animate-pulse">
             !
           </span>
-          <div>
-            <span className="font-bold">Harddisk Storage Deadline Reached ({storageStatus?.usePercent?.toFixed(1) || '90'}% Full):</span>
-            <span className="ml-1">
-              Safety deadline enforced (minimum 5-10% free space reserve required). Starting new recordings is <strong>disabled</strong> until disk space is freed.
+          <div className="space-y-0.5">
+            <span className="font-bold text-rose-700 dark:text-rose-300">
+              Harddisk Storage Limit Reached ({storageStatus?.usePercent?.toFixed(1) || '90'}% Full):
+            </span>
+            <span className="ml-1 text-rose-900 dark:text-rose-100">
+              Safety threshold enforced ({storageStatus?.thresholdPercent || 90}% limit / {storageStatus?.minFreeMb || 500}MB reserve). Starting new recordings is <strong className="text-rose-950 dark:text-white">disabled</strong> until disk space is freed.
               {storageStatus ? ` Storage: ${storageStatus.usedFmt} used / ${storageStatus.sizeFmt} (${storageStatus.availableFmt} free remaining).` : ''}
             </span>
           </div>
@@ -901,12 +907,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
       {/* Live Target Harddisk Capacity Indicator */}
       {storageStatus && (
-        <div className={`mb-3 rounded-lg border p-3 text-[11px] flex flex-wrap items-center justify-between gap-3 ${
+        <div className={`mb-3 rounded-xl border p-3 text-[11px] flex flex-wrap items-center justify-between gap-3 shadow-xs ${
           storageStatus.isFull
-            ? 'border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-200'
+            ? 'border-rose-300 bg-rose-50/95 text-rose-950 dark:border-rose-700/70 dark:bg-gradient-to-r dark:from-rose-950/90 dark:via-[#200a15] dark:to-[#17070f] dark:text-rose-100'
             : storageStatus.isWarning
-            ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/60 dark:text-amber-200'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/60 dark:text-emerald-200'
+            ? 'border-amber-300 bg-amber-50/95 text-amber-950 dark:border-amber-700/70 dark:bg-gradient-to-r dark:from-amber-950/90 dark:via-[#221204] dark:to-[#180c03] dark:text-amber-100'
+            : 'border-emerald-300 bg-emerald-50/95 text-emerald-950 dark:border-emerald-700/70 dark:bg-gradient-to-r dark:from-emerald-950/90 dark:via-[#092014] dark:to-[#06170e] dark:text-emerald-100'
         }`}>
           <div className="flex items-center gap-2">
             <FiHardDrive className="text-sm" />
@@ -921,7 +927,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 ? 'bg-amber-500 text-white font-bold'
                 : 'bg-emerald-600 text-white font-bold'
             }`}>
-              {storageStatus.isFull ? 'RECORDING BLOCKED (<10% Free)' : storageStatus.isWarning ? 'STORAGE WARNING (<15% Free)' : 'STORAGE HEALTHY (5-10% Reserve OK)'}
+              {!storageStatus.safetyEnabled
+                ? 'SAFETY ENFORCEMENT OFF'
+                : storageStatus.isFull
+                ? `RECORDING BLOCKED (≥${storageStatus.thresholdPercent || 90}% Limit)`
+                : storageStatus.isWarning
+                ? `STORAGE WARNING (≥${(storageStatus.thresholdPercent || 90) - 5}% Used)`
+                : `STORAGE HEALTHY (<${storageStatus.thresholdPercent || 90}%)`}
             </span>
           </div>
         </div>
