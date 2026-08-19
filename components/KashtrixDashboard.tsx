@@ -398,17 +398,23 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
 
           <div
             onClick={() => onNavigate?.('monitor')}
-            className="cursor-pointer rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45] transition-colors"
+            className={`cursor-pointer rounded-lg border p-2.5 transition-colors ${
+              (systemStats?.diskLoad || 0) >= 90
+                ? 'border-rose-300 bg-rose-50/80 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60'
+                : (systemStats?.diskLoad || 0) >= 85
+                ? 'border-amber-300 bg-amber-50/80 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-900/60'
+                : 'border-[#E8DFF0] bg-[#F8F7FA] hover:bg-[#F4EEFF]/60 dark:bg-[#211335] dark:border-[#371F59] dark:hover:bg-[#2D1A45]'
+            }`}
           >
             <div className="flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
               <span className="font-semibold uppercase tracking-wider">Storage Disk</span>
-              <HardDrive size={12} className="text-[#16A36A]" />
+              <HardDrive size={12} className={(systemStats?.diskLoad || 0) >= 90 ? 'text-rose-600 dark:text-rose-400 animate-pulse' : (systemStats?.diskLoad || 0) >= 85 ? 'text-amber-500' : 'text-[#16A36A]' } />
             </div>
-            <p className="font-mono text-[16px] font-bold text-[#16A36A] dark:text-[#34D399] mt-0.5">
+            <p className={`font-mono text-[16px] font-bold mt-0.5 ${(systemStats?.diskLoad || 0) >= 90 ? 'text-rose-600 dark:text-rose-400' : (systemStats?.diskLoad || 0) >= 85 ? 'text-amber-600 dark:text-amber-400' : 'text-[#16A36A] dark:text-[#34D399]'}`}>
               {systemStats ? `${systemStats.diskLoad?.toFixed(1)}%` : '—'}
             </p>
             <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] truncate block">
-              {systemStats?.storageDetails ? `${systemStats.storageDetails.usedFmt}` : 'Used'}
+              {systemStats?.storageDetails ? `${systemStats.storageDetails.usedFmt} (${systemStats.storageDetails.availableFmt} free)` : 'Used'}
             </span>
           </div>
 
@@ -711,6 +717,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
                 src={getRecordingUrl(previewRecording)}
                 title={previewRecording.file_name}
                 isLive={false}
+                isRecording={Boolean(previewRecording.is_active)}
                 autoPlay={true}
                 showAudioMeter={true}
                 className="w-full h-full"

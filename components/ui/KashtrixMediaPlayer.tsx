@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
+import { subscribeRealtime } from '../../services/realtime';
 import {
   FiPlay,
   FiPause,
@@ -29,6 +30,7 @@ export interface KashtrixMediaPlayerProps {
   framerate?: string | number;
   hasSignal?: boolean;
   signalLabel?: string;
+  isRecording?: boolean;
   onRefresh?: () => void;
   onResolutionDetected?: (resolution: string, framerate: string) => void;
 }
@@ -48,6 +50,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   framerate: externalFramerate,
   hasSignal,
   signalLabel,
+  isRecording = false,
   onRefresh,
   onResolutionDetected,
 }) => {
@@ -72,6 +75,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   const [detectedResolution, setDetectedResolution] = useState('');
   const [detectedFramerate, setDetectedFramerate] = useState('');
   const [audioMeterVisible, setAudioMeterVisible] = useState(showAudioMeter);
+  const [realtimeRecording, setRealtimeRecording] = useState(false);
 
   useEffect(() => {
     if (showAudioMeter !== undefined) {
@@ -91,6 +95,101 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
 
   const autoPlayRef = useRef(autoPlay);
   autoPlayRef.current = autoPlay;
+
+  // Listen to realtime WebSocket messages for active recordings
+  useEffect(() => {
+    const checkIsRecording = (activeList?: any[], streamsObj?: any, devPreview?: any) => {
+      const cleanTitle = (title || '').toLowerCase().trim();
+      const cleanSrc = (src || '').toLowerCase().trim();
+
+      // Check device preview state if this player is playing a device capture preview
+      if (cleanSrc.includes('/device-preview/') || cleanTitle.includes('decklink') || cleanTitle.includes('capture') || cleanTitle.includes('received signal')) {
+        if (devPreview?.isRecording) return true;
+        if (activeList?.some((r: any) => r.sourceType === 'device' || r.app === 'device' || (r.stream && cleanTitle.includes(r.stream.toLowerCase())))) {
+          return true;
+        }
+      }
+
+      // Check active recordings list from dashboard overview / server broadcasts
+      if (Array.isArray(activeList) && activeList.length > 0) {
+        const matched = activeList.some((rec: any) => {
+          const recStream = String(rec.stream || '').toLowerCase();
+          const recApp = String(rec.app || '').toLowerCase();
+          const recKey = `${recApp}/${recStream}`;
+          return (
+            (recStream && cleanTitle.includes(recStream)) ||
+            (cleanTitle && recStream.includes(cleanTitle)) ||
+            (recKey && cleanSrc.includes(recKey)) ||
+            (recStream && cleanSrc.includes(recStream)) ||
+            (rec.sourceType === 'device' && (cleanSrc.includes('device-preview') || cleanTitle.includes('decklink') || cleanTitle.includes('capture')))
+          );
+        });
+        if (matched) return true;
+      }
+
+      // Check streams object
+      if (streamsObj && typeof streamsObj === 'object') {
+        for (const [key, val] of Object.entries<any>(streamsObj)) {
+          if (val?.isRecording) {
+            const streamName = String(val.name || key.split('/')[1] || key).toLowerCase();
+            if (cleanTitle.includes(streamName) || cleanSrc.includes(streamName) || cleanSrc.includes(key.toLowerCase())) {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    };
+
+    const unsubscribe = subscribeRealtime((msg) => {
+      if (msg.type === 'recording_started' || msg.type === 'recording_stopped') {
+        const payload = msg.payload;
+        if (msg.type === 'recording_stopped') {
+          setRealtimeRecording(false);
+        } else if (msg.type === 'recording_started' && payload) {
+          const cleanTitle = (title || '').toLowerCase().trim();
+          const cleanSrc = (src || '').toLowerCase().trim();
+          const pStream = String(payload.stream || '').toLowerCase();
+          const pApp = String(payload.app || '').toLowerCase();
+          const pKey = `${pApp}/${pStream}`;
+          if (
+            (pStream && cleanTitle.includes(pStream)) ||
+            (cleanTitle && pStream.includes(cleanTitle)) ||
+            (pKey && cleanSrc.includes(pKey)) ||
+            (pStream && cleanSrc.includes(pStream)) ||
+            (payload.options?.sourceType === 'device' && (cleanSrc.includes('device-preview') || cleanTitle.includes('decklink') || cleanTitle.includes('capture')))
+          ) {
+            setRealtimeRecording(true);
+          }
+        }
+      }
+
+      if (msg.type === 'device_preview_state' && msg.payload) {
+        const cleanSrc = (src || '').toLowerCase().trim();
+        const cleanTitle = (title || '').toLowerCase().trim();
+        if (cleanSrc.includes('device-preview') || cleanTitle.includes('decklink') || cleanTitle.includes('capture')) {
+          if (msg.payload.isRecording !== undefined) {
+            setRealtimeRecording(Boolean(msg.payload.isRecording));
+          }
+        }
+      }
+
+      if (msg.type === 'dashboard_overview' && msg.payload) {
+        const isRec = checkIsRecording(msg.payload.activeRecordingsList, msg.payload.streams);
+        setRealtimeRecording(isRec);
+      }
+
+      if (msg.type === 'ingest_stats' && msg.payload) {
+        const isRec = checkIsRecording(undefined, msg.payload);
+        setRealtimeRecording(isRec);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [src, title]);
 
   // Update volume and mute without rebuilding audio graph or reloading stream
   useEffect(() => {
@@ -496,6 +595,14 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
             <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 shadow-xs">
               <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
               Loss Signal
+            </span>
+          )}
+
+          {/* Realtime REC Badge */}
+          {(isRecording || realtimeRecording) && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 border border-rose-400/50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-sm ring-2 ring-rose-500/30 animate-pulse">
+              <span className="h-2 w-2 rounded-full bg-white animate-ping" />
+              REC
             </span>
           )}
 

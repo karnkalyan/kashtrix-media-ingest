@@ -984,6 +984,23 @@ interface GlobalTelemetryState {
   lastTx: number;
   uptimeFmt: string;
   lastUpdated: number;
+  storageDetails?: {
+    mount: string;
+    size: number;
+    used: number;
+    available: number;
+    free?: number;
+    usePercent: number;
+    freePercent: number;
+    isWarning: boolean;
+    isFull: boolean;
+    isCritical: boolean;
+    canRecord: boolean;
+    deadlinePercent?: number;
+    sizeFmt: string;
+    usedFmt: string;
+    availableFmt: string;
+  };
 }
 
 const useGlobalTelemetry = (): GlobalTelemetryState => {
@@ -1022,7 +1039,7 @@ const useGlobalTelemetry = (): GlobalTelemetryState => {
           setTelemetry({
             cpuLoad: typeof data.cpuLoad === 'number' ? data.cpuLoad : 0,
             memLoad: typeof data.memLoad === 'number' ? data.memLoad : 0,
-            diskLoad: typeof data.diskLoad === 'number' ? data.diskLoad : 0,
+            diskLoad: typeof data.diskLoad === 'number' ? data.diskLoad : (data.storageDetails?.usePercent || 0),
             gpuLoad: data.gpuDetails?.load !== undefined ? data.gpuDetails.load : 0,
             gpuModel: data.gpuDetails?.model || 'Hardware Graphics Accelerator',
             vramFmt: data.gpuDetails?.vramFmt || 'Dynamic',
@@ -1030,6 +1047,7 @@ const useGlobalTelemetry = (): GlobalTelemetryState => {
             lastRx: totalRx,
             lastTx: totalTx,
             uptimeFmt: data.uptimeFmt || 'Active',
+            storageDetails: data.storageDetails || undefined,
             lastUpdated: Date.now(),
           });
         }
@@ -1285,6 +1303,44 @@ const FloatingTelemetryHud: React.FC<{
               </div>
             </div>
 
+            {/* Storage Harddisk */}
+            <div>
+              <div className="flex justify-between font-semibold">
+                <span className="flex items-center gap-1 text-[#6F6078] dark:text-[#E2D1F9]">
+                  <FiHardDrive size={12} className={telemetry.diskLoad >= 90 ? 'text-rose-600 dark:text-rose-400' : telemetry.diskLoad >= 85 ? 'text-amber-500' : 'text-[#16A36A] dark:text-[#34D399]'} />
+                  Storage Disk {telemetry.storageDetails?.mount ? `(${telemetry.storageDetails.mount})` : ''}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {telemetry.diskLoad >= 90 && (
+                    <span className="rounded bg-rose-600/10 px-1 py-0.2 text-[9px] font-black uppercase text-rose-600 dark:text-rose-400 animate-pulse">
+                      Full (5-10% Deadline)
+                    </span>
+                  )}
+                  <span className={`font-mono font-bold ${telemetry.diskLoad >= 90 ? 'text-rose-600 dark:text-rose-400' : telemetry.diskLoad >= 85 ? 'text-amber-600' : 'text-[#1B1024] dark:text-white'}`}>
+                    {telemetry.diskLoad.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EEFF] dark:bg-[#311B4E]">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    telemetry.diskLoad >= 90
+                      ? 'bg-rose-600 dark:bg-rose-500'
+                      : telemetry.diskLoad >= 85
+                      ? 'bg-amber-500 dark:bg-amber-400'
+                      : 'bg-[#16A36A] dark:bg-[#34D399]'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, telemetry.diskLoad))}%` }}
+                />
+              </div>
+              <div className="mt-0.5 flex items-center justify-between text-[9px] text-[#6F6078] dark:text-[#D8C6E8]">
+                <span>{telemetry.storageDetails ? `${telemetry.storageDetails.usedFmt} / ${telemetry.storageDetails.sizeFmt}` : `${telemetry.diskLoad.toFixed(1)}% used`}</span>
+                <span className={telemetry.diskLoad >= 90 ? 'font-bold text-rose-600 dark:text-rose-400' : ''}>
+                  {telemetry.storageDetails?.availableFmt ? `${telemetry.storageDetails.availableFmt} Free` : '5-10% Reserve'}
+                </span>
+              </div>
+            </div>
+
             {/* Network */}
             <div className="floating-hud-inner rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 dark:bg-[#211335] dark:border-[#371F59]">
               <div className="flex items-center justify-between text-[10px]">
@@ -1348,6 +1404,13 @@ const FloatingTelemetryHud: React.FC<{
             <span className="flex items-center gap-1">
               <FiZap size={11} className="text-amber-500 dark:text-amber-400" />
               <span className="font-mono font-bold text-[11px] text-amber-600 dark:text-amber-400">{telemetry.gpuLoad.toFixed(0)}%</span>
+            </span>
+            <span className="text-[#E8DFF0] dark:text-[#371F59]">|</span>
+            <span className="flex items-center gap-1">
+              <FiHardDrive size={11} className={telemetry.diskLoad >= 90 ? 'text-rose-600 dark:text-rose-400 animate-pulse' : 'text-[#16A36A] dark:text-[#6EE7B7]'} />
+              <span className={`font-mono font-bold text-[11px] ${telemetry.diskLoad >= 90 ? 'text-rose-600 dark:text-rose-400' : 'text-[#1B1024] dark:text-white'}`}>
+                {telemetry.diskLoad.toFixed(0)}%
+              </span>
             </span>
             <span className="text-[#E8DFF0] dark:text-[#371F59]">|</span>
             <span className="font-mono font-bold text-[11px] text-[#16A36A] dark:text-[#6EE7B7]">
@@ -1656,6 +1719,48 @@ const App: React.FC = () => {
           onThemeChange={setThemeMode}
           onNavigateToLicense={() => setActiveView('license')}
         />
+
+        {/* Harddisk Storage Capacity Alert Banner */}
+        {telemetry.diskLoad >= 85 && (
+          <div className={`mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs transition-all ${
+            telemetry.diskLoad >= 90
+              ? 'border-rose-300 bg-rose-50 text-rose-900 shadow-xs dark:border-rose-900/60 dark:bg-rose-950/80 dark:text-rose-200'
+              : 'border-amber-300 bg-amber-50 text-amber-900 shadow-xs dark:border-amber-900/60 dark:bg-amber-950/80 dark:text-amber-200'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${
+                telemetry.diskLoad >= 90 ? 'bg-rose-600 animate-pulse' : 'bg-amber-600'
+              }`}>
+                !
+              </span>
+              <div>
+                <span className="font-bold">
+                  {telemetry.diskLoad >= 95
+                    ? 'CRITICAL STORAGE EMERGENCY (<5% free): '
+                    : telemetry.diskLoad >= 90
+                    ? 'STORAGE FULL DEADLINE (5-10% Reserve Enforced): '
+                    : 'STORAGE CAPACITY WARNING: '}
+                </span>
+                <span>
+                  Harddisk storage is <strong>{telemetry.diskLoad.toFixed(1)}% full</strong>
+                  {telemetry.storageDetails ? ` (${telemetry.storageDetails.usedFmt} / ${telemetry.storageDetails.sizeFmt}, ${telemetry.storageDetails.availableFmt} free)` : ''}.
+                  {telemetry.diskLoad >= 90
+                    ? ' Starting new recordings is blocked to protect disk integrity. Please delete old recordings or free disk space.'
+                    : ' Please monitor free storage space.'}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveView('recordings')}
+                className="rounded-md bg-white/90 dark:bg-[#1E1130] border border-current px-2.5 py-1 text-[11px] font-bold hover:bg-white transition-colors"
+              >
+                Manage Recordings
+              </button>
+            </div>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-4 scrollbar-hide">
           {activeView === 'dashboard' && <KashtrixDashboard onNavigate={view => setActiveView(view as ActiveView)} mediaPort={engine.state.settings.mediaPort} />}

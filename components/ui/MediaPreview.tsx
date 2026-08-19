@@ -13,6 +13,7 @@ interface MediaPreviewProps {
   resolution?: string;
   framerate?: string | number;
   isLive?: boolean;
+  isRecording?: boolean;
 }
 
 export const MediaPreview: React.FC<MediaPreviewProps> = ({
@@ -27,6 +28,7 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
   resolution,
   framerate,
   isLive,
+  isRecording,
 }) => {
   return (
     <KashtrixMediaPlayer
@@ -41,6 +43,7 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
       resolution={resolution}
       framerate={framerate}
       isLive={isLive}
+      isRecording={isRecording}
     />
   );
 };

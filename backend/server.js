@@ -1757,10 +1757,20 @@ const formatUserFriendlyFfmpegError = (errorMsg) => {
     return 'Unable to establish video signal from the selected device.';
 };
 
-const broadcastDevicePreviewState = (state) => {
+const broadcastRecordingEvent = (type, payload) => {
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'device_preview_state', payload: state }));
+            client.send(JSON.stringify({ type, payload }));
+        }
+    });
+};
+
+const broadcastDevicePreviewState = (state) => {
+    const isDeviceRecording = Array.from(activeRecordings.values()).some(r => r.options?.sourceType === 'device');
+    const enrichedState = { ...state, isRecording: isDeviceRecording };
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'device_preview_state', payload: enrichedState }));
         }
     });
 };
@@ -2411,6 +2421,57 @@ const checkAmdSupport = () => {
     return isAmdSupported;
 };
 
+const checkStorageDiskCapacity = (targetPath = RECORDINGS_DIR) => {
+    try {
+        const stats = systemApi.getRealStorageStats(targetPath);
+        if (!stats) {
+            return {
+                canRecord: true,
+                isWarning: false,
+                isFull: false,
+                isCritical: false,
+                usePercent: 0,
+                freePercent: 100,
+                available: 1024 * 1024 * 1024 * 50,
+                availableBytes: 1024 * 1024 * 1024 * 50,
+                sizeFmt: 'Unknown',
+                usedFmt: '0 B',
+                availableFmt: 'Unknown',
+                mount: targetPath,
+                message: 'Storage disk verified',
+            };
+        }
+        const message = stats.isCritical
+            ? `CRITICAL: Storage disk reached 95% capacity deadline (${stats.usePercent.toFixed(1)}% full, only ${stats.availableFmt} free). Minimum 5-10% free space required.`
+            : stats.isFull
+            ? `Storage disk full (${stats.usePercent.toFixed(1)}% used, only ${stats.availableFmt} free). Safety deadline enforced (5-10% free space reserve required).`
+            : stats.isWarning
+            ? `Warning: Storage disk is ${stats.usePercent.toFixed(1)}% full (${stats.availableFmt} free).`
+            : `Storage disk healthy (${stats.usePercent.toFixed(1)}% used, ${stats.availableFmt} free).`;
+
+        return {
+            ...stats,
+            message,
+        };
+    } catch (e) {
+        return {
+            canRecord: true,
+            isWarning: false,
+            isFull: false,
+            isCritical: false,
+            usePercent: 0,
+            freePercent: 100,
+            available: 1024 * 1024 * 1024 * 50,
+            availableBytes: 1024 * 1024 * 1024 * 50,
+            sizeFmt: 'Unknown',
+            usedFmt: '0 B',
+            availableFmt: 'Unknown',
+            mount: targetPath,
+            message: 'Storage capacity check bypassed',
+        };
+    }
+};
+
 const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     const appName = cleanStreamPart(appNameValue, 'live');
     const stream = cleanStreamPart(streamValue, 'stream');
@@ -2424,6 +2485,15 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
     if (options.encoder === 'amd' && !checkAmdSupport()) {
         throw new Error('AMD AMF hardware encoder is not supported or driver is not installed on this machine. Please select CPU encoder in recording settings.');
     }
+
+    const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDINGS_DIR;
+
+    // Safety check: Check harddisk free space and enforce 5-10% free space reserve deadline
+    const diskStatus = checkStorageDiskCapacity(targetDir);
+    if (!diskStatus.canRecord) {
+        throw new Error(`Cannot start recording: Storage disk full or below 10% safety reserve (${diskStatus.usePercent.toFixed(1)}% used, only ${diskStatus.availableFmt} free remaining). Minimum 5-10% free space required.`);
+    }
+
     let inputUrl = '';
     if (options.sourceType === 'device') {
         let activePreview = null;
@@ -2465,7 +2535,6 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
 
     const timestamp = Date.now();
     const startTime = new Date(timestamp).toISOString();
-    const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDINGS_DIR;
     const dir = options.sourceType === 'device' ? targetDir : path.join(targetDir, appName, stream);
     fs.mkdirSync(dir, { recursive: true });
     if (options.sourceType === 'device' && !inputUrl && options.encoder === 'copy') options.encoder = 'cpu';
@@ -2490,6 +2559,18 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
 
     const active = { appName, stream, startTime, options, outputs, lastError: '' };
     activeRecordings.set(key, active);
+    broadcastRecordingEvent('recording_started', {
+        key,
+        app: appName,
+        stream,
+        options,
+        startTime,
+        recordIds: outputs.map(item => item.recordId),
+    });
+    if (options.sourceType === 'device' && activeDevicePreviewState) {
+        activeDevicePreviewState.isRecording = true;
+        broadcastDevicePreviewState(activeDevicePreviewState);
+    }
     proc.on('error', error => console.error(`[Recording] ${key}:`, error));
     proc.stderr.on('data', data => {
         const message = data.toString().trim();
@@ -2505,6 +2586,11 @@ const beginRecording = (appNameValue, streamValue, rawOptions = {}) => {
                     .run(new Date().toISOString(), size, output.recordId);
             }
             activeRecordings.delete(key);
+            broadcastRecordingEvent('recording_stopped', { key, app: appName, stream });
+            if (options.sourceType === 'device' && activeDevicePreviewState) {
+                activeDevicePreviewState.isRecording = Array.from(activeRecordings.values()).some(r => r.options?.sourceType === 'device');
+                broadcastDevicePreviewState(activeDevicePreviewState);
+            }
             for (const [pId, prev] of devicePreviewProcesses.entries()) {
                 if (prev.closedByUI && (!options.videoDevice || prev.videoDevice === options.videoDevice)) {
                     stopDevicePreview(pId, true);
@@ -2653,12 +2739,22 @@ const finishRecording = (key, signal = 'SIGTERM', forceComplete = false) => {
     }
 
     if (data.options?.sourceType === 'device') {
+        if (activeDevicePreviewState) {
+            activeDevicePreviewState.isRecording = Array.from(activeRecordings.values()).some(r => r.options?.sourceType === 'device');
+            broadcastDevicePreviewState(activeDevicePreviewState);
+        }
         for (const [pId, prev] of devicePreviewProcesses.entries()) {
             if (prev.closedByUI && (!data.options.videoDevice || prev.videoDevice === data.options.videoDevice)) {
                 stopDevicePreview(pId, true);
             }
         }
     }
+
+    broadcastRecordingEvent('recording_stopped', {
+        key,
+        app: data.appName,
+        stream: data.stream,
+    });
 
     return data;
 };
@@ -3333,6 +3429,12 @@ app.post(['/api/storage/test-connection', '/api/storage/test-connection/'], auth
     }
 });
 
+app.get(['/api/storage/status', '/api/storage/status/'], authMiddleware, (req, res) => {
+    const targetPath = req.query.path || RECORDINGS_DIR;
+    const status = checkStorageDiskCapacity(targetPath);
+    res.json({ success: true, ...status });
+});
+
 app.get('/api/ingest/history', authMiddleware, (req, res) => {
     const history = db.prepare('SELECT * FROM stream_sessions ORDER BY start_time DESC LIMIT 50').all();
     res.json({ success: true, history });
@@ -3366,10 +3468,19 @@ app.get('/api/ingest/record/config', authMiddleware, (req, res) => {
         audioChannels: 2,
         continuous: true,
     };
-    if (!raw || raw.encoder === 'copy' || !raw.videoBitrate || raw.videoBitrate < 50000) {
-        return res.json({ ...defaults, ...(raw || {}), encoder: 'nvidia', videoBitrate: 50000, maxBitrate: 55000, framerate: 50 });
+    let resolvedFormats = ['mp4'];
+    if (raw && Array.isArray(raw.formats) && raw.formats.length > 0) {
+        if (raw.formats.length === 1 && raw.formats[0] === 'mov') {
+            resolvedFormats = ['mp4'];
+        } else {
+            resolvedFormats = raw.formats;
+        }
     }
-    res.json({ ...defaults, ...raw });
+    const resolvedConfig = { ...defaults, ...(raw || {}), formats: resolvedFormats };
+    if (!raw || raw.encoder === 'copy' || !raw.videoBitrate || raw.videoBitrate < 50000) {
+        return res.json({ ...resolvedConfig, encoder: 'nvidia', videoBitrate: 50000, maxBitrate: 55000, framerate: 50 });
+    }
+    res.json(resolvedConfig);
 });
 
 app.put('/api/ingest/record/config', authMiddleware, (req, res) => {
@@ -3398,6 +3509,16 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
     const options = liveIngestSelected
         ? { ...requestedOptions, sourceType: 'ingest', videoDevice: '', audioDevice: '' }
         : requestedOptions;
+
+    const targetDir = (options.storagePath && options.storageType === 'local') ? path.resolve(options.storagePath) : RECORDINGS_DIR;
+    const diskStatus = checkStorageDiskCapacity(targetDir);
+    if (!diskStatus.canRecord) {
+        return res.status(400).json({
+            error: `Cannot start recording: Storage disk full or below 10% reserve deadline (${diskStatus.usePercent.toFixed(1)}% used, only ${diskStatus.availableFmt} free remaining). Minimum 5-10% free space required.`,
+            storage: diskStatus,
+        });
+    }
+
     if (options.sourceType !== 'device' && !activeSessions.has(getRecordingKey(appName, stream))) return res.status(409).json({ error: 'The selected ingest stream is not live' });
     if (options.sourceType === 'device') {
         const devices = await scanCaptureDevices();
@@ -4114,6 +4235,17 @@ rtmpEmitter.on('postPublish', (id, StreamPath, args) => {
             autoRecord: false, fileName: '{channel}_{date}_{time}', formats: ['mp4'], encoder: 'copy', continuous: true,
         });
         if (!config.autoRecord) return;
+        const targetDir = (config.storagePath && config.storageType === 'local') ? path.resolve(config.storagePath) : RECORDINGS_DIR;
+        const diskStatus = checkStorageDiskCapacity(targetDir);
+        if (!diskStatus.canRecord) {
+            console.warn(`[Recording] Auto-recording blocked for ${key}: Storage disk is full or below 10% reserve deadline (${diskStatus.usePercent.toFixed(1)}% used, ${diskStatus.availableFmt} free).`);
+            broadcastRecordingEvent('storage_alert', {
+                level: 'warning',
+                message: `Auto-recording blocked for ${streamName}: Storage disk full (${diskStatus.usePercent.toFixed(1)}% used, only ${diskStatus.availableFmt} free remaining).`,
+                storage: diskStatus,
+            });
+            return;
+        }
         try {
             beginRecording(appName, streamName, { ...config, sourceType: 'ingest', videoDevice: '', audioDevice: '' });
             console.log(`[Recording] Auto-recording started for ${key}`);
@@ -4223,12 +4355,54 @@ mediaServer.on('error', (err) => {
     process.exit(1);
 });
 
+const startStorageMonitoring = () => {
+    let lastStorageAlertNotification = 0;
+    setInterval(() => {
+        try {
+            const diskStatus = checkStorageDiskCapacity(RECORDINGS_DIR);
+            const now = Date.now();
+
+            // 1. If recordings are active, enforce emergency deadline (<5% free space remaining)
+            if (activeRecordings.size > 0) {
+                if (diskStatus.isCritical) { // >= 95% full or < 5% free
+                    console.error(`[STORAGE CRITICAL] Storage reached ${diskStatus.usePercent.toFixed(1)}% used (${diskStatus.availableFmt} free). Stopping all active recordings immediately.`);
+                    const stoppedKeys = [];
+                    for (const key of Array.from(activeRecordings.keys())) {
+                        finishRecording(key, 'SIGTERM', true);
+                        stoppedKeys.push(key);
+                    }
+                    broadcastRecordingEvent('storage_critical_stop', {
+                        level: 'critical',
+                        message: `CRITICAL STORAGE DEADLINE (<5% free): Disk reached ${diskStatus.usePercent.toFixed(1)}% capacity. All ${stoppedKeys.length} active recording(s) have been safely stopped to prevent disk exhaustion and data corruption.`,
+                        storage: diskStatus,
+                        stoppedKeys,
+                    });
+                    return;
+                }
+            }
+
+            // 2. Periodic warning broadcast when disk is full (>= 90% used / < 10% free)
+            if (diskStatus.isFull && (now - lastStorageAlertNotification > 15000)) {
+                broadcastRecordingEvent('storage_alert', {
+                    level: 'warning',
+                    message: `STORAGE FULL ALERT: Storage disk is ${diskStatus.usePercent.toFixed(1)}% full (${diskStatus.availableFmt} free). 5-10% safety reserve enforced — starting new recordings is disabled.`,
+                    storage: diskStatus,
+                });
+                lastStorageAlertNotification = now;
+            }
+        } catch (e) {
+            console.error('[Storage Monitor] Error during capacity check:', e.message);
+        }
+    }, 5000);
+};
+
 // Start API and WebSocket server
 const apiServer = server.listen(API_PORT, () => {
     console.log(`[API Server] Running on http://localhost:${API_PORT}`);
     console.log(`[WebSocket] Connected to ws://localhost:${API_PORT}`);
     startSystemStatsBroadcast();
     startIngestStatsBroadcast();
+    startStorageMonitoring();
 });
 
 apiServer.on('error', (err) => {

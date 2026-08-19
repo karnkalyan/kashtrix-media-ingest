@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare, FiMaximize, FiMinimize } from 'react-icons/fi';
-import { IngestRecordingOptions, TranscodingProfile, VideoCodec, DecklinkFormat } from '../types';
+import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare, FiMaximize, FiMinimize, FiHardDrive } from 'react-icons/fi';
+import { IngestRecordingOptions, TranscodingProfile, VideoCodec, DecklinkFormat, StorageStatusResponse } from '../types';
 import { DEFAULT_DECKLINK_FORMATS } from '../constants';
 import DetailDrawer from './ui/DetailDrawer';
 import { subscribeRealtime } from '../services/realtime';
@@ -265,6 +265,26 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
   const devicePreviewIdRef = useRef<string | null>(null);
   const previewGenerationRef = useRef(0);
+  const [storageStatus, setStorageStatus] = useState<StorageStatusResponse | null>(null);
+
+  const fetchStorageStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/storage/status', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStorageStatus(data);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchStorageStatus();
+    const timer = setInterval(fetchStorageStatus, 5000);
+    return () => clearInterval(timer);
+  }, [fetchStorageStatus]);
 
   const activeConfig = config || defaultConfig;
 
@@ -297,7 +317,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const encodingDisabled = activeConfig.encoder === 'copy';
   const selectedProfile = profiles.find(item => item.id === profileId);
   const profileControlsHardware = !!selectedProfile;
-  const startDisabled = sourceType === 'device' ? !videoDevice && !audioDevice : !selectedStreamKey;
+  const isStorageFull = Boolean(storageStatus && (!storageStatus.canRecord || storageStatus.isFull || (storageStatus.usePercent !== undefined && storageStatus.usePercent >= 90)));
+  const baseStartDisabled = sourceType === 'device' ? !videoDevice && !audioDevice : !selectedStreamKey;
+  const startDisabled = baseStartDisabled || isStorageFull;
   const sourceName = sourceType === 'device'
     ? (videoDevice || audioDevice || 'channel')
     : (streams[selectedStreamKey]?.name || selectedStreamKey.split('/').pop() || 'channel');
@@ -603,9 +625,27 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     });
   };
 
-  const activeFormats = activeConfig.formats || ['mp4'];
+  const activeFormats = (activeConfig.formats && activeConfig.formats.length > 0) ? activeConfig.formats : ['mp4'];
 
   return <>
+    {/* Harddisk Storage Capacity / Deadline Alert Banner */}
+    {isStorageFull && (
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-900 shadow-xs dark:border-rose-900/70 dark:bg-rose-950/80 dark:text-rose-200">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white animate-pulse">
+            !
+          </span>
+          <div>
+            <span className="font-bold">Harddisk Storage Deadline Reached ({storageStatus?.usePercent?.toFixed(1) || '90'}% Full):</span>
+            <span className="ml-1">
+              Safety deadline enforced (minimum 5-10% free space reserve required). Starting new recordings is <strong>disabled</strong> until disk space is freed.
+              {storageStatus ? ` Storage: ${storageStatus.usedFmt} used / ${storageStatus.sizeFmt} (${storageStatus.availableFmt} free remaining).` : ''}
+            </span>
+          </div>
+        </div>
+      </div>
+    )}
+
     {/* Saved Configurations & Presets Bar */}
     <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
       <div className="flex flex-wrap items-center gap-2">
@@ -642,7 +682,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         <div className="mb-4 flex items-center justify-between gap-3"><h3 className="panel-kicker"><FiVideo /> Source & capture</h3>{sourceType === 'device' && <button type="button" onClick={refreshDevices} className="rounded-lg border border-[#E8DFF0] p-2 text-[#7C3AED] transition hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45]" title="Detect devices"><FiRefreshCw className={devicesLoading ? 'animate-spin' : ''} /></button>}</div>
         <div className="mb-4 grid grid-cols-2 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-0.5 dark:bg-[#211335] dark:border-[#371F59]">
           <button type="button" onClick={() => { setSourceType('device'); patch({ sourceType: 'device', ...(activeConfig.encoder === 'copy' ? { encoder: 'cpu' as const } : {}) }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'device' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Capture device</button>
-          <button type="button" onClick={() => { setSourceType('ingest'); patch({ sourceType: 'ingest' }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'ingest' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Live ingest</button>
+          <button type="button" onClick={() => { setSourceType('ingest'); patch({ sourceType: 'ingest', formats: (activeConfig.formats && activeConfig.formats.length > 0 && !(activeConfig.formats.length === 1 && activeConfig.formats[0] === 'mov')) ? activeConfig.formats : ['mp4'] }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'ingest' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Live ingest</button>
         </div>
         <div className="grid grid-cols-1 gap-3">
         {sourceType === 'device' ? <>
@@ -735,6 +775,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           src={previewing ? (activeHlsUrl || (devicePreviewIdRef.current ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8` : undefined)) : undefined}
           title={sourceName}
           isLive={true}
+          isRecording={isRecordingActive}
           showAudioMeter={true}
           hasSignal={previewing && !previewError}
           signalLabel={sourceType === 'device' ? 'Received Signal' : 'Stream Active'}
@@ -857,6 +898,34 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           {testingConnection ? 'Testing Connection…' : 'Test Connection & Access'}
         </button>
       </div>
+
+      {/* Live Target Harddisk Capacity Indicator */}
+      {storageStatus && (
+        <div className={`mb-3 rounded-lg border p-3 text-[11px] flex flex-wrap items-center justify-between gap-3 ${
+          storageStatus.isFull
+            ? 'border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-200'
+            : storageStatus.isWarning
+            ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/60 dark:text-amber-200'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/60 dark:text-emerald-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <FiHardDrive className="text-sm" />
+            <span className="font-bold">Target Disk ({storageStatus.mount || '/'}):</span>
+            <span>{storageStatus.usedFmt} / {storageStatus.sizeFmt} ({storageStatus.usePercent.toFixed(1)}% used, {storageStatus.availableFmt} free)</span>
+          </div>
+          <div className="flex items-center gap-2 font-semibold text-[10px]">
+            <span className={`px-2 py-0.5 rounded-full ${
+              storageStatus.isFull
+                ? 'bg-rose-600 text-white font-bold animate-pulse'
+                : storageStatus.isWarning
+                ? 'bg-amber-500 text-white font-bold'
+                : 'bg-emerald-600 text-white font-bold'
+            }`}>
+              {storageStatus.isFull ? 'RECORDING BLOCKED (<10% Free)' : storageStatus.isWarning ? 'STORAGE WARNING (<15% Free)' : 'STORAGE HEALTHY (5-10% Reserve OK)'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {testResult && (
         <div className={`mb-3 rounded-lg border p-3 text-[11px] ${testResult.success ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
@@ -1053,6 +1122,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           src={previewing ? (activeHlsUrl || (devicePreviewIdRef.current ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8` : undefined)) : undefined}
           title={sourceName}
           isLive={true}
+          isRecording={isRecordingActive}
           showAudioMeter={true}
           resolution={detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : undefined)}
           framerate={detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : undefined)}

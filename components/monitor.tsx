@@ -851,19 +851,42 @@ const StorageMemorySection: React.FC<{ stats: TelemetryState }> = ({ stats }) =>
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
+          <div className={`rounded-lg border p-3 ${
+            stats.diskLoad >= 90
+              ? 'border-rose-300 bg-rose-50/70 dark:bg-rose-950/40 dark:border-rose-900/60'
+              : stats.diskLoad >= 85
+              ? 'border-amber-300 bg-amber-50/70 dark:bg-amber-950/40 dark:border-amber-900/60'
+              : 'border-[#E8DFF0] bg-[#F8F7FA] dark:bg-[#211335] dark:border-[#371F59]'
+          }`}>
             <div className="flex items-center justify-between text-[11px]">
-              <span className="font-semibold text-[#1B1024] dark:text-white">Storage</span>
-              <span className="font-mono font-bold text-[#16A36A] dark:text-[#34D399]">
+              <span className="font-semibold text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                <span>Storage Disk</span>
+                {stats.diskLoad >= 90 && (
+                  <span className="rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-bold text-white uppercase animate-pulse">
+                    Full (5-10% Reserve)
+                  </span>
+                )}
+              </span>
+              <span className={`font-mono font-bold ${
+                stats.diskLoad >= 90 ? 'text-rose-600 dark:text-rose-400' : stats.diskLoad >= 85 ? 'text-amber-600 dark:text-amber-400' : 'text-[#16A36A] dark:text-[#34D399]'
+              }`}>
                 {disk ? `${disk.usedFmt} / ${disk.sizeFmt}` : '—'}
               </span>
             </div>
             <div className="mt-2">
-              <CompactProgressBar value={stats.diskLoad} color="#16A36A" />
+              <CompactProgressBar
+                value={stats.diskLoad}
+                color={stats.diskLoad >= 90 ? '#DC2626' : stats.diskLoad >= 85 ? '#D97706' : '#16A36A'}
+              />
             </div>
-            <div className="mt-2 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
-              <span>Storage Path: </span>
-              <code className="font-mono font-semibold text-[#1B1024] dark:text-white">{disk?.mount || '/'}</code>
+            <div className="mt-2 flex items-center justify-between text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+              <div>
+                <span>Mount: </span>
+                <code className="font-mono font-semibold text-[#1B1024] dark:text-white">{disk?.mount || '/'}</code>
+              </div>
+              <span className={stats.diskLoad >= 90 ? 'font-bold text-rose-600 dark:text-rose-400' : ''}>
+                {disk?.availableFmt ? `${disk.availableFmt} Free` : '5-10% Reserve'}
+              </span>
             </div>
           </div>
         </div>
@@ -881,7 +904,9 @@ const RecentEventsSection: React.FC<{ stats: TelemetryState }> = ({ stats }) => 
   if (stats.memLoad > 85) {
     dynamicEvents.push({ id: '2', title: 'High memory load warning', target: `RAM Used: ${stats.memLoad.toFixed(1)}%`, timestamp: 'Just now', type: 'warning' });
   }
-  if (stats.diskLoad > 85) {
+  if (stats.diskLoad >= 90) {
+    dynamicEvents.push({ id: '3', title: 'Storage deadline full — recording blocked', target: `Mount: ${stats.storageDetails?.mount || '/'} (${stats.diskLoad.toFixed(1)}% used, ${stats.storageDetails?.availableFmt || ''} free)`, timestamp: 'Just now', type: 'critical' });
+  } else if (stats.diskLoad > 85) {
     dynamicEvents.push({ id: '3', title: 'Storage capacity warning', target: `Mount: ${stats.storageDetails?.mount || '/'} (${stats.diskLoad.toFixed(1)}%)`, timestamp: 'Just now', type: 'warning' });
   }
 

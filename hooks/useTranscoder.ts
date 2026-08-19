@@ -496,6 +496,14 @@ const useEngine = () => {
   useEffect(() => {
     if (!isHydrated) return;
     return subscribeRealtime(message => {
+      if (message.type === 'storage_critical_stop') {
+        toast.error(message.payload?.message || 'CRITICAL: Harddisk reached capacity deadline (<5% free). All recordings were stopped to protect disk.', { duration: 9000 });
+        return;
+      }
+      if (message.type === 'storage_alert') {
+        toast.error(message.payload?.message || 'Storage Alert: Harddisk is over 90% full. New recordings are blocked until space is freed.', { duration: 6000 });
+        return;
+      }
       if (message.type === 'ingest_stats') {
         dispatch({ type: 'UPDATE_INGEST_STATS', payload: message.payload });
         return;
@@ -610,9 +618,16 @@ const useEngine = () => {
       toast.error('Cannot start recording: Live ingest and recording are disabled in Trial / Unlicensed Mode.');
       throw new Error('Trial mode restriction');
     }
-    const payload = await api('/api/ingest/record/start', { method: 'POST', body: JSON.stringify({ app: appName, stream, ...options }) });
-    await Promise.all([fetchIngestStreams(), fetchRecordings()]);
-    return payload;
+    try {
+      const payload = await api('/api/ingest/record/start', { method: 'POST', body: JSON.stringify({ app: appName, stream, ...options }) });
+      await Promise.all([fetchIngestStreams(), fetchRecordings()]);
+      return payload;
+    } catch (err: any) {
+      if (err.message && (err.message.includes('Storage disk') || err.message.includes('deadline') || err.message.includes('reserve'))) {
+        toast.error(`Recording Blocked: ${err.message}`, { duration: 8000 });
+      }
+      throw err;
+    }
   }, [api, auth.license, fetchIngestStreams, fetchRecordings]);
   const stopRecording = useCallback(async (appName: string, stream: string) => {
     const payload = await api('/api/ingest/record/stop', { method: 'POST', body: JSON.stringify({ app: appName, stream }) });

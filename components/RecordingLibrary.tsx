@@ -541,6 +541,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                 src={getRecordingUrl(preview)}
                 title={preview.file_name || preview.stream}
                 isLive={false}
+                isRecording={Boolean(preview.is_active)}
                 autoPlay={true}
                 showAudioMeter={true}
                 resolution={preview.resolution || undefined}

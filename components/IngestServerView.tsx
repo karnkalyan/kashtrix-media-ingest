@@ -233,7 +233,10 @@ export const IngestServerView: React.FC<Props> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setConfig(prev => ({ ...prev, ...data }));
+        const safeFormats = (data.formats && Array.isArray(data.formats) && data.formats.length > 0 && !(data.formats.length === 1 && data.formats[0] === 'mov'))
+          ? data.formats
+          : ['mp4'];
+        setConfig(prev => ({ ...prev, ...data, formats: safeFormats }));
       }
     } catch {}
   }, []);
@@ -835,6 +838,7 @@ export const IngestServerView: React.FC<Props> = ({
                 title={recPreview.file_name}
                 maxHeight={320}
                 isLive={false}
+                isRecording={Boolean(recPreview.is_active)}
               />
 
               {!!recPreview.is_active && (
@@ -1177,6 +1181,7 @@ export const IngestServerView: React.FC<Props> = ({
                 url={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
                 title={selectedStreamKey}
                 maxHeight={320}
+                isRecording={Boolean(activeRecordingKeys[selectedStreamKey] || recordingStatuses[selectedStreamKey] || localStreams[selectedStreamKey]?.isRecording)}
               />
 
               <div className="grid grid-cols-2 gap-2 text-[12px]">

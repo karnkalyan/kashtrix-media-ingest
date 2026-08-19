@@ -6,28 +6,60 @@ const { getCrossPlatformGpuInfo } = require('./gpu');
 /**
  * Fast & accurate cross-platform drive capacity using Node's native fs.statfsSync.
  */
-const getRealStorageStats = () => {
+const getRealStorageStats = (customPath) => {
     try {
-        const rootPath = process.platform === 'win32' ? (process.env.SystemDrive || 'C:') + '\\' : '/';
+        let checkPath = customPath;
+        if (!checkPath || !fs.existsSync(checkPath)) {
+            checkPath = process.platform === 'win32' ? (process.env.SystemDrive || 'C:') + '\\' : '/';
+        }
         if (typeof fs.statfsSync === 'function') {
-            const stat = fs.statfsSync(rootPath);
-            const total = stat.bsize * stat.blocks;
-            const available = stat.bsize * stat.bavail;
-            const free = stat.bsize * stat.bfree;
-            const used = total - free;
+            const stat = fs.statfsSync(checkPath);
+            const total = Number(stat.bsize) * Number(stat.blocks);
+            const available = Number(stat.bsize) * Number(stat.bavail);
+            const free = Number(stat.bsize) * Number(stat.bfree);
+            const used = Math.max(0, total - free);
             const usePercent = total > 0 ? (used / total) * 100 : 0;
+            const freePercent = total > 0 ? (available / total) * 100 : 0;
+            const isWarning = usePercent >= 85.0 || freePercent <= 15.0;
+            const isFull = usePercent >= 90.0 || freePercent <= 10.0; // 5-10% deadline threshold
+            const isCritical = usePercent >= 95.0 || freePercent <= 5.0; // Hard emergency deadline
+            const canRecord = !isFull && available >= (500 * 1024 * 1024); // Block recording when >=90% used or <500MB
+
+            const mount = process.platform === 'win32'
+                ? (pathOrDriveMount(checkPath) || (process.env.SystemDrive || 'C:'))
+                : (checkPath || '/');
+
             return {
-                mount: process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/',
+                mount,
                 size: total,
                 used: used,
                 available: available,
-                use: parseFloat(usePercent.toFixed(1))
+                free: free,
+                use: parseFloat(usePercent.toFixed(1)),
+                usePercent: parseFloat(usePercent.toFixed(1)),
+                freePercent: parseFloat(freePercent.toFixed(1)),
+                isWarning,
+                isFull,
+                isCritical,
+                canRecord,
+                sizeFmt: formatStorageBytes(total),
+                usedFmt: formatStorageBytes(used),
+                availableFmt: formatStorageBytes(available),
             };
         }
     } catch (err) {
         console.warn('[SystemInfo] statfsSync error:', err.message);
     }
     return null;
+};
+
+const pathOrDriveMount = (targetPath) => {
+    if (!targetPath || typeof targetPath !== 'string') return '';
+    if (process.platform === 'win32') {
+        const match = targetPath.match(/^([a-zA-Z]:)/);
+        return match ? match[1].toUpperCase() : (process.env.SystemDrive || 'C:');
+    }
+    return targetPath;
 };
 
 // Global state to store the last network snapshot for rate calculation
@@ -324,16 +356,30 @@ const _performFullSystemFetch = async (extraContext = {}) => {
         const realStorage = getRealStorageStats();
         const primaryFs = realStorage || ((fsData && fsData.length > 0 && fsData[0].size > 0) ? fsData[0] : { mount: process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/', size: 0, used: 0, available: 0, use: 0 });
         const diskLoad = primaryFs.use !== undefined ? primaryFs.use : 0;
+        const totalStorage = primaryFs.size || 0;
+        const availableStorage = primaryFs.available || (primaryFs.size - primaryFs.used) || 0;
+        const freePercent = totalStorage > 0 ? (availableStorage / totalStorage) * 100 : 0;
+        const isWarning = diskLoad >= 85.0 || freePercent <= 15.0;
+        const isFull = diskLoad >= 90.0 || freePercent <= 10.0;
+        const isCritical = diskLoad >= 95.0 || freePercent <= 5.0;
+        const canRecord = !isFull && availableStorage >= (500 * 1024 * 1024);
 
         const storageDetails = {
             mount: primaryFs.mount || (process.platform === 'win32' ? (process.env.SystemDrive || 'C:') : '/'),
-            size: primaryFs.size || 0,
+            size: totalStorage,
             used: primaryFs.used || 0,
-            available: primaryFs.available || (primaryFs.size - primaryFs.used) || 0,
+            available: availableStorage,
+            free: primaryFs.free || availableStorage,
             usePercent: parseFloat(diskLoad.toFixed(1)),
-            sizeFmt: formatStorageBytes(primaryFs.size || 0),
+            freePercent: parseFloat(freePercent.toFixed(1)),
+            isWarning,
+            isFull,
+            isCritical,
+            canRecord,
+            deadlinePercent: 90,
+            sizeFmt: formatStorageBytes(totalStorage),
             usedFmt: formatStorageBytes(primaryFs.used || 0),
-            availableFmt: formatStorageBytes(primaryFs.available || 0),
+            availableFmt: formatStorageBytes(availableStorage),
         };
 
         const netRates = (latestNetworkDetails && latestNetworkDetails.length > 0)
@@ -368,14 +414,14 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             acceleration: 'Hardware Transcode Engine',
         };
 
-        const isHealthy = cpuLoad < 90 && memLoad < 90;
+        const isHealthy = cpuLoad < 90 && memLoad < 90 && diskLoad < 90;
 
         const services = [
             { id: 'stream_engine', name: 'Stream Ingest Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'ingest_service', name: 'Ingest Service', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'transcoder', name: 'Transcoder', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
-            { id: 'recording_engine', name: 'Recording Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
-            { id: 'storage', name: 'Storage Subsystem', status: diskLoad > 90 ? 'Warning' : 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
+            { id: 'recording_engine', name: 'Recording Engine', status: isFull ? 'Warning' : 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
+            { id: 'storage', name: 'Storage Subsystem', status: isCritical ? 'Critical' : isFull ? 'Warning' : isWarning ? 'Warning' : 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'websocket', name: 'Realtime Sync Engine', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
             { id: 'database', name: 'Database', status: 'Healthy', uptime: uptimeFmt, latency: '< 1 ms', lastCheck: 'Just now' },
         ];
@@ -412,7 +458,7 @@ const _performFullSystemFetch = async (extraContext = {}) => {
             timestamp: new Date().toISOString(), networkDetails: [],
             gpuDetails: { model: 'N/A', load: 0, memoryLoad: 0 },
             memoryDetails: { total: 0, used: 0, available: 0, free: 0, swapTotal: 0, swapUsed: 0, totalFmt: '0 GB', usedFmt: '0 GB', availableFmt: '0 GB', swapTotalFmt: '0 GB', swapUsedFmt: '0 GB' },
-            storageDetails: { mount: '/', size: 0, used: 0, available: 0, usePercent: 0, sizeFmt: '0 TB', usedFmt: '0 TB', availableFmt: '0 TB' },
+            storageDetails: { mount: '/', size: 0, used: 0, available: 0, free: 0, usePercent: 0, freePercent: 100, isWarning: false, isFull: false, isCritical: false, canRecord: true, deadlinePercent: 90, sizeFmt: '0 TB', usedFmt: '0 TB', availableFmt: '0 TB' },
             services: [],
             error: "Hardware stats unavailable: " + e.message,
             ...extraContext
@@ -421,5 +467,8 @@ const _performFullSystemFetch = async (extraContext = {}) => {
 };
 
 module.exports = {
-    getFullSystemStats
+    getFullSystemStats,
+    getRealStorageStats,
+    formatStorageBytes,
+    formatBytes,
 };

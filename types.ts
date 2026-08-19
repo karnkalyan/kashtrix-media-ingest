@@ -216,3 +216,26 @@ export interface Channel {
   speedHistory: { time: number; speed: number }[];
   outputLog: string[];
 }
+
+export interface StorageDetails {
+  mount: string;
+  size: number;
+  used: number;
+  available: number;
+  free?: number;
+  usePercent: number;
+  freePercent: number;
+  isWarning: boolean;
+  isFull: boolean;
+  isCritical: boolean;
+  canRecord: boolean;
+  deadlinePercent?: number;
+  sizeFmt: string;
+  usedFmt: string;
+  availableFmt: string;
+}
+
+export interface StorageStatusResponse extends StorageDetails {
+  success: boolean;
+  message: string;
+}

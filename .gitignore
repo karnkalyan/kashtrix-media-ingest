@@ -25,6 +25,11 @@ dist-ssr
 *.db
 backend/data/
 backend/media/
+backend/*.mp4
+backend/*.mov
+backend/*.mkv
+backend/*.part
+backend/--Frag*.part
 media/
 recordings/
 recorded/
