@@ -576,7 +576,7 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
         flv: 'video/x-flv',
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
-    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.endsWith('/download') || req.path.includes('/download');
     const fileName = customFileName || path.basename(normalizedPath);
 
     // If MP4 was unclosed/interrupted, check if counterpart MKV exists and auto-remux
@@ -600,10 +600,11 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
     res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Accept-Ranges', 'bytes');
 
+    const safeName = fileName.replace(/["\r\n]/g, '_');
     if (isDownload) {
-        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+        res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     } else {
-        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+        res.setHeader('Content-Disposition', `inline; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     }
 
     if (req.method === 'HEAD') {

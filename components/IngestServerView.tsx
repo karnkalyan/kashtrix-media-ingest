@@ -822,8 +822,6 @@ export const IngestServerView: React.FC<Props> = ({
                       <a
                         href={getRecordingDownloadUrl(rec)}
                         download={rec.file_name || 'recording.mp4'}
-                        target="_blank"
-                        rel="noreferrer"
                         className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45]"
                         title="Download recording file to computer"
                       >

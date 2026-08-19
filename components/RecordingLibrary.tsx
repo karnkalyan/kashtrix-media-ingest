@@ -379,11 +379,10 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                         <Play size={12} /> Preview
                       </button>
                       <a
-                        href={`${mediaBase}/recordings/${recording.app}/${recording.stream}/${recording.file_name}`}
-                        target="_blank"
-                        rel="noreferrer"
+                        href={getRecordingDownloadUrl(recording)}
+                        download={recording.file_name || 'recording.mp4'}
                         className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F8F7FA] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#2D1A45]"
-                        title="Download"
+                        title={`Download ${recording.file_name}`}
                       >
                         <Download size={13} />
                       </a>
@@ -450,12 +449,10 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                     <Play size={12} /> Preview
                   </button>
                   <a
-                    href={`${mediaBase}/recordings/${recording.app}/${recording.stream}/${recording.file_name}`}
-                    download={recording.file_name}
-                    target="_blank"
-                    rel="noreferrer"
+                    href={getRecordingDownloadUrl(recording)}
+                    download={recording.file_name || 'recording.mp4'}
                     className="flex items-center justify-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA]"
-                    title="Download recording file"
+                    title={`Download ${recording.file_name}`}
                   >
                     <Download size={12} /> Download
                   </a>
@@ -518,8 +515,6 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                 <a
                   href={getRecordingDownloadUrl(preview)}
                   download={preview.file_name || 'recording.mp4'}
-                  target="_blank"
-                  rel="noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-[#F4EEFF] px-3 py-1.5 text-[12px] font-semibold text-[#4A1B7A] hover:bg-[#E8DFF0] dark:bg-[#311754] dark:border-[#4A1B7A] dark:text-[#A78BFA]"
                   title="Download video file to computer"
                 >
