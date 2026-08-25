@@ -393,13 +393,18 @@ export class LicenseClient {
             Array.isArray(payload.mod) &&
             payload.ent &&
             typeof payload.ent === "object" &&
-            Number.isInteger(payload.ev) &&
-            this.snapshot) {
-            this.applySnapshot(this.snapshot.licenseId, payload.mod, payload.ent, Number(payload.ev));
+            Number.isInteger(payload.ev)) {
+            const licId = String(payload.lid || this.snapshot?.licenseId || "");
+            if (licId) {
+                this.applySnapshot(licId, payload.mod, payload.ent, Number(payload.ev));
+            }
         }
         if (isTerminal) {
             this.snapshot = undefined;
             this.state = "DENIED";
+        }
+        else if (event === "LICENSE_RESTORED") {
+            this.state = "LICENSED";
         }
         this.options.onStateChange(event, typeof payload.reason === "string" ? payload.reason : undefined);
         if (event === "REVALIDATE_NOW") {

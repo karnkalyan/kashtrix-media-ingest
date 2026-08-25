@@ -392,6 +392,16 @@ class SecureLicenseRuntime extends EventEmitter {
           void this.persistTerminalDenial(licenseKey, event, reason || event).catch(() => {});
           this.scheduleRetry(1000);
         }
+        else if (event === 'LICENSE_RESTORED') {
+          void this.clearTerminalDenial().catch(() => {});
+          this.reason = '';
+          if (this.snapshot) {
+            this.state = 'activated';
+            this.onlineValidated = true;
+          }
+          this.publish();
+          void this.connectKey(licenseKey, { preserveActive: true }).catch(() => {});
+        }
         else {
           this.reason = event === 'LICENSE_KEY_REISSUED' ? 'A replacement license key is required before the next reconnect' : '';
           this.publish();
@@ -560,7 +570,7 @@ class SecureLicenseRuntime extends EventEmitter {
     });
     if (denial) {
       this.setDenied(denial.reason || denial.event, denial.event);
-      void this.connectKey(licenseKey).catch(() => this.scheduleRetry());
+      void this.connectKey(licenseKey).then(() => this.clearTerminalDenial()).catch(() => this.scheduleRetry());
       return this.getPublicStatus();
     }
     try {
