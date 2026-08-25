@@ -59,3 +59,4 @@ temp/
 *.sw?
 *.usage.txt
 cli.usage.txt
+certs/**/pre-server-copy*

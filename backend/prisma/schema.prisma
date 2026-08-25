@@ -153,16 +153,6 @@ model KvStore {
   updatedAt DateTime @default(now()) @updatedAt
 }
 
-model GeneratedLicense {
-  id            Int      @id @default(autoincrement())
-  customerName  String
-  customerEmail String?
-  licenseKey    String   @db.Text
-  status        String   @default("active")
-  expiresAt     DateTime
-  createdAt     DateTime @default(now())
-}
-
 model StreamSession {
   id            Int       @id @default(autoincrement())
   app           String
@@ -185,6 +175,7 @@ model StreamRecording {
   startTime DateTime  @default(now())
   endTime   DateTime?
   size      BigInt    @default(0)
+  duration  Float     @default(0)
   format       String  @default("mp4")
   videoBitrate Int     @default(0)
   audioBitrate Int     @default(0)

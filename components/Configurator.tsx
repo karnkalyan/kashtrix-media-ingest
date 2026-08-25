@@ -14,10 +14,15 @@ import {
   Layers,
   Info,
   Check,
-  X
+  X,
+  HardDrive,
+  Server,
+  Radio,
+  Sliders,
+  Folder
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { AppSettings, Channel, ChannelDestination, DecklinkFormat, InputType, Protocol, TranscodingProfile } from '../types';
+import { AppSettings, Channel, ChannelDestination, DecklinkFormat, InputType, Protocol, StorageLocation, TranscodingProfile } from '../types';
 import { LIVE_PROTOCOL_OPTIONS, DEFAULT_DECKLINK_FORMATS } from '../constants';
 import SegmentedControl from './ui/SegmentedControl';
 import ProtocolBadge from './ui/ProtocolBadge';
@@ -73,13 +78,7 @@ const inputSourceOptions = [
   { value: InputType.YOUTUBE, label: 'YouTube', icon: Play },
 ];
 
-const destinationOptions = [
-  ...LIVE_PROTOCOL_OPTIONS,
-  { value: Protocol.YOUTUBE, label: 'YouTube' },
-  { value: Protocol.FACEBOOK, label: 'Facebook' },
-  { value: Protocol.RTMP, label: 'RTMP Push' },
-  { value: Protocol.RECORDING, label: 'Recording File' },
-];
+const destinationOptions = LIVE_PROTOCOL_OPTIONS;
 
 const safeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'stream';
 const uniqueId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -97,6 +96,8 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
       return `rtmp://a.rtmp.youtube.com/live2/${streamKey}`;
     case Protocol.FACEBOOK:
       return `rtmps://live-api-s.facebook.com:443/rtmp/${streamKey}`;
+    case Protocol.CUSTOM:
+      return `rtmp://${API_HOST}:${settings.rtmpPort}/live/${slug}`;
     case Protocol.SRT:
       return `srt://127.0.0.1:9001?mode=caller`;
     case Protocol.UDP:
@@ -792,24 +793,340 @@ export const Configurator: React.FC<Props> = ({
                   options={destinationOptions.map(o => ({ value: o.value, label: o.label }))}
                 />
 
-                {(dest.protocol === Protocol.YOUTUBE || dest.protocol === Protocol.FACEBOOK) && (
-                  <input
-                    className="h-8 w-full rounded border border-[#E8DFF0] bg-white px-2.5 font-mono text-[11px]"
-                    placeholder="Stream key"
-                    value={dest.streamKey || ''}
-                    onChange={e => {
-                      const url = defaultUrl(dest.protocol, channelName, settings, e.target.value);
-                      setDestination(dest.id, { streamKey: e.target.value, url, playbackUrl: playbackUrl(dest.protocol, channelName, settings, url) });
-                    }}
+                {(dest.protocol === Protocol.YOUTUBE || dest.protocol === Protocol.FACEBOOK || dest.protocol === Protocol.CUSTOM) && (
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-semibold text-[#1B1024] dark:text-white">
+                      Stream Key {dest.protocol === Protocol.CUSTOM ? '(Optional)' : '*'}
+                    </label>
+                    <input
+                      className="h-8 w-full rounded border border-[#E8DFF0] bg-white px-2.5 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                      placeholder={dest.protocol === Protocol.CUSTOM ? "e.g. live_secret_key" : "Paste stream key here"}
+                      value={dest.streamKey || ''}
+                      onChange={e => {
+                        const url = defaultUrl(dest.protocol, channelName, settings, e.target.value);
+                        setDestination(dest.id, { streamKey: e.target.value, url, playbackUrl: playbackUrl(dest.protocol, channelName, settings, url) });
+                      }}
+                    />
+                  </div>
+                )}
+
+                {dest.protocol !== Protocol.RECORDING && dest.protocol !== Protocol.DECKLINK && (
+                  <CodeField
+                    value={dest.url}
+                    label="Output URL"
+                    readOnly={false}
+                    onChange={url => setDestination(dest.id, { url })}
                   />
                 )}
 
-                <CodeField
-                  value={dest.url}
-                  label="Output URL"
-                  readOnly={false}
-                  onChange={url => setDestination(dest.id, { url })}
-                />
+                {dest.protocol === Protocol.RECORDING && (() => {
+                  const recording = dest.recording || { format: 'mp4', fileName: channelName };
+                  const format = recording.format || 'mp4';
+                  const fileName = recording.fileName !== undefined ? recording.fileName : channelName;
+                  const locations: StorageLocation[] = (dest.locations && dest.locations.length > 0)
+                    ? dest.locations
+                    : (dest.recording?.locations && dest.recording.locations.length > 0)
+                      ? dest.recording.locations
+                      : [{ id: 'loc_1', name: 'Primary Storage', storageType: 'local', storagePath: 'media/recordings', enabled: true }];
+
+                  const updateLocations = (newLocs: StorageLocation[]) => {
+                    const primary = newLocs.find(l => l.enabled) || newLocs[0];
+                    let primaryUrl = '';
+                    const safeBaseName = fileName.trim() ? safeName(fileName) : safeName(channelName);
+                    if (primary) {
+                      if (primary.storageType === 'local' || !primary.storageType) {
+                        const dir = (primary.storagePath || 'media/recordings').replace(/\\/g, '/').replace(/\/+$/, '');
+                        primaryUrl = `${dir}/${safeBaseName}.${format}`;
+                      } else if (primary.storageType === 'smb') {
+                        const share = (primary.smbShare || '//nas/recordings').replace(/\\/g, '/').replace(/\/+$/, '');
+                        primaryUrl = `${share}/${safeBaseName}.${format}`;
+                      } else if (primary.storageType === 'ftp') {
+                        primaryUrl = `ftp://${primary.ftpHost || '127.0.0.1'}/${safeBaseName}.${format}`;
+                      } else if (primary.storageType === 's3') {
+                        primaryUrl = `${primary.s3Bucket || 's3://kashtrix-recordings'}/${safeBaseName}.${format}`;
+                      }
+                    } else {
+                      primaryUrl = `media/recordings/${safeBaseName}.${format}`;
+                    }
+
+                    setDestination(dest.id, {
+                      locations: newLocs,
+                      recording: { ...recording, format, fileName, locations: newLocs },
+                      url: primaryUrl,
+                    });
+                  };
+
+                  const addLocation = () => {
+                    const nextLoc: StorageLocation = {
+                      id: `loc_${Date.now()}`,
+                      name: `Storage Destination ${locations.length + 1}`,
+                      storageType: locations.length === 1 ? 'smb' : 'local',
+                      storagePath: locations.length === 1 ? '' : 'media/recordings_backup',
+                      smbShare: locations.length === 1 ? '\\\\192.168.1.100\\recordings' : '',
+                      enabled: true,
+                    };
+                    updateLocations([...locations, nextLoc]);
+                  };
+
+                  const removeLocation = (locId: string) => {
+                    if (locations.length === 1) {
+                      toast.error('At least one storage destination is required for recording.');
+                      return;
+                    }
+                    updateLocations(locations.filter(l => l.id !== locId));
+                  };
+
+                  const patchLocation = (locId: string, updates: Partial<StorageLocation>) => {
+                    updateLocations(locations.map(l => (l.id === locId ? { ...l, ...updates } : l)));
+                  };
+
+                  return (
+                    <div className="space-y-3 pt-2 border-t border-[#E8DFF0] dark:border-[#371F59]">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Select
+                          label="Container Format"
+                          value={format}
+                          onChange={e => {
+                            const nextFormat = e.target.value as any;
+                            const updatedRecording = { ...recording, format: nextFormat };
+                            setDestination(dest.id, { recording: updatedRecording });
+                            updateLocations(locations);
+                          }}
+                          options={[
+                            { value: 'mp4', label: 'MP4 (MPEG-4 Part 14 - Universal)' },
+                            { value: 'mkv', label: 'MKV (Matroska - Crash Resilient)' },
+                            { value: 'ts', label: 'TS (MPEG Transport Stream - Broadcast)' },
+                            { value: 'mov', label: 'MOV (Apple QuickTime ProRes/Master)' },
+                            { value: 'flv', label: 'FLV (Flash Video)' },
+                          ]}
+                        />
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#1B1024] dark:text-white mb-1">
+                            File Name Base / Prefix
+                          </label>
+                          <input
+                            type="text"
+                            className="h-8 w-full rounded border border-[#E8DFF0] bg-white px-2.5 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="e.g. Channel1_Master"
+                            value={fileName}
+                            onChange={e => {
+                              const nextName = e.target.value;
+                              const updatedRecording = { ...recording, fileName: nextName };
+                              setDestination(dest.id, { recording: updatedRecording });
+                              updateLocations(locations);
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Multiple Storage Destinations Manager */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                            <HardDrive size={13} className="text-[#7C3AED]" />
+                            Simultaneous Storage Locations ({locations.length})
+                          </label>
+                          <button
+                            type="button"
+                            onClick={addLocation}
+                            className="flex items-center gap-1 text-[11px] font-bold text-[#7C3AED] hover:underline dark:text-[#C4B5FD]"
+                          >
+                            <Plus size={12} /> Add Storage Location
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {locations.map((loc, locIdx) => (
+                            <div
+                              key={loc.id}
+                              className="rounded-lg border border-[#E8DFF0] bg-white p-2.5 shadow-2xs space-y-2 dark:bg-[#1E1130] dark:border-[#371F59]"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="rounded bg-purple-100 text-[#7C3AED] px-1.5 py-0.5 text-[9px] font-bold uppercase dark:bg-[#311754] dark:text-[#C4B5FD]">
+                                    {loc.storageType || 'LOCAL'}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={loc.name || `Location #${locIdx + 1}`}
+                                    onChange={e => patchLocation(loc.id, { name: e.target.value })}
+                                    className="h-6 rounded border border-transparent hover:border-[#E8DFF0] focus:border-[#7C3AED] px-1 text-[11px] font-semibold text-[#1B1024] dark:text-white bg-transparent outline-none"
+                                    placeholder="Location label..."
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <label className="flex items-center gap-1 text-[10px] text-[#6F6078] dark:text-[#B9A5CD] cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={loc.enabled !== false}
+                                      onChange={e => patchLocation(loc.id, { enabled: e.target.checked })}
+                                      className="rounded text-[#7C3AED]"
+                                    />
+                                    <span>Active</span>
+                                  </label>
+
+                                  {locations.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeLocation(loc.id)}
+                                      className="text-[#6F6078] hover:text-[#DC3545] p-0.5"
+                                      title="Remove this storage location"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Protocol selector & parameters */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                    Storage Protocol
+                                  </label>
+                                  <select
+                                    value={loc.storageType || 'local'}
+                                    onChange={e => patchLocation(loc.id, { storageType: e.target.value as any })}
+                                    className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 text-[11px] font-semibold text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                  >
+                                    <option value="local">Local Disk Directory</option>
+                                    <option value="smb">Network Share (SMB / NAS)</option>
+                                    <option value="ftp">FTP / SFTP Server</option>
+                                    <option value="s3">AWS S3 / Cloud Bucket</option>
+                                  </select>
+                                </div>
+
+                                {(!loc.storageType || loc.storageType === 'local') && (
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                      Local Directory Path
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={loc.storagePath || 'media/recordings'}
+                                      onChange={e => patchLocation(loc.id, { storagePath: e.target.value })}
+                                      placeholder="media/recordings or D:/Recordings"
+                                      className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                    />
+                                  </div>
+                                )}
+
+                                {loc.storageType === 'smb' && (
+                                  <>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        SMB UNC Path
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={loc.smbShare || ''}
+                                        onChange={e => patchLocation(loc.id, { smbShare: e.target.value })}
+                                        placeholder="\\192.168.1.100\recordings"
+                                        className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        SMB Username
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={loc.smbUsername || ''}
+                                        onChange={e => patchLocation(loc.id, { smbUsername: e.target.value })}
+                                        placeholder="admin"
+                                        className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        SMB Password
+                                      </label>
+                                      <input
+                                        type="password"
+                                        value={loc.smbPassword || ''}
+                                        onChange={e => patchLocation(loc.id, { smbPassword: e.target.value })}
+                                        placeholder="••••••••"
+                                        className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                      />
+                                    </div>
+                                  </>
+                                )}
+
+                                {loc.storageType === 'ftp' && (
+                                  <>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        FTP Host / Port
+                                      </label>
+                                      <div className="flex gap-1">
+                                        <input
+                                          type="text"
+                                          value={loc.ftpHost || ''}
+                                          onChange={e => patchLocation(loc.id, { ftpHost: e.target.value })}
+                                          placeholder="ftp.broadcast.net"
+                                          className="h-7 flex-1 rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                        />
+                                        <input
+                                          type="number"
+                                          value={loc.ftpPort || 21}
+                                          onChange={e => patchLocation(loc.id, { ftpPort: Number(e.target.value) })}
+                                          className="h-7 w-14 rounded border border-[#E8DFF0] bg-[#F8F7FA] px-1 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                        />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        FTP Remote Directory
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={loc.ftpPath || ''}
+                                        onChange={e => patchLocation(loc.id, { ftpPath: e.target.value })}
+                                        placeholder="/archives/tv/"
+                                        className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                      />
+                                    </div>
+                                  </>
+                                )}
+
+                                {loc.storageType === 's3' && (
+                                  <>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        S3 Bucket Name
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={loc.s3Bucket || ''}
+                                        onChange={e => patchLocation(loc.id, { s3Bucket: e.target.value })}
+                                        placeholder="s3://kashtrix-recordings"
+                                        className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-[#6F6078] dark:text-[#B9A5CD] mb-0.5">
+                                        S3 Region
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={loc.s3Region || 'us-east-1'}
+                                        onChange={e => patchLocation(loc.id, { s3Region: e.target.value })}
+                                        placeholder="us-east-1"
+                                        className="h-7 w-full rounded border border-[#E8DFF0] bg-[#F8F7FA] px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {dest.protocol === Protocol.DECKLINK && (() => {
                   const currentFormats = (dest.decklinkDeviceId && decklinkFormats[dest.decklinkDeviceId]?.length)

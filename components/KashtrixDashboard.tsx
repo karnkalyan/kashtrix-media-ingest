@@ -22,6 +22,7 @@ import Button from './ui/Button';
 import ProtocolBadge from './ui/ProtocolBadge';
 import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
 import { subscribeRealtime } from '../services/realtime';
+import RecordingElapsedTimer from './RecordingElapsedTimer';
 
 const formatSpeedRate = (bytesPerSec: number): string => {
   if (!bytesPerSec || isNaN(bytesPerSec)) return '0 B/s';
@@ -36,7 +37,7 @@ const getRecordingFormat = (recording: any): string => {
   if (recording?.file_name && recording.file_name.includes('.')) {
     const parts = recording.file_name.split('.');
     const ext = parts.pop()?.toLowerCase();
-    if (ext && ext !== recording.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
+    if (ext && ext !== recording.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'mxf', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
       return ext;
     }
   }
@@ -192,29 +193,6 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
   }, [fetchOverview]);
 
   useEffect(() => {
-    let isMounted = true;
-    const fetchSystemStats = async () => {
-      try {
-        const token = localStorage.getItem('kte-auth-token');
-        const res = await fetch('/api/system/stats', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          setSystemStats(data);
-        }
-      } catch {}
-    };
-
-    fetchSystemStats();
-    const interval = setInterval(fetchSystemStats, 3000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  useEffect(() => {
     const commit = (updater: (current: DashboardOverview) => DashboardOverview) => {
       setOverview(current => {
         const next = updater(current);
@@ -285,6 +263,11 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           {error}
         </div>
       )}
+
+      <RecordingElapsedTimer
+        recordings={overview.activeRecordingsList || []}
+        title="Current Recording Timer"
+      />
 
       {/* Server Operational Status & Subsystem Health Panel */}
       <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">

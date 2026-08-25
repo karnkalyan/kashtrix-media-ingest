@@ -41,6 +41,7 @@ interface Props {
   realtimeRecordings: any[];
   settings: AppSettings;
   deleteRecording: (id: number | string) => Promise<any>;
+  onOpenTranscodeStudio?: (file: { id?: string | number; name: string; path?: string; type: 'recording' }) => void;
 }
 
 const formatBytes = (bytes = 0) => {
@@ -51,8 +52,8 @@ const formatBytes = (bytes = 0) => {
 };
 
 const durationSeconds = (recording: any) => {
-  if (recording?.duration && typeof recording.duration === 'number') {
-    return Math.max(0, Math.floor(recording.duration));
+  if (typeof recording?.duration === 'number' && Number.isFinite(recording.duration)) {
+    return Math.max(0, recording.duration);
   }
   const start = new Date(recording?.start_time).getTime();
   if (isNaN(start)) return 0;
@@ -67,10 +68,11 @@ const durationSeconds = (recording: any) => {
 };
 
 const formatDuration = (seconds: number) => {
+  seconds = Math.max(0, Math.floor(seconds || 0));
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainder = seconds % 60;
-  return hours ? `${hours}h ${minutes}m ${remainder}s` : minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  return [hours, minutes, remainder].map(value => String(value).padStart(2, '0')).join(':');
 };
 
 const formatSecondsToTime = (seconds: number) => {
@@ -89,7 +91,7 @@ const getRecordingFormat = (recording: any): string => {
   if (recording?.file_name && recording.file_name.includes('.')) {
     const parts = recording.file_name.split('.');
     const ext = parts.pop()?.toLowerCase();
-    if (ext && ext !== recording.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
+    if (ext && ext !== recording.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'mxf', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
       return ext;
     }
   }
@@ -100,10 +102,15 @@ const getRecordingFormat = (recording: any): string => {
 };
 
 const isUncompressedMaster = (recording: any): boolean => {
-  const fmt = getRecordingFormat(recording);
   const enc = String(recording?.encoder || '').toLowerCase();
-  const settingsJson = String(recording?.settings_json || '').toLowerCase();
-  return fmt === 'mov' || fmt === 'mkv' || enc.includes('rawvideo') || enc.includes('uncompressed') || settingsJson.includes('rawvideo') || settingsJson.includes('uncompressed');
+  let configuredCodec = '';
+  try {
+    const settings = typeof recording?.settings_json === 'string'
+      ? JSON.parse(recording.settings_json)
+      : recording?.settings_json;
+    configuredCodec = String(settings?.videoCodec || '').toLowerCase();
+  } catch (_) {}
+  return enc.includes('rawvideo') || enc.includes('uncompressed') || configuredCodec === 'rawvideo' || configuredCodec === 'uncompressed';
 };
 
 const getRecordingUrl = (item: any): string => {
@@ -263,7 +270,7 @@ const TRANSCODE_PRESETS: { id: string; label: string; description: string; optio
   }
 ];
 
-export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording }) => {
+export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording, onOpenTranscodeStudio }) => {
   const [recordings, setRecordings] = useState<any[]>(realtimeRecordings);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<'cards' | 'table'>('table');
@@ -366,6 +373,10 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
   }, []);
 
   const openTranscodeModal = (rec: any) => {
+    if (onOpenTranscodeStudio) {
+      onOpenTranscodeStudio({ id: rec.id, name: rec.file_name, path: rec.file_path, type: 'recording' });
+      return;
+    }
     setTranscodeModalRecording(rec);
     setSelectedPreset('broadcast-1080p50');
     setTranscodeOptions({ ...TRANSCODE_PRESETS[0].options });
@@ -510,6 +521,16 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenTranscodeStudio && (
+            <button
+              type="button"
+              onClick={() => onOpenTranscodeStudio({ name: '', type: 'recording' })}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-[#351147] px-3 text-[12px] font-bold text-white hover:bg-[#2B0D3A] shadow-xs dark:bg-[#6D32D9] dark:hover:bg-[#5B21B6]"
+            >
+              <Zap size={14} /> Open Transcode Studio
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => { loadAll(); loadConversions(); }}
@@ -738,7 +759,6 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
               <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
                 {visible.map(recording => {
                   const uncompressed = isUncompressedMaster(recording);
-                  const isMp4 = getRecordingFormat(recording) === 'mp4';
                   return (
                     <tr key={recording.id} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2F1A4B]/40">
                       <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white max-w-[260px] truncate" title={recording.file_name}>
@@ -746,6 +766,11 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                           <FileVideo size={14} className={uncompressed ? 'text-purple-600' : 'text-slate-500'} />
                           <span className="truncate">{recording.file_name}</span>
                         </div>
+                        {recording.capture_status === 'incomplete' && (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                            <AlertCircle size={10} /> Incomplete capture
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[#6F6078] dark:text-[#B9A5CD]">
                         <span className="font-semibold text-[#1B1024] dark:text-white">{recording.app}/{recording.stream}</span>
@@ -775,31 +800,12 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                               Master Raw
                             </span>
                           )}
-                          {isMp4 && (
-                            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-800 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800">
-                              MP4 Web
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 font-mono font-semibold text-[#1B1024] dark:text-white">
                         {formatBytes(Number(recording.size || 0))}
                       </td>
                       <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                        {/* Transcode Button */}
-                        <button
-                          type="button"
-                          onClick={() => openTranscodeModal(recording)}
-                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold border transition-colors ${
-                            uncompressed
-                              ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700 shadow-xs'
-                              : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50 dark:bg-[#211335] dark:border-[#4A1B7A] dark:text-purple-300 dark:hover:bg-[#2F1A4B]'
-                          }`}
-                          title="Transcode / Convert this recording"
-                        >
-                          <Zap size={11} /> Transcode to MP4
-                        </button>
-
                         {/* Preview Button */}
                         <button
                           type="button"
@@ -857,6 +863,11 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                           Master Raw
                         </div>
                       )}
+                      {recording.capture_status === 'incomplete' && (
+                        <div className="absolute top-2 right-2 rounded bg-amber-500/95 text-slate-950 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider shadow">
+                          Incomplete
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="font-semibold text-[#1B1024] truncate text-[13px] dark:text-white" title={recording.file_name}>
@@ -874,14 +885,6 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                   </div>
 
                   <div className="mt-3 flex flex-col gap-2 pt-2 border-t border-[#E8DFF0] dark:border-[#311B4E]">
-                    <button
-                      type="button"
-                      onClick={() => openTranscodeModal(recording)}
-                      className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 py-1.5 text-[11px] font-bold text-white shadow-xs hover:from-purple-700 hover:to-indigo-700"
-                    >
-                      <Zap size={12} /> Transcode to MP4
-                    </button>
-
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1229,6 +1232,15 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                 </button>
               </div>
             </div>
+
+            {preview.capture_status === 'incomplete' && (
+              <div className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  This capture is incomplete. The file contains {formatDuration(durationSeconds(preview))} of playable media from a {formatDuration(Number(preview.elapsed_duration || 0))} recording session; preview and download can only include media actually written to disk.
+                </span>
+              </div>
+            )}
 
             <div className="aspect-video bg-black">
               <KashtrixMediaPlayer

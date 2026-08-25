@@ -198,6 +198,9 @@ export const LIVE_PROTOCOL_OPTIONS = [
   { value: Protocol.HTTP_TS, label: 'HTTP-TS (MPEG-TS over HTTP)' },
   { value: Protocol.DECKLINK, label: 'DeckLink Card Output' },
   { value: Protocol.RECORDING, label: 'Recording File' },
+  { value: Protocol.YOUTUBE, label: 'YouTube' },
+  { value: Protocol.FACEBOOK, label: 'Facebook' },
+  { value: Protocol.CUSTOM, label: 'RTMP Push' },
 ];
 
 export const FRAMERATE_OPTIONS = [

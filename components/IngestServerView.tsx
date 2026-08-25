@@ -25,9 +25,10 @@ import {
   ArrowUpRight,
   Download,
   Film,
-  HardDrive
+  HardDrive,
+  AlertCircle
 } from 'lucide-react';
-import { AppSettings, IngestRecordingOptions, TranscodingProfile, StorageStatusResponse } from '../types';
+import { AppSettings, IngestRecordingOptions, RecordingEncoderCapability, RecordingProfileSummary, TranscodingProfile, StorageStatusResponse } from '../types';
 import toast from 'react-hot-toast';
 import ProfessionalRecordingControl from './ProfessionalRecordingControl';
 import ProtocolBadge from './ui/ProtocolBadge';
@@ -42,7 +43,7 @@ const getRecordingFormat = (item: any): string => {
   if (item?.file_name && item.file_name.includes('.')) {
     const parts = item.file_name.split('.');
     const ext = parts.pop()?.toLowerCase();
-    if (ext && ext !== item.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
+    if (ext && ext !== item.file_name.toLowerCase() && ['mp4', 'mkv', 'mov', 'mxf', 'ts', 'flv', 'avi', 'webm'].includes(ext)) {
       return ext;
     }
   }
@@ -130,6 +131,32 @@ const formatRecordingDuration = (seconds = 0) => {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+const getLiveDurationSeconds = (rec: any): number => {
+  if (!rec) return 0;
+  if (rec.is_active) {
+    const raw = rec.startTime || rec.start_time || rec.started_at || rec.created_at;
+    if (raw) {
+      const parsed = typeof raw === 'number' ? (raw > 1e11 ? raw : raw * 1000) : new Date(raw).getTime();
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return Math.max(0, (Date.now() - parsed) / 1000);
+      }
+    }
+  }
+  if (Number.isFinite(Number(rec.duration)) && Number(rec.duration) > 0) {
+    return Number(rec.duration);
+  }
+  const rawStart = rec.startTime || rec.start_time;
+  const rawEnd = rec.endTime || rec.end_time;
+  if (rawStart && rawEnd) {
+    const s = new Date(rawStart).getTime();
+    const e = new Date(rawEnd).getTime();
+    if (Number.isFinite(s) && Number.isFinite(e) && e >= s) {
+      return Math.max(0, (e - s) / 1000);
+    }
+  }
+  return 0;
+};
+
 const formatBytes = (bytes = 0) => {
   if (!bytes) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -141,21 +168,29 @@ const defaultConfig: IngestRecordingOptions = {
   autoRecord: false,
   fileName: '{channel}_{date}_{time}',
   formats: ['mp4'],
-  encoder: 'nvidia',
+  encoder: 'auto',
+  encoderSelectionVersion: 2,
   videoCodec: 'h264',
   rateControl: 'cbr',
   resolution: 'source',
-  framerate: 50,
-  videoBitrate: 50000,
-  maxBitrate: 55000,
-  preset: 'fast',
-  gopSize: 60,
+  framerate: 25,
+  videoBitrate: 20000,
+  maxBitrate: 20000,
+  preset: 'p4',
+  gopSize: 50,
   pixelFormat: 'yuv420p',
   audioCodec: 'aac',
-  audioBitrate: 192,
+  audioBitrate: 256,
   sampleRate: 48000,
   audioChannels: 2,
   continuous: true,
+  storageType: 'local',
+  storagePath: 'media/recordings',
+  formatCode: 'Hi50',
+  videoInput: 'sdi',
+  rawFormat: 'uyvy422',
+  nvencInterlaceMode: 'auto',
+  profileOverrides: {},
 };
 
 export const IngestServerView: React.FC<Props> = ({
@@ -194,6 +229,8 @@ export const IngestServerView: React.FC<Props> = ({
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [storageStatus, setStorageStatus] = useState<StorageStatusResponse | null>(null);
+  const [recordingProfiles, setRecordingProfiles] = useState<RecordingProfileSummary[]>([]);
+  const [recordingEncoders, setRecordingEncoders] = useState<RecordingEncoderCapability[]>([]);
 
   // Recording Library Preview & Filter state
   const [recSearch, setRecSearch] = useState('');
@@ -248,7 +285,7 @@ export const IngestServerView: React.FC<Props> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        const safeFormats = (data.formats && Array.isArray(data.formats) && data.formats.length > 0 && !(data.formats.length === 1 && data.formats[0] === 'mov'))
+        const safeFormats = data.formats && Array.isArray(data.formats) && data.formats.length > 0
           ? data.formats
           : ['mp4'];
         setConfig(prev => ({ ...prev, ...data, formats: safeFormats }));
@@ -256,12 +293,26 @@ export const IngestServerView: React.FC<Props> = ({
     } catch {}
   }, []);
 
-  const refreshDevices = useCallback(async () => {
-    setDevicesLoading(true);
-    sendRealtime({ type: 'capture_devices_request' });
+  const fetchRecordingProfiles = useCallback(async () => {
     try {
       const token = localStorage.getItem('kte-auth-token');
-      const res = await fetch('/api/ffmpeg/devices', {
+      const res = await fetch('/api/ingest/record/profiles', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecordingProfiles(Array.isArray(data.profiles) ? data.profiles : []);
+        setRecordingEncoders(Array.isArray(data.encoders) ? data.encoders : []);
+      }
+    } catch {}
+  }, []);
+
+  const refreshDevices = useCallback(async () => {
+    setDevicesLoading(true);
+    sendRealtime({ type: 'capture_devices_request', payload: { refresh: true } });
+    try {
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ffmpeg/devices?refresh=true', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
@@ -290,6 +341,7 @@ export const IngestServerView: React.FC<Props> = ({
   useEffect(() => {
     fetchData();
     fetchConfig();
+    fetchRecordingProfiles();
     refreshDevices();
     fetchStorageStatus();
 
@@ -321,7 +373,7 @@ export const IngestServerView: React.FC<Props> = ({
       clearInterval(storageTimer);
       unsubscribe();
     };
-  }, [fetchData, fetchConfig, refreshDevices, fetchStorageStatus]);
+  }, [fetchData, fetchConfig, fetchRecordingProfiles, refreshDevices, fetchStorageStatus]);
 
   const saveConfig = async () => {
     setSavingConfig(true);
@@ -342,11 +394,43 @@ export const IngestServerView: React.FC<Props> = ({
 
   const toggleFormat = (format: IngestRecordingOptions['formats'][number]) => {
     setConfig(prev => {
+      const requestedProfile = recordingProfiles.find(item => item.extension === format);
+      if (requestedProfile?.available === false) {
+        toast.error(requestedProfile.warning || `${requestedProfile.label} is unavailable on this server.`);
+        return prev;
+      }
       const current = prev.formats || ['mp4'];
       const next = current.includes(format)
         ? current.filter(f => f !== format)
         : [...current, format];
-      return { ...prev, formats: next.length ? next : ['mp4'] };
+      const selectedFormats = next.length ? next : [format];
+      const activeFormat = current.includes(format) && next.length ? next[next.length - 1] : format;
+      const profile = recordingProfiles.find(item => item.extension === activeFormat);
+      if (!profile) return { ...prev, formats: next.length ? next : ['mp4'] };
+      return {
+        ...prev,
+        formats: selectedFormats,
+        encoder: profile.compressed ? 'auto' : 'standard',
+        videoCodec: profile.compressed ? 'h264' : profile.videoCodec,
+        rateControl: 'cbr',
+        resolution: '1920x1080',
+        framerate: profile.frameRate,
+        videoBitrate: profile.videoBitrate,
+        maxBitrate: profile.maxBitrate || profile.videoBitrate,
+        preset: (profile.preset || 'fast') as IngestRecordingOptions['preset'],
+        gopSize: profile.gop || 1,
+        pixelFormat: profile.pixelFormat,
+        audioCodec: profile.audioCodec,
+        audioBitrate: profile.audioBitrate,
+        sampleRate: profile.audioSampleRate,
+        audioChannels: profile.audioChannels,
+        formatCode: 'Hi50',
+        videoInput: 'sdi',
+        rawFormat: profile.capturePixelFormat,
+        profileOverrides: Object.fromEntries(
+          Object.entries(prev.profileOverrides || {}).filter(([extension]) => extension !== activeFormat),
+        ),
+      };
     });
   };
 
@@ -525,10 +609,14 @@ export const IngestServerView: React.FC<Props> = ({
   const isCurrentRecordingActive = useMemo(() => {
     if (sourceType === 'device') {
       const devName = videoDevice || audioDevice;
+      const normalizedDeviceName = devName
+        .trim()
+        .replace(/[^a-zA-Z0-9._-]/g, '-')
+        .replace(/-+/g, '-');
       return recordings.some((r: any) => r.is_active && (
-        r.app === 'device' ||
-        r.source_type === 'device' ||
-        (devName && (r.stream === devName || r.file_name?.includes(devName.replace(/[^a-z0-9._-]+/gi, '-'))))
+        (r.app === 'device' || r.source_type === 'device') &&
+        devName &&
+        (r.stream === normalizedDeviceName || r.inputDevice === devName || r.input_device === devName)
       ));
     }
     if (!selectedStreamKey) return false;
@@ -577,24 +665,25 @@ export const IngestServerView: React.FC<Props> = ({
     return (
       <div className="ingest-workspace page-stack space-y-4">
         {/* Ingest Server Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3 rounded-xl shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] bg-white px-4 py-3.5 rounded-2xl shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-[18px] font-bold text-[#1B1024] dark:text-white">Ingest Server & Capture</h1>
-              <span className="rounded-full bg-[#F4EEFF] border border-[#D8C6E8] px-2.5 py-0.5 text-[11px] font-semibold text-[#4A1B7A] dark:bg-[#2A1744] dark:border-[#4A267A] dark:text-[#C4B5FD]">
-                {videoDevices.length} Video Device{videoDevices.length !== 1 ? 's' : ''} Detected
+            <div className="flex items-center gap-2.5">
+              <h1 className="font-display text-[20px] font-extrabold text-[#1B1024] dark:text-white">Ingest Server</h1>
+              <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/70 dark:border-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Licensed
               </span>
             </div>
             <p className="mt-0.5 text-[12px] text-[#6F6078] dark:text-[#B9A5CD]">
-              Hardware device capture, professional recording profiles, and recording archives
+              Capture live video &amp; audio and record broadcast-quality files
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={refreshDevices}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2D1845]"
+              className="flex h-9 items-center gap-2 rounded-xl bg-violet-600 px-4 text-[12px] font-bold text-white shadow-xs hover:bg-violet-700 transition-colors"
             >
               <RefreshCw size={14} className={devicesLoading ? 'animate-spin' : ''} /> Detect Devices
             </button>
@@ -611,104 +700,82 @@ export const IngestServerView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Ingest Summary KPIs */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Video Devices</span>
-              <p className="font-mono text-[20px] font-bold text-[#1B1024] dark:text-white">{videoDevices.length}</p>
+        {/* Ingest Top 4 KPI Cards */}
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          {/* 1. Video Devices */}
+          <div className="flex items-center gap-3.5 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 border border-violet-100 dark:bg-violet-950/60 dark:border-violet-900 dark:text-violet-300">
+              <Video size={22} />
             </div>
-            <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1 truncate">
-              {videoDevices.length > 0 ? videoDevices[0] : 'No hardware device'}
-            </span>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
             <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Audio Devices</span>
-              <p className="font-mono text-[20px] font-bold text-[#2563EB] dark:text-[#60A5FA]">{audioDevices.length}</p>
-            </div>
-            <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1 truncate">
-              {audioDevices.length > 0 ? audioDevices[0] : 'System audio / none'}
-            </span>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Total Recordings</span>
-              <p className="font-mono text-[20px] font-bold text-[#E11D72] dark:text-[#F472B6]">{recordings.length}</p>
-            </div>
-            <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1">
-              {recordings.filter((r: any) => r.is_active).length > 0
-                ? `${recordings.filter((r: any) => r.is_active).length} recording active`
-                : 'All recordings idle'}
-            </span>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD]">Storage Used</span>
-                {storageStatus && (
-                  <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
-                    storageStatus.isFull
-                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 animate-pulse'
-                      : storageStatus.isWarning
-                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300'
-                      : 'bg-[#F4EEFF] text-[#4A1B7A] dark:bg-[#2A1744] dark:text-[#C4B5FD]'
-                  }`}>
-                    {storageStatus.usePercent !== undefined ? `${storageStatus.usePercent.toFixed(1)}% Disk` : ''}
-                  </span>
-                )}
-              </div>
+              <span className="text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Video Devices</span>
               <div className="flex items-baseline gap-1.5 mt-0.5">
-                <p className="font-mono text-[20px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">
-                  {formatBytes(totalRecordingBytes)}
+                <p className="font-mono text-[22px] font-extrabold text-[#1B1024] dark:text-white leading-tight">
+                  {videoDevices.length}
                 </p>
-                <span className="text-[10px] font-medium text-[#6F6078] dark:text-[#B9A5CD]">
-                  (Recordings)
+                <span className="text-[11px] font-medium text-slate-500 dark:text-[#B9A5CD]">Connected</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Audio Devices */}
+          <div className="flex items-center gap-3.5 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/60 dark:border-blue-900 dark:text-blue-300">
+              <Users size={22} />
+            </div>
+            <div>
+              <span className="text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Audio Devices</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <p className="font-mono text-[22px] font-extrabold text-[#1B1024] dark:text-white leading-tight">
+                  {audioDevices.length}
+                </p>
+                <span className="text-[11px] font-medium text-slate-500 dark:text-[#B9A5CD]">Connected</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Total Recordings */}
+          <div className="flex items-center gap-3.5 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-600 border border-fuchsia-100 dark:bg-fuchsia-950/60 dark:border-fuchsia-900 dark:text-fuchsia-300">
+              <Archive size={22} />
+            </div>
+            <div>
+              <span className="text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">Total Recordings</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <p className="font-mono text-[22px] font-extrabold text-[#1B1024] dark:text-white leading-tight">
+                  {recordings.length}
+                </p>
+                <span className="text-[11px] font-medium text-slate-500 dark:text-[#B9A5CD]">All time</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Storage Usage */}
+          <div className="flex items-center gap-3.5 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 border border-purple-100 dark:bg-purple-950/60 dark:border-purple-900 dark:text-purple-300">
+              <HardDrive size={22} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
+                  {storageStatus ? `Storage (${storageStatus.mount})` : 'Storage (checking…)'}
+                </span>
+                <span className="font-mono text-[11px] font-bold text-violet-700 dark:text-violet-300">
+                  {storageStatus ? `${storageStatus.usePercent.toFixed(1)}%` : '—'}
                 </span>
               </div>
-            </div>
-
-            {storageStatus ? (
-              <div className="mt-2 pt-1.5 border-t border-[#E8DFF0]/70 dark:border-[#311B4E]/70 space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[#6F6078] dark:text-[#B9A5CD]">Total Disk:</span>
-                  <span className="font-mono font-semibold text-[#1B1024] dark:text-white">
-                    {storageStatus.usedFmt} / {storageStatus.sizeFmt}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[#6F6078] dark:text-[#B9A5CD]">Remaining:</span>
-                  <span className={`font-mono font-semibold ${
-                    storageStatus.isFull
-                      ? 'text-rose-600 dark:text-rose-400 font-bold'
-                      : storageStatus.isWarning
-                      ? 'text-amber-600 dark:text-amber-400 font-bold'
-                      : 'text-emerald-600 dark:text-emerald-400'
-                  }`}>
-                    {storageStatus.availableFmt} Free
-                  </span>
-                </div>
-                <div className="w-full bg-[#E8DFF0] h-1.5 rounded-full overflow-hidden dark:bg-[#311B4E]">
-                  <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      storageStatus.isFull
-                        ? 'bg-rose-600'
-                        : storageStatus.isWarning
-                        ? 'bg-amber-500'
-                        : 'bg-[#4A1B7A] dark:bg-[#A78BFA]'
-                    }`}
-                    style={{ width: `${Math.min(100, Math.max(0, storageStatus.usePercent || 0))}%` }}
-                  />
-                </div>
+              <p className="font-mono text-[11px] font-bold text-[#1B1024] dark:text-white truncate mt-0.5">
+                {storageStatus
+                  ? `${storageStatus.usedFmt} / ${storageStatus.sizeFmt} used`
+                  : 'Storage status unavailable'}
+              </p>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 mt-1.5">
+                <div
+                  className="h-full rounded-full bg-violet-600 transition-all"
+                  style={{ width: `${Math.min(100, Math.max(0, storageStatus?.usePercent ?? 0))}%` }}
+                />
               </div>
-            ) : (
-              <span className="text-[11px] text-[#6F6078] dark:text-[#8E78A6] mt-1">
-                Recordings directory storage
-              </span>
-            )}
+            </div>
           </div>
         </div>
 
@@ -736,25 +803,43 @@ export const IngestServerView: React.FC<Props> = ({
           isRecordingActive={isCurrentRecordingActive}
           stopRecording={handleStopControlRecording}
           profiles={profiles}
+          recordingProfiles={recordingProfiles}
+          recordingEncoders={recordingEncoders}
+          activeRecordings={recordings.filter((recording: any) => recording?.is_active)}
         />
 
-        {/* Recording Archives & Items Table */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
-          <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#311B4E]">
+        {/* Recent Recordings Table */}
+        <div className="rounded-2xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#1E1130] dark:border-[#371F59]">
+          <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#371F59]">
             <div>
-              <h2 className="font-display text-[15px] font-semibold text-[#1B1024] dark:text-white">Recording Archives ({filteredRecordings.length})</h2>
-              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Completed and active stream recording items</p>
+              <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">Recent Recordings</h2>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Master broadcast captures and recent stream recordings</p>
             </div>
 
-            <div className="relative">
-              <input
-                type="text"
-                value={recSearch}
-                onChange={e => setRecSearch(e.target.value)}
-                placeholder="Search recordings..."
-                className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:placeholder-[#8E78A6]"
-              />
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#8E78A6]" />
+            <div className="flex items-center gap-2.5">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={recSearch}
+                  onChange={e => setRecSearch(e.target.value)}
+                  placeholder="Search recordings..."
+                  className="h-8 w-48 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] pl-8 pr-3 text-[12px] text-[#1B1024] outline-none focus:border-violet-600 dark:bg-[#25163C] dark:border-[#371F59] dark:text-white dark:placeholder-[#8E78A6]"
+                />
+                <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6F6078] dark:text-[#8E78A6]" />
+              </div>
+
+              <a
+                href="#recordings"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (typeof window !== 'undefined') {
+                    window.location.hash = 'recordings';
+                  }
+                }}
+                className="flex h-8 items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
+              >
+                View Library <ArrowUpRight size={13} />
+              </a>
             </div>
           </div>
 
@@ -780,6 +865,11 @@ export const IngestServerView: React.FC<Props> = ({
                         <Film size={14} className="text-[#6D32D9] dark:text-[#A78BFA]" />
                         <span className="truncate max-w-[220px]" title={rec.file_name || rec.stream || `recording_${rec.id}`}>{rec.file_name || rec.stream || `recording_${rec.id}`}</span>
                       </div>
+                      {rec.capture_status === 'incomplete' && (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                          <AlertCircle size={10} /> Incomplete capture
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-[11px] text-slate-700 dark:text-[#B9A5CD]">
                       <span className="rounded bg-violet-50 px-2 py-0.5 font-semibold text-[#6D32D9] border border-violet-200 dark:bg-violet-950/50 dark:border-violet-800/40 dark:text-violet-300">
@@ -799,11 +889,11 @@ export const IngestServerView: React.FC<Props> = ({
                       {rec.is_active ? (
                         <span className="inline-flex items-center gap-1.5 font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px] whitespace-nowrap dark:bg-rose-950/50 dark:border-rose-900/60 dark:text-rose-400">
                           <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
-                          REC {formatRecordingDuration(rec.duration || (rec.start_time ? (Date.now() - new Date(rec.start_time).getTime()) / 1000 : 0))}
+                          REC {formatRecordingDuration(getLiveDurationSeconds(rec))}
                         </span>
                       ) : (
                         <span className="text-[#6F6078] text-[11px] dark:text-[#8E78A6]">
-                          {formatRecordingDuration(rec.duration || (rec.start_time && rec.end_time ? (new Date(rec.end_time).getTime() - new Date(rec.start_time).getTime()) / 1000 : 0))}
+                          {formatRecordingDuration(getLiveDurationSeconds(rec))}
                         </span>
                       )}
                     </td>
@@ -974,7 +1064,10 @@ export const IngestServerView: React.FC<Props> = ({
                   <p className="font-mono font-bold text-[#2563EB] dark:text-[#60A5FA]">{getRecordingFormat(recPreview).toUpperCase()}</p>
                 </div>
               </div>
-              <CodeField value={`/media/recordings/${recPreview.file_name}`} label="Recording Storage Path" />
+              <CodeField
+                value={recPreview.file_path || `media/recordings/${recPreview.file_name}`}
+                label="Recording Storage Path"
+              />
             </div>
           )}
         </DetailDrawer>

@@ -316,18 +316,21 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
-          liveSyncDurationCount: 3,
-          liveMaxLatencyDurationCount: 8,
-          maxBufferLength: 8,
-          maxMaxBufferLength: 16,
+          liveSyncDurationCount: 2,
+          liveMaxLatencyDurationCount: 6,
+          maxBufferLength: 10,
+          maxMaxBufferLength: 20,
           liveDurationInfinity: true,
-          highBufferWatchdogPeriod: 2,
+          highBufferWatchdogPeriod: 1,
           backBufferLength: 0,
-          lowLatencyMode: false,
-          manifestLoadingTimeOut: 10000,
-          manifestLoadingMaxRetry: 6,
-          levelLoadingTimeOut: 10000,
-          fragLoadingTimeOut: 10000,
+          lowLatencyMode: true,
+          nudgeOffset: 0.1,
+          nudgeMaxRetry: 10,
+          maxFragLookUpTolerance: 0.25,
+          manifestLoadingTimeOut: 8000,
+          manifestLoadingMaxRetry: 8,
+          levelLoadingTimeOut: 8000,
+          fragLoadingTimeOut: 8000,
           fragLoadingMaxRetry: 8,
         });
         hls.loadSource(src);
@@ -370,23 +373,24 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
               hls.recoverMediaError();
             } else {
               setLoading(false);
-              setError('Stream initializing or buffering…');
+              setError('Stream initializing or reconnecting…');
               setTimeout(() => {
-                if (hlsRef.current) {
+                if (hlsRef.current && videoRef.current) {
                   hls.loadSource(src);
-                  hls.attachMedia(video);
+                  hls.attachMedia(videoRef.current);
                 }
-              }, 1200);
+              }, 800);
             }
           } else if (
             data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
             data.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL ||
-            data.details === Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE
+            data.details === Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE ||
+            data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR
           ) {
             if (video.buffered.length > 0) {
               const liveEdge = video.buffered.end(video.buffered.length - 1);
-              if (Math.abs(video.currentTime - liveEdge) > 2) {
-                video.currentTime = Math.max(0, liveEdge - 0.4);
+              if (Math.abs(video.currentTime - liveEdge) > 1.5) {
+                video.currentTime = Math.max(0, liveEdge - 0.2);
               }
             }
             if (video.paused && autoPlayRef.current) {

@@ -3,25 +3,23 @@ const { normalizeUserRole } = require('./securityPolicy');
 
 const toPrismaRole = role => ({ superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER', operator: 'USER', archive: 'USER' })[normalizeUserRole(role)] || 'USER';
 const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: normalizeUserRole(row.role), is_active: row.isActive !== false, created_at: row.createdAt });
-const snakeLicense = row => row && ({ id: row.id, customer_name: row.customerName, customer_email: row.customerEmail, license_key: row.licenseKey, status: row.status, expires_at: row.expiresAt, created_at: row.createdAt });
 const snakeSession = row => row && ({ id: row.id, app: row.app, stream: row.stream, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, max_viewers: row.maxViewers, total_bytes: Number(row.totalBytes), outgoing_bytes: Number(row.outgoingBytes), video_info: row.videoInfo, audio_info: row.audioInfo });
-const snakeRecording = row => row && ({ id: row.id, app: row.app, stream: row.stream, file_path: row.filePath, file_name: row.fileName, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, size: Number(row.size), format: row.format, video_bitrate: row.videoBitrate, audio_bitrate: row.audioBitrate, encoder: row.encoder, resolution: row.resolution, continuous: row.continuous ? 1 : 0, source_type: row.sourceType, settings_json: row.settingsJson });
+const snakeRecording = row => row && ({ id: row.id, app: row.app, stream: row.stream, file_path: row.filePath, file_name: row.fileName, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, size: Number(row.size), duration: Number(row.duration) || 0, format: row.format, video_bitrate: row.videoBitrate, audio_bitrate: row.audioBitrate, encoder: row.encoder, resolution: row.resolution, continuous: row.continuous ? 1 : 0, source_type: row.sourceType, settings_json: row.settingsJson });
 
 class PrismaStore {
   constructor() {
     this.prisma = new PrismaClient();
-    this.data = { users: [], kv: [], profiles: [], channels: [], licenses: [], sessions: [], recordings: [] };
+    this.data = { users: [], kv: [], profiles: [], channels: [], sessions: [], recordings: [] };
     this.pending = Promise.resolve();
   }
 
   async initialize() {
     await this.prisma.$connect();
-    const [users, kv, profiles, channels, licenses, sessions, recordings] = await Promise.all([
+    const [users, kv, profiles, channels, sessions, recordings] = await Promise.all([
       this.prisma.user.findMany().catch(() => []),
       this.prisma.kvStore.findMany().catch(() => []),
       this.prisma.transcodeProfile.findMany().catch(() => []),
       this.prisma.transcodeChannel.findMany().catch(() => []),
-      this.prisma.generatedLicense.findMany().catch(() => []),
       this.prisma.streamSession.findMany().catch(() => []),
       this.prisma.streamRecording.findMany().catch(() => []),
     ]);
@@ -30,7 +28,6 @@ class PrismaStore {
       kv: kv.map(row => ({ key: row.key, value: row.value })),
       profiles: profiles.map(row => ({ id: row.id, data: row.data })),
       channels: channels.map(row => ({ id: row.id, data: row.data })),
-      licenses: licenses.map(snakeLicense),
       sessions: sessions.map(snakeSession),
       recordings: (() => {
         const clean = [];
@@ -72,7 +69,6 @@ class PrismaStore {
     if (sql.includes('from users')) return [...this.data.users];
     if (sql.includes('from profiles')) return [...this.data.profiles];
     if (sql.includes('from channels')) return [...this.data.channels];
-    if (sql.includes('from generated_licenses')) return [...this.data.licenses].sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     if (sql.includes('from stream_sessions')) return [...this.data.sessions].sort((a,b) => new Date(b.start_time || 0) - new Date(a.start_time || 0)).slice(0, sql.includes('limit 8') ? 8 : 100);
     if (sql.includes('from stream_recordings')) {
       let rows = [...this.data.recordings];
@@ -91,7 +87,6 @@ class PrismaStore {
     if (sql.includes('from users where username')) return this.data.users.find(row => row.username === args[0]);
     if (sql.includes('from users where id')) return this.data.users.find(row => Number(row.id) === Number(args[0]));
     if (sql.includes('from kv_store')) return this.data.kv.find(row => row.key === args[0]);
-    if (sql.includes('from generated_licenses where license_key')) return this.data.licenses.find(row => row.license_key === args[0]);
     if (sql.includes('from stream_recordings where id')) return this.data.recordings.find(row => Number(row.id) === Number(args[0]));
     if (sql.includes('from stream_recordings where file_name')) return this.data.recordings.find(row => row.file_name === args[0] || (row.file_path && row.file_path.endsWith(args[0])));
     if (sql.includes('from stream_recordings where file_path')) return this.data.recordings.find(row => row.file_path === args[0]);
@@ -193,41 +188,29 @@ class PrismaStore {
       return {};
     }
 
-    if (sql.startsWith('insert into generated_licenses')) {
-      const [customer_name, customer_email, license_key, expires_at] = args;
-      const id = Math.max(0, ...this.data.licenses.map(r => Number(r.id) || 0)) + 1;
-      const row = { id, customer_name, customer_email, license_key, status: 'active', expires_at, created_at: new Date() };
-      this.data.licenses.push(row);
-      this.persist(() => this.prisma.generatedLicense.create({ data: { id, customerName: customer_name, customerEmail: customer_email, licenseKey: license_key, expiresAt: new Date(expires_at) } }));
-      return { lastInsertRowid: id };
-    }
-
-    if (sql.startsWith('update generated_licenses')) {
-      const [status, id] = args;
-      const row = this.data.licenses.find(r => Number(r.id) === Number(id));
-      if (row) row.status = status;
-      this.persist(() => this.prisma.generatedLicense.update({ where: { id: Number(id) }, data: { status } }).catch(() => {}));
-      return {};
-    }
-
     if (sql.startsWith('insert into stream_recordings')) {
       const isAutoInsert = sql.includes('end_time') && sql.includes('size');
-      let app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json;
+      let app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, duration, settings_json;
       if (isAutoInsert) {
-        [app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json] = args;
+        if (sql.includes('duration')) {
+          [app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, duration, settings_json] = args;
+        } else {
+          [app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json] = args;
+        }
       } else {
         [app, stream, file_path, file_name, start_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, settings_json] = args;
         end_time = null;
         size = 0;
+        duration = 0;
       }
       const existing = this.data.recordings.find(r => r.file_name === file_name || (file_path && r.file_path === file_path));
       if (existing) return { lastInsertRowid: existing.id };
 
       const id = Math.max(0, ...this.data.recordings.map(r => Number(r.id) || 0)) + 1;
-      const row = { id, app, stream, file_path, file_name, start_time, end_time: end_time || null, size: Number(size) || 0, format, video_bitrate: Number(video_bitrate) || 50000, audio_bitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: continuous ? 1 : 0, source_type: source_type || 'device', settings_json };
+      const row = { id, app, stream, file_path, file_name, start_time, end_time: end_time || null, size: Number(size) || 0, duration: Number(duration) || 0, format, video_bitrate: Number(video_bitrate) || 50000, audio_bitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: continuous ? 1 : 0, source_type: source_type || 'device', settings_json };
       this.data.recordings.push(row);
       this.persist(() => this.prisma.streamRecording.create({
-        data: { id, app, stream, filePath: file_path, fileName: file_name, startTime: new Date(start_time), endTime: end_time ? new Date(end_time) : null, size: BigInt(size || 0), format, videoBitrate: Number(video_bitrate) || 50000, audioBitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: !!continuous, sourceType: source_type || 'device', settingsJson: settings_json }
+        data: { id, app, stream, filePath: file_path, fileName: file_name, startTime: new Date(start_time), endTime: end_time ? new Date(end_time) : null, size: BigInt(size || 0), duration: Number(duration) || 0, format, videoBitrate: Number(video_bitrate) || 50000, audioBitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: !!continuous, sourceType: source_type || 'device', settingsJson: settings_json }
       }).catch(() => {}));
       return { lastInsertRowid: id };
     }
@@ -249,14 +232,41 @@ class PrismaStore {
 
     if (sql.startsWith('update stream_recordings set end_time')) {
       const hasCoalesce = sql.includes('coalesce');
-      const [end, size, idValue] = args;
+      const updatesSize = sql.includes('size =');
+      const updatesDuration = sql.includes('duration =');
+      const [end, size, duration, idValue] = updatesSize && updatesDuration
+        ? args
+        : updatesSize
+          ? [args[0], args[1], undefined, args[2]]
+          : [args[0], undefined, undefined, args[1]];
       const id = Number(idValue);
       const row = this.data.recordings.find(r => Number(r.id) === id);
       if (row) {
         if (!hasCoalesce || !row.end_time) row.end_time = end;
-        row.size = Number(size);
+        if (updatesSize) row.size = Number(size);
+        if (updatesDuration) row.duration = Number(duration) || 0;
       }
-      this.persist(() => this.prisma.streamRecording.update({ where: { id }, data: { endTime: new Date(end), size: BigInt(size) } }).catch(() => {}));
+      const updateData = { endTime: new Date(end) };
+      if (updatesSize) updateData.size = BigInt(size);
+      if (updatesDuration) updateData.duration = Number(duration) || 0;
+      this.persist(() => this.prisma.streamRecording.update({
+        where: { id },
+        data: updateData
+      }).catch(() => {}));
+      return {};
+    }
+
+    if (sql.startsWith('update stream_recordings set duration')) {
+      const [duration, size, idValue] = sql.includes('size =') ? args : [args[0], undefined, args[1]];
+      const id = Number(idValue);
+      const row = this.data.recordings.find(r => Number(r.id) === id);
+      if (row) {
+        row.duration = Number(duration) || 0;
+        if (size !== undefined) row.size = Number(size) || 0;
+      }
+      const data = { duration: Number(duration) || 0 };
+      if (size !== undefined) data.size = BigInt(size || 0);
+      this.persist(() => this.prisma.streamRecording.update({ where: { id }, data }).catch(() => {}));
       return {};
     }
 

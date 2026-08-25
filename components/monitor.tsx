@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Activity,
   Cpu,
@@ -181,23 +181,6 @@ const initialTelemetryState: TelemetryState = {
 
 const useSystemStats = () => {
   const [stats, setStats] = useState<TelemetryState>(initialTelemetryState);
-  const isFetchingRestRef = useRef(false);
-
-  const fetchRestStats = async () => {
-    if (isFetchingRestRef.current) return;
-    isFetchingRestRef.current = true;
-    try {
-      const res = await fetch('/api/system/stats');
-      if (res.ok) {
-        const payload = await res.json();
-        processPayload(payload);
-      }
-    } catch {
-      // Ignore REST failure if WS is active
-    } finally {
-      isFetchingRestRef.current = false;
-    }
-  };
 
   const processPayload = (payload: any) => {
     const totalRx = typeof payload.lastRx === 'number'
@@ -237,13 +220,7 @@ const useSystemStats = () => {
   };
 
   useEffect(() => {
-    fetchRestStats();
     sendRealtime({ type: 'systeminfo' });
-
-    const interval = setInterval(() => {
-      sendRealtime({ type: 'systeminfo' });
-      fetchRestStats();
-    }, 2000);
 
     const unsubscribe = subscribeRealtime(
       message => {
@@ -254,7 +231,6 @@ const useSystemStats = () => {
       isConnected => {
         if (isConnected) {
           sendRealtime({ type: 'systeminfo' });
-          fetchRestStats();
         } else {
           setStats(prev => ({
             ...prev,
@@ -266,12 +242,11 @@ const useSystemStats = () => {
     );
 
     return () => {
-      clearInterval(interval);
       unsubscribe();
     };
   }, []);
 
-  return { stats, manualRefresh: fetchRestStats };
+  return { stats, manualRefresh: () => sendRealtime({ type: 'systeminfo' }) };
 };
 
 const CompactProgressBar: React.FC<{ value: number; color?: string; className?: string }> = ({

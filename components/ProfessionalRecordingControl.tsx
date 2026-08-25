@@ -1,17 +1,58 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FiChevronDown, FiDisc, FiEye, FiEyeOff, FiRefreshCw, FiVideo, FiSquare, FiMaximize, FiMinimize, FiHardDrive } from 'react-icons/fi';
-import { IngestRecordingOptions, TranscodingProfile, VideoCodec, DecklinkFormat, StorageStatusResponse } from '../types';
-import { DEFAULT_DECKLINK_FORMATS } from '../constants';
-import DetailDrawer from './ui/DetailDrawer';
-import { subscribeRealtime } from '../services/realtime';
-import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  FiChevronDown,
+  FiDisc,
+  FiEye,
+  FiEyeOff,
+  FiRefreshCw,
+  FiVideo,
+  FiSquare,
+  FiMaximize2,
+  FiMinimize2,
+  FiHardDrive,
+  FiPlus,
+  FiTrash2,
+  FiCheck,
+  FiCheckCircle,
+  FiStar,
+  FiEdit3,
+  FiCamera,
+  FiMic,
+  FiFolder,
+  FiSliders,
+  FiPlay,
+  FiSave,
+  FiActivity,
+  FiTv,
+  FiLayers,
+  FiDownload,
+  FiUpload,
+  FiCopy,
+  FiAlertCircle,
+} from "react-icons/fi";
+import {
+  IngestRecordingOptions,
+  RecordingEncoderCapability,
+  RecordingProfileSummary,
+  StorageLocation,
+  TranscodingProfile,
+  VideoCodec,
+  DecklinkFormat,
+  StorageStatusResponse,
+} from "../types";
+import { DEFAULT_DECKLINK_FORMATS } from "../constants";
+import DetailDrawer from "./ui/DetailDrawer";
+import KashtrixMediaPlayer from "./ui/KashtrixMediaPlayer";
+import RecordingElapsedTimer from "./RecordingElapsedTimer";
+import { toast } from "react-hot-toast";
 
-type Format = IngestRecordingOptions['formats'][number];
+type Format = IngestRecordingOptions["formats"][number];
+const PROJECT_RECORDINGS_PATH = "media/recordings";
 
 export interface SavedRecordingPreset {
   id: string;
   name: string;
-  sourceType: 'device' | 'ingest';
+  sourceType: "device" | "ingest";
   videoDevice?: string;
   audioDevice?: string;
   selectedStreamKey?: string;
@@ -21,105 +62,189 @@ export interface SavedRecordingPreset {
 
 const DEFAULT_PRESETS: SavedRecordingPreset[] = [
   {
-    id: 'preset-decklink-50mbps',
-    name: 'DeckLink Master 1080p50 (50 Mbps NVENC CBR)',
-    sourceType: 'device',
-    videoDevice: 'Intensity Pro 4K',
-    audioDevice: 'Intensity Pro 4K',
+    id: "preset-decklink-50mbps",
+    name: "Broadcast Master 1080p50 (50 Mbps NVENC CBR)",
+    sourceType: "device",
+    videoDevice: "Intensity Pro 4K",
+    audioDevice: "Intensity Pro 4K",
     config: {
       autoRecord: false,
-      fileName: '{channel}_{date}_{time}',
-      formats: ['mp4'],
-      encoder: 'nvidia',
-      videoCodec: 'h264',
-      rateControl: 'cbr',
-      resolution: 'source',
+      fileName: "{channel}_{date}_{time}",
+      formats: ["mp4"],
+      encoder: "nvidia",
+      videoCodec: "h264",
+      rateControl: "cbr",
+      resolution: "source",
       framerate: 50,
       videoBitrate: 50000,
       maxBitrate: 55000,
-      preset: 'fast',
+      preset: "fast",
       gopSize: 60,
-      pixelFormat: 'yuv420p',
-      audioCodec: 'aac',
+      pixelFormat: "yuv420p",
+      audioCodec: "aac",
       audioBitrate: 192,
       sampleRate: 48000,
       audioChannels: 2,
       continuous: true,
-      videoInput: 'hdmi',
-      storageType: 'local',
-      storagePath: '/media/recordings',
+      videoInput: "hdmi",
+      storageType: "local",
+      storagePath: PROJECT_RECORDINGS_PATH,
     },
     createdAt: new Date().toISOString(),
   },
   {
-    id: 'preset-broadcast-15mbps',
-    name: 'Broadcast Standard 1080p50 (15 Mbps NVENC)',
-    sourceType: 'device',
-    videoDevice: 'Intensity Pro 4K',
-    audioDevice: 'Intensity Pro 4K',
+    id: "preset-broadcast-15mbps",
+    name: "Broadcast HD (1080p) (15 Mbps CBR)",
+    sourceType: "device",
+    videoDevice: "Intensity Pro 4K",
+    audioDevice: "Intensity Pro 4K",
     config: {
       autoRecord: false,
-      fileName: '{channel}_{date}_{time}',
-      formats: ['mp4'],
-      encoder: 'nvidia',
-      videoCodec: 'h264',
-      rateControl: 'cbr',
-      resolution: 'source',
+      fileName: "{channel}_{date}_{time}",
+      formats: ["mp4"],
+      encoder: "nvidia",
+      videoCodec: "h264",
+      rateControl: "cbr",
+      resolution: "source",
       framerate: 50,
       videoBitrate: 15000,
       maxBitrate: 18000,
-      preset: 'fast',
+      preset: "fast",
       gopSize: 60,
-      pixelFormat: 'yuv420p',
-      audioCodec: 'aac',
+      pixelFormat: "yuv420p",
+      audioCodec: "aac",
       audioBitrate: 192,
       sampleRate: 48000,
       audioChannels: 2,
       continuous: true,
-      videoInput: 'hdmi',
-      storageType: 'local',
-      storagePath: '/media/recordings',
+      videoInput: "hdmi",
+      storageType: "local",
+      storagePath: PROJECT_RECORDINGS_PATH,
     },
     createdAt: new Date().toISOString(),
   },
   {
-    id: 'preset-ingest-copy',
-    name: 'Live Ingest Direct Archive (Stream Copy)',
-    sourceType: 'ingest',
+    id: "preset-4k-master",
+    name: "4K UHD Master Archive (80 Mbps HEVC NVENC)",
+    sourceType: "device",
+    videoDevice: "Intensity Pro 4K",
+    audioDevice: "Intensity Pro 4K",
     config: {
       autoRecord: false,
-      fileName: '{channel}_{date}_{time}',
-      formats: ['mp4'],
-      encoder: 'copy',
-      videoCodec: 'h264',
-      rateControl: 'cbr',
-      resolution: 'source',
+      fileName: "{channel}_{date}_{time}",
+      formats: ["mp4", "mov"],
+      encoder: "nvidia",
+      videoCodec: "hevc",
+      rateControl: "cbr",
+      resolution: "3840x2160",
       framerate: 50,
-      videoBitrate: 50000,
-      maxBitrate: 55000,
-      preset: 'fast',
+      videoBitrate: 80000,
+      maxBitrate: 90000,
+      preset: "medium",
       gopSize: 60,
-      pixelFormat: 'yuv420p',
-      audioCodec: 'aac',
+      pixelFormat: "yuv422p",
+      audioCodec: "aac",
+      audioBitrate: 320,
+      sampleRate: 48000,
+      audioChannels: 2,
+      continuous: true,
+      videoInput: "hdmi",
+      storageType: "local",
+      storagePath: PROJECT_RECORDINGS_PATH,
+    },
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "preset-compact-720p",
+    name: "Compact HD 720p (4 Mbps x264)",
+    sourceType: "device",
+    config: {
+      autoRecord: false,
+      fileName: "{channel}_{date}_{time}",
+      formats: ["mp4"],
+      encoder: "cpu",
+      videoCodec: "h264",
+      rateControl: "cbr",
+      resolution: "1280x720",
+      framerate: 30,
+      videoBitrate: 4000,
+      maxBitrate: 5000,
+      preset: "fast",
+      gopSize: 60,
+      pixelFormat: "yuv420p",
+      audioCodec: "aac",
+      audioBitrate: 128,
+      sampleRate: 44100,
+      audioChannels: 2,
+      continuous: true,
+      storageType: "local",
+      storagePath: PROJECT_RECORDINGS_PATH,
+    },
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "preset-ingest-copy",
+    name: "Live Ingest Direct Archive (Stream Copy)",
+    sourceType: "ingest",
+    config: {
+      autoRecord: false,
+      fileName: "{channel}_{date}_{time}",
+      formats: ["mp4"],
+      encoder: "copy",
+      videoCodec: "h264",
+      rateControl: "cbr",
+      resolution: "source",
+      framerate: 50,
+      videoBitrate: 20000,
+      maxBitrate: 25000,
+      preset: "fast",
+      gopSize: 60,
+      pixelFormat: "yuv420p",
+      audioCodec: "aac",
       audioBitrate: 192,
       sampleRate: 48000,
       audioChannels: 2,
       continuous: true,
-      storageType: 'local',
-      storagePath: '/media/recordings',
+      storageType: "local",
+      storagePath: PROJECT_RECORDINGS_PATH,
     },
     createdAt: new Date().toISOString(),
   },
 ];
 
-const PRESETS_STORAGE_KEY = 'kte-saved-recording-configs';
+const PRESETS_STORAGE_KEY = "kte-saved-recording-presets-v2";
+
+const normalizeClientStoragePath = (value?: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return PROJECT_RECORDINGS_PATH;
+  const forward = raw.replace(/\\/g, "/");
+  const projectMedia = forward.match(/^(?:[a-z]:)?\/?media(?:\/(.*))?$/i);
+  if (!projectMedia) return raw;
+  const suffix = String(projectMedia[1] || "").replace(/^\/+|\/+$/g, "");
+  return suffix ? `media/${suffix}` : "media";
+};
 
 const getSavedPresets = (): SavedRecordingPreset[] => {
   try {
     const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
     if (!raw) return DEFAULT_PRESETS;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PRESETS;
+    return Array.isArray(parsed) && parsed.length > 0
+      ? parsed.map((preset: SavedRecordingPreset) => ({
+          ...preset,
+          config: {
+            ...preset.config,
+            storagePath: normalizeClientStoragePath(preset.config?.storagePath),
+            storageLocations: preset.config?.storageLocations?.map((location) => ({
+              ...location,
+              storagePath:
+                location.storageType === "local"
+                  ? normalizeClientStoragePath(location.storagePath)
+                  : location.storagePath,
+            })),
+          },
+        }))
+      : DEFAULT_PRESETS;
   } catch {
     return DEFAULT_PRESETS;
   }
@@ -127,30 +252,39 @@ const getSavedPresets = (): SavedRecordingPreset[] => {
 
 const defaultConfig: IngestRecordingOptions = {
   autoRecord: false,
-  fileName: '{channel}_{date}_{time}',
-  formats: ['mp4'],
-  encoder: 'nvidia',
-  videoCodec: 'h264',
-  rateControl: 'cbr',
-  resolution: 'source',
-  framerate: 50,
-  videoBitrate: 50000,
-  maxBitrate: 55000,
-  preset: 'fast',
-  gopSize: 60,
-  pixelFormat: 'yuv420p',
-  audioCodec: 'aac',
-  audioBitrate: 192,
+  fileName: "{channel}_{date}_{time}",
+  formats: ["mp4"],
+  encoder: "auto",
+  encoderSelectionVersion: 2,
+  videoCodec: "h264",
+  rateControl: "cbr",
+  crf: 20,
+  resolution: "source",
+  framerate: 25,
+  videoBitrate: 20000,
+  maxBitrate: 20000,
+  preset: "p4",
+  gopSize: 50,
+  pixelFormat: "yuv420p",
+  audioCodec: "aac",
+  audioBitrate: 256,
   sampleRate: 48000,
   audioChannels: 2,
   continuous: true,
+  storageType: "local",
+  storagePath: PROJECT_RECORDINGS_PATH,
+  formatCode: "Hi50",
+  videoInput: "sdi",
+  rawFormat: "uyvy422",
+  nvencInterlaceMode: "auto",
+  profileOverrides: {},
 };
 
 interface Props {
   config?: IngestRecordingOptions;
   setConfig?: React.Dispatch<React.SetStateAction<IngestRecordingOptions>>;
-  sourceType?: 'ingest' | 'device';
-  setSourceType?: (value: 'ingest' | 'device') => void;
+  sourceType?: "ingest" | "device";
+  setSourceType?: (value: "ingest" | "device") => void;
   streams?: Record<string, any>;
   selectedStreamKey?: string;
   setSelectedStreamKey?: (value: string) => void;
@@ -169,32 +303,33 @@ interface Props {
   isRecordingActive?: boolean;
   stopRecording?: () => void;
   profiles?: TranscodingProfile[];
+  recordingProfiles?: RecordingProfileSummary[];
+  recordingEncoders?: RecordingEncoderCapability[];
+  activeRecordings?: any[];
 }
 
-const selectClass = 'mt-1.5 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-[11px] disabled:bg-slate-100';
-const inputClass = 'mt-1.5 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-[11px]';
-const Label: React.FC<React.PropsWithChildren> = ({ children }) => <label className="min-w-0 text-[10px] font-medium text-slate-700">{children}</label>;
-const encoderFromProfile = (profile?: TranscodingProfile): IngestRecordingOptions['encoder'] => {
-  const codec = String(profile?.videoCodec || '').toLowerCase();
-  if (codec.includes('nvenc')) return 'nvidia';
-  if (codec.includes('qsv')) return 'intel';
-  if (codec.includes('amf')) return 'amd';
-  if (codec === VideoCodec.Copy || codec === 'copy') return 'copy';
-  return 'cpu';
-};
+const selectClass =
+  "mt-1.5 h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-800 focus:border-violet-600 focus:outline-none dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] disabled:opacity-50";
+const inputClass =
+  "mt-1.5 h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-800 focus:border-violet-600 focus:outline-none dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]";
+const Label: React.FC<React.PropsWithChildren> = ({ children }) => (
+  <label className="min-w-0 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">
+    {children}
+  </label>
+);
 
 const ProfessionalRecordingControl: React.FC<Props> = ({
   config = defaultConfig,
   setConfig = () => {},
-  sourceType = 'ingest',
+  sourceType = "device",
   setSourceType = () => {},
   streams = {},
-  selectedStreamKey = '',
+  selectedStreamKey = "",
   setSelectedStreamKey = () => {},
   videoDevices = [],
   audioDevices = [],
-  videoDevice = '',
-  audioDevice = '',
+  videoDevice = "",
+  audioDevice = "",
   setVideoDevice = () => {},
   setAudioDevice = () => {},
   refreshDevices = () => {},
@@ -206,41 +341,143 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   isRecordingActive = false,
   stopRecording = () => {},
   profiles = [],
+  recordingProfiles = [],
+  recordingEncoders = [],
+  activeRecordings = [],
 }) => {
-  const [profileId, setProfileId] = useState('source-default');
+  // Stepper state
+  const [activeStep, setActiveStep] = useState<number>(1);
+
+  // Inline setup panels, drawers & modals
+  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
+  const [destinationDrawerOpen, setDestinationDrawerOpen] = useState(false);
+  const [saveSetupModalOpen, setSaveSetupModalOpen] = useState(false);
+  const [managePresetsOpen, setManagePresetsOpen] = useState(false);
+  const [setupNameInput, setSetupNameInput] = useState("");
+
+  // Presets & Active Selection
+  const [savedPresets, setSavedPresets] =
+    useState<SavedRecordingPreset[]>(getSavedPresets());
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(
+    "preset-broadcast-15mbps",
+  );
+
+  // Selected Profile
+  const [profileId, setProfileId] = useState("source-default");
+
+  // Preview & dynamic hardware telemetry state
   const [previewing, setPreviewing] = useState(false);
   const [previewStarting, setPreviewStarting] = useState(false);
-  const [previewError, setPreviewError] = useState('');
-  const [activeHlsUrl, setActiveHlsUrl] = useState('');
-  const [previewTime, setPreviewTime] = useState(0);
-  const [detectedResolution, setDetectedResolution] = useState('');
-  const [detectedFramerate, setDetectedFramerate] = useState('');
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; directories?: string[] } | null>(null);
-  const [recordPreviewModalOpen, setRecordPreviewModalOpen] = useState(false);
+  const [previewStopping, setPreviewStopping] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [activeHlsUrl, setActiveHlsUrl] = useState("");
+  const [detectedResolution, setDetectedResolution] = useState("");
+  const [detectedFramerate, setDetectedFramerate] = useState("");
+  const [detectedPixelFormat, setDetectedPixelFormat] = useState("");
+  const [detectedAudioChannels, setDetectedAudioChannels] = useState("");
+  const [detectedAudioSampleRate, setDetectedAudioSampleRate] = useState(0);
+  const [signalDetected, setSignalDetected] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
-  const [deviceFormats, setDeviceFormats] = useState<Record<string, DecklinkFormat[]>>({});
+  const [deviceFormats, setDeviceFormats] = useState<
+    Record<string, DecklinkFormat[]>
+  >({});
+  const deviceSetupRef = useRef<HTMLDivElement | null>(null);
+  const workflowWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const workflowInlinePanelRef = useRef<HTMLDivElement | null>(null);
 
+  // Destination test connection
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testingLocationId, setTestingLocationId] = useState<string | null>(
+    null,
+  );
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    allPassed?: boolean;
+    total?: number;
+    passed?: number;
+    failed?: number;
+    message: string;
+    directories?: string[];
+    results?: Array<{
+      id?: string;
+      name?: string;
+      storageType: string;
+      success: boolean;
+      message: string;
+      path?: string;
+      directories?: string[];
+    }>;
+  } | null>(null);
+
+  // Storage status
+  const [storageStatus, setStorageStatus] =
+    useState<StorageStatusResponse | null>(null);
+  const [autoCreateDailyFolders, setAutoCreateDailyFolders] = useState(true);
+
+  const activeConfig = config || defaultConfig;
+  const activeFormats = activeConfig.formats || ["mp4"];
+  const selectedOutputFormat = activeFormats[activeFormats.length - 1] || "mp4";
+  const selectedRecordingProfile = recordingProfiles.find(profile => profile.extension === selectedOutputFormat);
+  const standardProfileSelected = ['mov', 'mkv', 'mxf'].includes(selectedOutputFormat);
+  const isLockedFormat = standardProfileSelected && !activeConfig.unlockStandardOverride;
+  const flvSelected = selectedOutputFormat === 'flv';
+
+  // Helper to patch config
+  const patch = (values: Partial<IngestRecordingOptions>) => {
+    if (typeof setConfig === "function") {
+      setConfig((previous) => {
+        const current = previous || defaultConfig;
+        const next: IngestRecordingOptions = { ...current, ...values };
+        if (activeFormats.length === 1 && activeFormats[0] !== 'ts') {
+          const extension = activeFormats[0];
+          const profileOverride = { ...(current.profileOverrides?.[extension] || {}) };
+          if (Object.prototype.hasOwnProperty.call(values, 'videoCodec')) profileOverride.videoCodec = values.videoCodec;
+          if (Object.prototype.hasOwnProperty.call(values, 'videoBitrate')) profileOverride.videoBitrate = values.videoBitrate;
+          if (Object.prototype.hasOwnProperty.call(values, 'maxBitrate')) profileOverride.maxBitrate = values.maxBitrate;
+          if (Object.prototype.hasOwnProperty.call(values, 'audioCodec')) profileOverride.audioCodec = values.audioCodec;
+          if (Object.prototype.hasOwnProperty.call(values, 'audioBitrate')) profileOverride.audioBitrate = values.audioBitrate;
+          if (Object.prototype.hasOwnProperty.call(values, 'audioChannels')) profileOverride.audioChannels = values.audioChannels;
+          if (Object.prototype.hasOwnProperty.call(values, 'sampleRate')) profileOverride.audioSampleRate = values.sampleRate;
+          if (Object.prototype.hasOwnProperty.call(values, 'gopSize')) profileOverride.gop = values.gopSize;
+          if (Object.prototype.hasOwnProperty.call(values, 'preset')) profileOverride.preset = values.preset;
+          if (Object.prototype.hasOwnProperty.call(values, 'pixelFormat')) profileOverride.pixelFormat = values.pixelFormat;
+          if (Object.prototype.hasOwnProperty.call(values, 'framerate')) profileOverride.framerate = values.framerate;
+          if (Object.prototype.hasOwnProperty.call(values, 'resolution')) profileOverride.resolution = values.resolution;
+          next.profileOverrides = {
+            ...(current.profileOverrides || {}),
+            [extension]: profileOverride,
+          };
+        }
+        return next;
+      });
+    }
+  };
+
+  // Fetch DeckLink / capture formats when device changes
   useEffect(() => {
     if (!videoDevice) return;
     if (deviceFormats[videoDevice]) return;
     const fetchFormats = async () => {
       try {
-        const token = localStorage.getItem('kte-auth-token');
-        const res = await fetch(`/api/ffmpeg/devices/${encodeURIComponent(videoDevice)}/formats`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const token = localStorage.getItem("kte-auth-token");
+        const res = await fetch(
+          `/api/ffmpeg/devices/${encodeURIComponent(videoDevice)}/formats`,
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          },
+        );
         if (res.ok) {
           const data = await res.json();
           if (data.formats?.length) {
-            setDeviceFormats(prev => ({ ...prev, [videoDevice]: data.formats }));
+            setDeviceFormats((prev) => ({
+              ...prev,
+              [videoDevice]: data.formats,
+            }));
             return;
           }
         }
       } catch {}
-      setDeviceFormats(prev => ({
+      setDeviceFormats((prev) => ({
         ...prev,
         [videoDevice]: DEFAULT_DECKLINK_FORMATS,
       }));
@@ -248,11 +485,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     fetchFormats();
   }, [videoDevice, deviceFormats]);
 
+  // Recording elapsed timer
   useEffect(() => {
     let timer: any;
     if (isRecordingActive) {
       timer = setInterval(() => {
-        setRecordingElapsed(prev => prev + 1);
+        setRecordingElapsed((prev) => prev + 1);
       }, 1000);
     } else {
       setRecordingElapsed(0);
@@ -260,17 +498,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, [isRecordingActive]);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const previewContainerRef = useRef<HTMLDivElement | null>(null);
-  const hlsRef = useRef<{ destroy: () => void } | null>(null);
-  const devicePreviewIdRef = useRef<string | null>(null);
-  const previewGenerationRef = useRef(0);
-  const [storageStatus, setStorageStatus] = useState<StorageStatusResponse | null>(null);
-
+  // Fetch disk storage status
   const fetchStorageStatus = useCallback(async () => {
     try {
-      const token = localStorage.getItem('kte-auth-token');
-      const res = await fetch('/api/storage/status', {
+      const token = localStorage.getItem("kte-auth-token");
+      const res = await fetch("/api/storage/status", {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
@@ -286,285 +518,262 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, [fetchStorageStatus]);
 
-  const activeConfig = config || defaultConfig;
-
-  const handleTestStorageConnection = async () => {
-    setTestingConnection(true);
-    setTestResult(null);
-    try {
-      const token = localStorage.getItem('kte-auth-token');
-      const res = await fetch('/api/storage/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(activeConfig),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Storage connection test failed');
-      setTestResult(data);
-    } catch (e: any) {
-      setTestResult({ success: false, message: e.message || 'Connection failed' });
-    } finally {
-      setTestingConnection(false);
-    }
-  };
-
-  const patch = (values: Partial<IngestRecordingOptions>) => {
-    if (typeof setConfig === 'function') {
-      setConfig(previous => ({ ...(previous || defaultConfig), ...values }));
-    }
-  };
-
-  const encodingDisabled = activeConfig.encoder === 'copy';
-  const selectedProfile = profiles.find(item => item.id === profileId);
-  const profileControlsHardware = !!selectedProfile;
-  const isStorageFull = Boolean(
-    storageStatus &&
-    storageStatus.safetyEnabled !== false &&
-    (!storageStatus.canRecord || storageStatus.isFull || (storageStatus.usePercent !== undefined && storageStatus.usePercent >= (storageStatus.thresholdPercent || 90)))
-  );
-  const baseStartDisabled = sourceType === 'device' ? !videoDevice && !audioDevice : !selectedStreamKey;
-  const startDisabled = baseStartDisabled || isStorageFull;
-  const sourceName = sourceType === 'device'
-    ? (videoDevice || audioDevice || 'channel')
-    : (streams[selectedStreamKey]?.name || selectedStreamKey.split('/').pop() || 'channel');
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, '0');
-  const localDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const previewBase = (activeConfig.fileName || '{channel}_{date}_{time}')
-    .replace(/\{channel\}/gi, sourceName.replace(/[^a-z0-9._-]+/gi, '-'))
-    .replace(/\{date\}/gi, localDate)
-    .replace(/\{time\}/gi, 'HH-MM-SS')
-    .replace(/\{timestamp\}/gi, String(Date.now()));
-
-  const releaseDevicePreview = useCallback((previewId?: string) => {
-    const token = localStorage.getItem('kte-auth-token');
-    const url = previewId ? `/api/ingest/device-preview/${encodeURIComponent(previewId)}` : '/api/ingest/device-preview/all';
-    fetch(url, {
-      method: 'DELETE',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      keepalive: true,
-    }).catch(() => {});
-  }, []);
-
-  const toggleFullscreen = () => {
-    if (!previewContainerRef.current) return;
-    if (!document.fullscreenElement) {
-      previewContainerRef.current.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
-    } else {
-      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
-    }
-  };
-
-  useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
-
-  const stopPreview = useCallback(async (notifyServer = true) => {
-    const currentId = devicePreviewIdRef.current;
-    devicePreviewIdRef.current = null;
-    setActiveHlsUrl('');
-    setPreviewing(false);
-    setPreviewStarting(false);
-    setPreviewError('');
-    setPreviewTime(0);
-
-    if (notifyServer) {
-      const token = localStorage.getItem('kte-auth-token');
-      try {
-        await fetch('/api/ingest/device-preview/stop', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            previewId: currentId || undefined,
-            videoDevice: videoDevice || undefined,
-            force: true,
-          }),
-        });
-      } catch {}
-    }
-  }, [videoDevice]);
-
-  const [serverDevicePreview, setServerDevicePreview] = useState<{
-    active: boolean;
-    previewId?: string;
-    videoDevice?: string;
-    audioDevice?: string;
-    hlsUrl?: string;
-    detectedResolution?: string;
-    detectedFramerate?: string;
-  } | null>(null);
-
-  // Check preview status on mount to recover active preview if matching selected device
+  // Check active preview status on mount
   useEffect(() => {
     let isMounted = true;
     const checkPreviewStatus = async () => {
-      if (sourceType !== 'device') return;
-      const token = localStorage.getItem('kte-auth-token');
+      if (sourceType !== "device") return;
+      const token = localStorage.getItem("kte-auth-token");
       try {
-        const res = await fetch('/api/ingest/device-preview/status', {
+        const res = await fetch("/api/ingest/device-preview/status", {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json().catch(() => ({}));
-        if (isMounted) {
-          if (data.active && data.previewId) {
-            setServerDevicePreview(data);
-          } else {
-            setServerDevicePreview(null);
-          }
+        if (isMounted && data.active && data.previewId) {
+          devicePreviewIdRef.current = data.previewId;
+          if (data.videoDevice) setVideoDevice(data.videoDevice);
+          if (data.audioDevice) setAudioDevice(data.audioDevice);
+          setActiveHlsUrl(
+            data.hlsUrl || `/hls/device-preview/${data.previewId}/index.m3u8`,
+          );
+          setPreviewing(true);
+          if (data.detectedResolution)
+            setDetectedResolution(data.detectedResolution);
+          if (data.detectedFramerate)
+            setDetectedFramerate(data.detectedFramerate);
+          setDetectedPixelFormat(data.detectedPixelFormat || "");
+          setDetectedAudioChannels(data.detectedAudioChannels || "");
+          setDetectedAudioSampleRate(
+            Number(data.detectedAudioSampleRate) || 0,
+          );
+          setSignalDetected(Boolean(data.hasSignal));
         }
       } catch {}
     };
     checkPreviewStatus();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [sourceType]);
 
-  // Listen for device preview state updates over WebSocket
-  useEffect(() => {
-    const unsubscribe = subscribeRealtime((msg) => {
-      if (msg.type === 'device_preview_state' && msg.payload) {
-        if (msg.payload.detectedResolution) {
-          setDetectedResolution(msg.payload.detectedResolution);
-        }
-        if (msg.payload.detectedFramerate) {
-          setDetectedFramerate(msg.payload.detectedFramerate);
-        }
-        if (msg.payload.active && msg.payload.previewId) {
-          setServerDevicePreview(msg.payload);
-        } else if (!msg.payload.active) {
-          setServerDevicePreview(null);
-        }
-      }
-    });
+  const devicePreviewIdRef = useRef<string | null>(null);
 
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  // Sync preview player based on selected device across client sessions
-  useEffect(() => {
-    if (sourceType === 'device' && serverDevicePreview?.active && serverDevicePreview.previewId) {
-      const isCurrentSession = Boolean(devicePreviewIdRef.current && serverDevicePreview.previewId === devicePreviewIdRef.current);
-      const isSameVideo = Boolean(videoDevice && (
-        serverDevicePreview.videoDevice === videoDevice ||
-        serverDevicePreview.videoDevice?.includes(videoDevice) ||
-        videoDevice.includes(serverDevicePreview.videoDevice)
-      ));
-      const isSameAudio = Boolean(!videoDevice && audioDevice && (
-        serverDevicePreview.audioDevice === audioDevice ||
-        serverDevicePreview.audioDevice?.includes(audioDevice) ||
-        audioDevice.includes(serverDevicePreview.audioDevice)
-      ));
-
-      if (isCurrentSession || isSameVideo || isSameAudio) {
-        devicePreviewIdRef.current = serverDevicePreview.previewId;
-        setActiveHlsUrl(serverDevicePreview.hlsUrl || `/hls/device-preview/${serverDevicePreview.previewId}/index.m3u8`);
-        setPreviewing(true);
-        if (serverDevicePreview.detectedResolution) setDetectedResolution(serverDevicePreview.detectedResolution);
-        if (serverDevicePreview.detectedFramerate) setDetectedFramerate(serverDevicePreview.detectedFramerate);
+  // Start Device Preview
+  const startSourcePreview = useCallback(async () => {
+    if (sourceType === "device") {
+      if (!videoDevice && !audioDevice) {
+        setPreviewError(
+          "Select a video or audio device before starting preview.",
+        );
+        toast.error("Select a video or audio device before starting preview");
         return;
       }
-    }
-
-    if (sourceType === 'device' && !serverDevicePreview?.active && !previewStarting) {
-      devicePreviewIdRef.current = null;
-      setActiveHlsUrl('');
-      setPreviewing(false);
-    }
-  }, [sourceType, videoDevice, audioDevice, serverDevicePreview, previewStarting]);
-
-  const startSourcePreview = async () => {
-    if (previewStarting) return;
-    setPreviewError('');
-    setPreviewStarting(true);
-    const currentVideoDev = videoDevice;
-    const currentAudioDev = audioDevice;
-
-    try {
-      if (sourceType === 'device') {
-        if (!currentVideoDev && !currentAudioDev) {
-          throw new Error('Please select a video or audio capture device first');
-        }
-        const token = localStorage.getItem('kte-auth-token');
-        const response = await fetch('/api/ingest/device-preview/start', {
-          method: 'POST',
+      setPreviewStarting(true);
+      setPreviewError("");
+      setSignalDetected(false);
+      try {
+        const token = localStorage.getItem("kte-auth-token");
+        const res = await fetch("/api/ingest/device-preview/start", {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            videoDevice: currentVideoDev,
-            audioDevice: currentAudioDev,
-            resolution: activeConfig.resolution,
+            videoDevice,
+            audioDevice,
+            videoInput: activeConfig.videoInput,
+            formatCode: activeConfig.formatCode,
+            resolution:
+              activeConfig.resolution === "source"
+                ? undefined
+                : activeConfig.resolution,
             framerate: activeConfig.framerate,
-            videoInput: activeConfig.videoInput || 'hdmi',
-            formatCode: activeConfig.formatCode || '',
+            rawFormat: activeConfig.rawFormat,
           }),
         });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || 'FFmpeg could not start the device preview');
+        const data = await res.json();
+        if (!res.ok)
+          throw new Error(data.message || "Failed to start device preview");
         devicePreviewIdRef.current = data.previewId;
-        if (data.detectedResolution) setDetectedResolution(data.detectedResolution);
-        if (data.detectedFramerate) setDetectedFramerate(data.detectedFramerate);
         setActiveHlsUrl(data.hlsUrl);
         setPreviewing(true);
-        setServerDevicePreview({
-          active: true,
-          previewId: data.previewId,
-          videoDevice: data.videoDevice || currentVideoDev,
-          audioDevice: data.audioDevice || currentAudioDev,
-          hlsUrl: data.hlsUrl,
-          detectedResolution: data.detectedResolution,
-          detectedFramerate: data.detectedFramerate,
-        });
-      } else if (selectedStreamKey) {
-        const encodedStreamKey = selectedStreamKey.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-        setActiveHlsUrl(`/hls/${encodedStreamKey}/index.m3u8`);
-        setPreviewing(true);
+        if (data.detectedResolution)
+          setDetectedResolution(data.detectedResolution);
+        if (data.detectedFramerate)
+          setDetectedFramerate(data.detectedFramerate);
+        setDetectedPixelFormat(data.detectedPixelFormat || "");
+        setDetectedAudioChannels(data.detectedAudioChannels || "");
+        setDetectedAudioSampleRate(
+          Number(data.detectedAudioSampleRate) || 0,
+        );
+        setSignalDetected(Boolean(data.hasSignal));
+        toast.success(`Preview started for ${videoDevice || audioDevice}`);
+      } catch (err: any) {
+        setPreviewError(err.message || "Device preview error");
+        setSignalDetected(false);
+        toast.error(err.message || "Failed to start preview");
+      } finally {
+        setPreviewStarting(false);
       }
-    } catch (err: any) {
-      setPreviewError(`Unable to preview source: ${err.message || 'Unknown error'}`);
-      setPreviewing(false);
-      setActiveHlsUrl('');
-    } finally {
-      setPreviewStarting(false);
-    }
-  };
-
-  const handleDeviceSelectionChange = (type: 'video' | 'audio', value: string) => {
-    if (type === 'video') {
-      setVideoDevice?.(value);
     } else {
-      setAudioDevice?.(value);
+      if (!selectedStreamKey) {
+        setPreviewError("Select an active stream key to preview");
+        toast.error("Select an active stream key to preview");
+        return;
+      }
+      const stream = streams[selectedStreamKey];
+      const streamName = stream?.name || selectedStreamKey.split("/").pop();
+      const app = stream?.app || "live";
+      setActiveHlsUrl(`/hls/${app}/${streamName}/index.m3u8`);
+      setPreviewing(true);
+      setSignalDetected(true);
+      setPreviewError("");
+      toast.success(`Previewing live stream: ${streamName}`);
+    }
+  }, [
+    sourceType,
+    videoDevice,
+    audioDevice,
+    activeConfig.videoInput,
+    activeConfig.formatCode,
+    activeConfig.resolution,
+    activeConfig.framerate,
+    activeConfig.rawFormat,
+    selectedStreamKey,
+    streams,
+  ]);
+
+  // Stop Device Preview
+  const stopPreview = useCallback(
+    async (notifyServer = true) => {
+      if (previewStopping) return;
+      setPreviewStopping(true);
+      const currentId = devicePreviewIdRef.current;
+      let serverError = "";
+      try {
+        if (notifyServer && sourceType === "device") {
+          const token = localStorage.getItem("kte-auth-token");
+          const response = await fetch("/api/ingest/device-preview/stop", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              previewId: currentId || "current",
+              videoDevice: videoDevice || undefined,
+              force: true,
+            }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok)
+            throw new Error(body.error || body.message || "Unable to stop preview");
+        }
+      } catch (error) {
+        serverError =
+          error instanceof Error ? error.message : "Unable to stop preview";
+      } finally {
+        devicePreviewIdRef.current = null;
+        setActiveHlsUrl("");
+        setPreviewing(false);
+        setPreviewStarting(false);
+        setPreviewStopping(false);
+        setPreviewError("");
+        setSignalDetected(false);
+        setDetectedResolution("");
+        setDetectedFramerate("");
+        setDetectedPixelFormat("");
+        setDetectedAudioChannels("");
+        setDetectedAudioSampleRate(0);
+      }
+      if (serverError) toast.error(`Preview closed locally: ${serverError}`);
+      else toast.success("Preview stopped and capture device released");
+    },
+    [previewStopping, sourceType, videoDevice],
+  );
+
+  // Test Storage Connection
+  const handleTestStorageConnection = async (
+    targetLocation?: StorageLocation,
+  ) => {
+    setTestingConnection(true);
+    if (targetLocation?.id) setTestingLocationId(targetLocation.id);
+    else setTestingLocationId(null);
+    setTestResult(null);
+    try {
+      const token = localStorage.getItem("kte-auth-token");
+      const payload = targetLocation
+        ? { storageLocations: [targetLocation] }
+        : activeConfig;
+
+      const res = await fetch("/api/storage/test-connection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.message || "Storage connection test failed");
+      setTestResult(data);
+      if (data.success) {
+        toast.success(data.message || "Storage connection verified!");
+      } else {
+        toast.error(data.message || "Storage connection check failed");
+      }
+    } catch (e: any) {
+      const failObj = {
+        success: false,
+        message: e.message || "Connection failed",
+      };
+      setTestResult(failObj);
+      toast.error(failObj.message);
+    } finally {
+      setTestingConnection(false);
+      setTestingLocationId(null);
     }
   };
 
-  const [savedPresets, setSavedPresets] = useState<SavedRecordingPreset[]>(getSavedPresets);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
-  const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const [presetNameInput, setPresetNameInput] = useState('');
+  // Preset Handlers
+  const handleLoadPreset = (targetPresetId: string) => {
+    setSelectedPresetId(targetPresetId);
+    const target = savedPresets.find((p) => p.id === targetPresetId);
+    if (!target) return;
 
-  const handleLoadPreset = (presetId: string) => {
-    setSelectedPresetId(presetId);
-    if (!presetId) return;
-    const preset = savedPresets.find(p => p.id === presetId);
-    if (!preset) return;
-    if (preset.sourceType) setSourceType(preset.sourceType);
-    if (preset.videoDevice) setVideoDevice?.(preset.videoDevice);
-    if (preset.audioDevice) setAudioDevice?.(preset.audioDevice);
-    if (preset.selectedStreamKey) setSelectedStreamKey?.(preset.selectedStreamKey);
-    if (preset.config) setConfig?.(preset.config);
+    if (target.sourceType) {
+      setSourceType(target.sourceType);
+    }
+    if (
+      target.videoDevice !== undefined &&
+      typeof setVideoDevice === "function"
+    ) {
+      setVideoDevice(target.videoDevice);
+    }
+    if (
+      target.audioDevice !== undefined &&
+      typeof setAudioDevice === "function"
+    ) {
+      setAudioDevice(target.audioDevice);
+    }
+    if (
+      target.selectedStreamKey !== undefined &&
+      typeof setSelectedStreamKey === "function"
+    ) {
+      setSelectedStreamKey(target.selectedStreamKey);
+    }
+    if (target.config) {
+      patch(target.config);
+    }
+    toast.success(`Loaded preset: ${target.name}`);
   };
 
   const handleSavePreset = () => {
-    const name = presetNameInput.trim() || `Config ${savedPresets.length + 1}`;
+    const name =
+      setupNameInput.trim() ||
+      `${sourceName} Setup (${new Date().toLocaleDateString()})`;
     const newPreset: SavedRecordingPreset = {
       id: `preset-${Date.now()}`,
       name,
@@ -575,660 +784,2423 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       config: activeConfig,
       createdAt: new Date().toISOString(),
     };
-    const updated = [newPreset, ...savedPresets.filter(p => p.name !== name)];
+    const updated = [newPreset, ...savedPresets];
     setSavedPresets(updated);
-    try {
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
-    } catch {}
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
     setSelectedPresetId(newPreset.id);
-    setSaveModalOpen(false);
-    setPresetNameInput('');
-    save?.();
+    setSaveSetupModalOpen(false);
+    setSetupNameInput("");
+    toast.success(`Preset "${name}" saved successfully!`);
   };
 
-  const applyProfile = (id: string) => {
-    setProfileId(id);
-    if (id === 'source-default') {
+  const handleDeletePreset = (id: string) => {
+    const updated = savedPresets.filter((p) => p.id !== id);
+    setSavedPresets(updated);
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
+    if (selectedPresetId === id && updated.length > 0) {
+      setSelectedPresetId(updated[0].id);
+    }
+    toast.success("Preset deleted");
+  };
+
+  const handleResetPresets = () => {
+    setSavedPresets(DEFAULT_PRESETS);
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(DEFAULT_PRESETS));
+    setSelectedPresetId(DEFAULT_PRESETS[0].id);
+    toast.success("Presets reset to broadcast defaults");
+  };
+
+  // Profile application
+  const applyProfile = (targetProfileId: string) => {
+    setProfileId(targetProfileId);
+    if (targetProfileId === "source-default") {
       patch({
-        encoder: sourceType === 'device' ? 'nvidia' : 'copy',
-        videoCodec: 'h264',
-        resolution: 'source',
+        encoder: "nvidia",
+        videoCodec: "h264",
+        rateControl: "cbr",
+        resolution: "source",
         framerate: 50,
-        rateControl: 'cbr',
-        videoBitrate: 50000,
-        maxBitrate: 55000,
-        preset: 'fast',
+        videoBitrate: 20000,
+        maxBitrate: 25000,
+        preset: "fast",
         gopSize: 60,
-        pixelFormat: 'yuv420p',
-        audioCodec: 'aac',
-        audioBitrate: 192,
-        sampleRate: 48000,
-        audioChannels: 2,
       });
       return;
     }
-    if (id === 'custom') return;
-    const profile = profiles.find(item => item.id === id);
-    if (!profile) return;
-    const codec = [VideoCodec.H265, VideoCodec.HEVC_NVENC, VideoCodec.HEVC_AMF, VideoCodec.HEVC_VIDEOTOOLBOX].includes(profile.videoCodec) ? 'hevc' : 'h264';
-    const encoder = encoderFromProfile(profile);
+    const prof = profiles.find((p) => p.id === targetProfileId);
+    if (!prof) return;
     patch({
-      encoder: sourceType === 'device' && encoder === 'copy' ? 'cpu' : encoder,
-      videoCodec: codec,
-      resolution: sourceType === 'device' ? 'source' : (profile.resolution === 'N/A' ? 'source' : (profile.resolution || 'source')),
-      framerate: profile.framerate || (sourceType === 'device' ? 50 : 0),
-      rateControl: profile.videoQualityMode === 'crf' ? 'crf' : 'cbr',
-      videoBitrate: profile.videoBitrate || activeConfig.videoBitrate || 50000,
-      maxBitrate: profile.maxrate || profile.videoBitrate || activeConfig.maxBitrate || 55000,
-      crf: profile.crf || activeConfig.crf || 20,
-      audioBitrate: profile.audioBitrate || activeConfig.audioBitrate || 192,
-      sampleRate: profile.sampleRate || activeConfig.sampleRate || 48000,
-      preset: (['ultrafast', 'fast', 'medium', 'slow'].includes(profile.preset || '') ? profile.preset : 'fast') as any,
-      gopSize: Number(profile.gopSize) || Number(activeConfig.gopSize) || 60,
-      pixelFormat: (['yuv420p', 'yuv422p', 'yuv444p'].includes(profile.pixelFormat || '') ? profile.pixelFormat : 'yuv420p') as any,
+      encoder: prof.videoCodec?.includes("nvenc")
+        ? "nvidia"
+        : prof.videoCodec?.includes("qsv")
+          ? "intel"
+          : "cpu",
+      videoCodec: prof.videoCodec?.includes("hevc") ? "hevc" : "h264",
+      resolution: prof.resolution || "source",
+      framerate: prof.framerate || 50,
+      videoBitrate: prof.videoBitrate || 20000,
+      maxBitrate:
+        prof.maxrate || (prof.videoBitrate ? prof.videoBitrate + 5000 : 25000),
+      rateControl: "cbr",
+      audioCodec: (prof.audioCodec as any) || "aac",
+      audioBitrate: prof.audioBitrate || 192,
+      sampleRate: prof.sampleRate || 48000,
+      audioChannels: 2,
     });
   };
 
-  const activeFormats = (activeConfig.formats && activeConfig.formats.length > 0) ? activeConfig.formats : ['mp4'];
+  const isStorageFull = Boolean(
+    storageStatus &&
+    storageStatus.safetyEnabled !== false &&
+    (!storageStatus.canRecord ||
+      storageStatus.isFull ||
+      (storageStatus.usePercent !== undefined &&
+        storageStatus.usePercent >= (storageStatus.thresholdPercent || 90))),
+  );
 
-  return <>
-    {/* Harddisk Storage Capacity / Deadline Alert Banner */}
-    {isStorageFull && (
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50/95 p-3.5 text-xs text-rose-950 shadow-xs dark:border-rose-700/70 dark:bg-gradient-to-r dark:from-rose-950/90 dark:via-[#200a15] dark:to-[#17070f] dark:text-rose-100 dark:shadow-[0_0_24px_rgba(225,29,72,0.12)]">
-        <div className="flex items-center gap-3">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white shadow-sm ring-2 ring-rose-300/60 dark:ring-rose-500/40 animate-pulse">
-            !
-          </span>
-          <div className="space-y-0.5">
-            <span className="font-bold text-rose-700 dark:text-rose-300">
-              Harddisk Storage Limit Reached ({storageStatus?.usePercent?.toFixed(1) || '90'}% Full):
-            </span>
-            <span className="ml-1 text-rose-900 dark:text-rose-100">
-              Safety threshold enforced ({storageStatus?.thresholdPercent || 90}% limit / {storageStatus?.minFreeMb || 500}MB reserve). Starting new recordings is <strong className="text-rose-950 dark:text-white">disabled</strong> until disk space is freed.
-              {storageStatus ? ` Storage: ${storageStatus.usedFmt} used / ${storageStatus.sizeFmt} (${storageStatus.availableFmt} free remaining).` : ''}
-            </span>
-          </div>
-        </div>
-      </div>
-    )}
+  const baseStartDisabled =
+    sourceType === "device" ? !videoDevice && !audioDevice : !selectedStreamKey;
+  const startDisabled = baseStartDisabled || isStorageFull;
 
-    {/* Saved Configurations & Presets Bar */}
-    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E8DFF0] bg-white p-3 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E]">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-bold text-slate-700 dark:text-[#E2D1F9]">Saved Preset:</span>
-        <select
-          value={selectedPresetId}
-          onChange={e => handleLoadPreset(e.target.value)}
-          className="h-8 rounded-md border border-slate-200 bg-[#F8F7FA] px-2.5 text-[11px] font-medium text-slate-800 dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
-        >
-          <option value="">-- Load Saved Configuration --</option>
-          {savedPresets.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({p.sourceType === 'device' ? 'Hardware' : 'Ingest'})
-            </option>
-          ))}
-        </select>
-      </div>
+  // Real Dynamic Telemetry Computations (NO MOCK DATA)
+  const sourceName =
+    sourceType === "device"
+      ? videoDevice || audioDevice || "No capture device selected"
+      : streams[selectedStreamKey]?.name ||
+        selectedStreamKey.split("/").pop() ||
+        "No ingest stream selected";
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setPresetNameInput(`${sourceName} ${activeConfig.videoBitrate}k ${activeConfig.encoder.toUpperCase()}`);
-            setSaveModalOpen(true);
-          }}
-          className="flex h-8 items-center gap-1.5 rounded-md border border-[#7C3AED] bg-[#7C3AED]/10 px-3 text-[11px] font-semibold text-[#7C3AED] hover:bg-[#7C3AED]/20 transition-colors"
-        >
-          Save Current Configuration
-        </button>
-      </div>
-    </div>
-    <div className="mt-3 grid min-w-0 items-start gap-3 xl:grid-cols-[300px_minmax(0,680px)]">
-      <section className="app-panel min-w-0 p-4">
-        <div className="mb-4 flex items-center justify-between gap-3"><h3 className="panel-kicker"><FiVideo /> Source & capture</h3>{sourceType === 'device' && <button type="button" onClick={refreshDevices} className="rounded-lg border border-[#E8DFF0] p-2 text-[#7C3AED] transition hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45]" title="Detect devices"><FiRefreshCw className={devicesLoading ? 'animate-spin' : ''} /></button>}</div>
-        <div className="mb-4 grid grid-cols-2 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-0.5 dark:bg-[#211335] dark:border-[#371F59]">
-          <button type="button" onClick={() => { setSourceType('device'); patch({ sourceType: 'device', ...(activeConfig.encoder === 'copy' ? { encoder: 'cpu' as const } : {}) }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'device' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Capture device</button>
-          <button type="button" onClick={() => { setSourceType('ingest'); patch({ sourceType: 'ingest', formats: (activeConfig.formats && activeConfig.formats.length > 0 && !(activeConfig.formats.length === 1 && activeConfig.formats[0] === 'mov')) ? activeConfig.formats : ['mp4'] }); }} className={`rounded-md px-3 py-2 text-[11px] font-semibold transition ${sourceType === 'ingest' ? 'bg-[#7C3AED] text-white shadow-xs' : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'}`}>Live ingest</button>
-        </div>
-        <div className="grid grid-cols-1 gap-3">
-        {sourceType === 'device' ? <>
-          <Label>Video device<select value={videoDevice} onChange={event => handleDeviceSelectionChange('video', event.target.value)} className={selectClass}><option value="">No video</option>{videoDevices.map(device => <option key={device} value={device}>{device}</option>)}</select>{!devicesLoading && !videoDevices.length && <span className="mt-1 block text-[10px] text-amber-600">No capture device detected.</span>}</Label>
-          <Label>Audio device<select value={audioDevice} onChange={event => handleDeviceSelectionChange('audio', event.target.value)} className={selectClass}><option value="">No audio</option>{audioDevices.map(device => <option key={device} value={device}>{device}</option>)}</select></Label>
-          <div className="grid grid-cols-2 gap-2">
-            <Label>Video input
-              <select value={activeConfig.videoInput || 'hdmi'} onChange={event => patch({ videoInput: event.target.value as any })} className={selectClass}>
-                <option value="hdmi">HDMI</option>
-                <option value="sdi">SDI</option>
-                <option value="component">Component (YPbPr)</option>
-                <option value="composite">Composite (CVBS)</option>
-                <option value="s_video">S-Video</option>
-                <option value="optical_sdi">Optical SDI</option>
-                <option value="unset">Auto / Default</option>
-              </select>
-            </Label>
-            <Label>Signal standard
-              <select value={activeConfig.formatCode || ''} onChange={event => patch({ formatCode: event.target.value })} className={selectClass}>
-                <option value="">Auto / Native</option>
-                {((videoDevice && deviceFormats[videoDevice]) || DEFAULT_DECKLINK_FORMATS).map(f => (
-                  <option key={f.code} value={f.code}>
-                    {f.code} — {f.description}
-                  </option>
-                ))}
-              </select>
-            </Label>
-          </div>
-          {sourceType === 'device' && (
-            <div className="mt-1">
-              {detectedResolution ? (
-                <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-700/50 dark:text-emerald-300">
-                  <span className="font-semibold text-[10px] uppercase tracking-wider">Detected Source:</span>
-                  <span className="font-mono font-bold">{detectedResolution} {detectedFramerate ? `• ${detectedFramerate}` : ''}</span>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] text-slate-500 dark:bg-[#211335] dark:border-[#371F59] dark:text-slate-400">
-                  <span>Hardware Auto-Detect:</span>
-                  <span className="font-mono font-medium">Ready (Click Start preview)</span>
-                </div>
-              )}
-            </div>
-          )}
-        </> : <>
-          <Label>Active RTMP/SRT ingest<select value={selectedStreamKey} onChange={event => setSelectedStreamKey(event.target.value)} className={selectClass}><option value="">Select active ingest</option>{Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || 'live'})</option>)}</select>{!Object.keys(streams).length && <span className="mt-1 block text-[10px] text-amber-600">No ingest is publishing right now. Capture devices are still available in the other tab.</span>}</Label>
-        </>}
-        <div>
-          <Label>Recording filename
-            <input type="text" maxLength={180} value={activeConfig.fileName || ''} onChange={event => patch({ fileName: event.target.value })} placeholder="{channel}_{date}_{time}" className={inputClass} />
-          </Label>
-          <div className="mt-2 space-y-1 text-[9px] leading-relaxed text-slate-400">
-            <span className="block">Placeholders: {'{channel}'} {'{date}'} {'{time}'} {'{timestamp}'}</span>
-            <span className="block truncate font-mono text-violet-600">{previewBase}.{activeFormats[0] || 'mp4'}</span>
-          </div>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={() => {
-          if (previewing) {
-            void stopPreview(true);
-          } else {
-            void startSourcePreview();
-          }
-        }}
-        disabled={startDisabled || previewStarting}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {previewStarting ? (
-          <>
-            <FiRefreshCw size={13} className="animate-spin" />
-            <span>Starting preview…</span>
-          </>
-        ) : previewing ? (
-          <>
-            <FiEyeOff size={13} />
-            <span>Stop preview</span>
-          </>
-        ) : (
-          <>
-            <FiEye size={13} />
-            <span>Start preview</span>
-          </>
-        )}
-      </button>
-    </section>
+  const resolvedInputPort = (() => {
+    if (sourceType === "ingest")
+      return selectedStreamKey ? "Live ingest stream" : "No input selected";
+    if (!videoDevice && !audioDevice) return "No input selected";
+    const lower = (videoDevice || "").toLowerCase();
+    if (
+      lower.includes("webcam") ||
+      lower.includes("uvc") ||
+      lower.includes("camera")
+    ) {
+      return "USB Video Device (identified from device name)";
+    }
+    if (
+      lower.includes("decklink") ||
+      lower.includes("intensity") ||
+      lower.includes("blackmagic")
+    ) {
+      return `${(activeConfig.videoInput || "HDMI").toUpperCase()} Input · configured`;
+    }
+    return `${(activeConfig.videoInput || "DirectShow").toUpperCase()} Input · configured`;
+  })();
 
-      <section className="source-preview app-panel min-w-0 overflow-hidden bg-slate-950 p-2">
-        <KashtrixMediaPlayer
-          src={previewing ? (activeHlsUrl || (devicePreviewIdRef.current ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8` : undefined)) : undefined}
-          title={sourceName}
-          isLive={true}
-          isRecording={isRecordingActive}
-          showAudioMeter={true}
-          hasSignal={previewing && !previewError}
-          signalLabel={sourceType === 'device' ? 'Received Signal' : 'Stream Active'}
-          resolution={detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : undefined)}
-          framerate={detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : undefined)}
-          onResolutionDetected={(res, fps) => {
-            if (res) setDetectedResolution(res);
-            if (fps) setDetectedFramerate(fps);
-          }}
-          onRefresh={() => { void startSourcePreview(); }}
-        />
-        {previewError && <p className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-1.5 text-[10px] text-amber-200">{previewError}</p>}
-      </section>
-    </div>
+  const resolvedSignalStandard = (() => {
+    if (sourceType === "ingest")
+      return signalDetected ? "Live stream · detected" : "Not detected";
+    if (detectedResolution) {
+      return `${detectedResolution}${detectedFramerate ? ` · ${detectedFramerate}` : ""} · detected`;
+    }
+    if (activeConfig.formatCode)
+      return `${activeConfig.formatCode} · configured, not detected`;
+    return "Not detected";
+  })();
 
-    <div className="recording-settings-grid mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <section className="app-panel p-4">
-        <h3 className="panel-kicker mb-4">Video encoding</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Label>Transcoding profile<select value={profileId} onChange={event => applyProfile(event.target.value)} className={selectClass}><option value="source-default">Native Source / Direct Capture (Default — No Re-encoding)</option><option value="custom">Custom recording settings</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label>
-          <Label>Video codec<select disabled={encodingDisabled} value={activeConfig.videoCodec} onChange={event => patch({ videoCodec: event.target.value as any })} className={selectClass}><option value="h264">H.264 / AVC</option><option value="hevc">H.265 / HEVC</option></select></Label>
-          <Label>Rate control<select disabled={encodingDisabled} value={activeConfig.rateControl} onChange={event => patch({ rateControl: event.target.value as any })} className={selectClass}><option value="cbr">CBR broadcast</option><option value="vbr">VBR quality</option><option value="crf">Constant quality</option></select></Label>
-          <Label>Resolution<select disabled={encodingDisabled} value={activeConfig.resolution} onChange={event => patch({ resolution: event.target.value })} className={selectClass}><option value="source">Source / original</option><option value="7680x4320">8K UHD</option><option value="3840x2160">4K UHD 2160p</option><option value="2560x1440">QHD 1440p</option><option value="1920x1080">Full HD 1080p</option><option value="1280x720">HD 720p</option><option value="720x576">PAL 576p</option><option value="720x480">NTSC 480p</option></select></Label>
-          <Label>Frame rate<select disabled={encodingDisabled} value={activeConfig.framerate} onChange={event => patch({ framerate: Number(event.target.value) })} className={selectClass}><option value="0">Source</option><option value="23.976">23.976 fps</option><option value="24">24 fps</option><option value="25">25 fps</option><option value="29.97">29.97 fps</option><option value="30">30 fps</option><option value="50">50 fps</option><option value="59.94">59.94 fps</option><option value="60">60 fps</option><option value="120">120 fps</option></select></Label>
-          {activeConfig.rateControl === 'crf' ? <Label>CRF / CQ quality<input type="number" min="0" max="51" value={activeConfig.crf} onChange={event => patch({ crf: Number(event.target.value) })} className={inputClass} /></Label> : <Label>Target bitrate (Kbps)<input type="number" min="250" max="100000" value={activeConfig.videoBitrate} onChange={event => patch({ videoBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
-        </div>
-        <button type="button" onClick={() => setAdvancedOpen(value => !value)} className="mt-4 flex h-9 w-full items-center justify-between rounded-md border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" aria-expanded={advancedOpen}>Advanced video settings<FiChevronDown className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
-        {advancedOpen && <div className="mt-3 grid grid-cols-1 gap-4 border-t border-slate-200 pt-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Label>Hardware encoder<select value={activeConfig.encoder} disabled={profileControlsHardware} onChange={event => patch({ encoder: event.target.value as IngestRecordingOptions['encoder'] })} className={selectClass}><option value="copy" disabled={sourceType === 'device'}>Stream copy (ingest only)</option><option value="cpu">CPU software</option><option value="nvidia">NVIDIA NVENC</option><option value="intel">Intel Quick Sync</option><option value="amd">AMD AMF</option></select></Label>
-          {activeConfig.rateControl !== 'crf' && <Label>Maximum bitrate (Kbps)<input type="number" min="250" max="150000" value={activeConfig.maxBitrate} onChange={event => patch({ maxBitrate: Number(event.target.value) })} className={inputClass} /></Label>}
-          <Label>GOP / keyframe interval<input type="number" min="1" max="600" value={activeConfig.gopSize || 60} onChange={event => patch({ gopSize: Number(event.target.value) || 60 })} className={inputClass} /></Label>
-          <Label>Pixel format<select value={activeConfig.pixelFormat} onChange={event => patch({ pixelFormat: event.target.value as any })} className={selectClass}><option value="yuv420p">YUV 4:2:0</option><option value="yuv422p">YUV 4:2:2</option><option value="yuv444p">YUV 4:4:4</option></select></Label>
-          <Label>Encoder preset<select value={activeConfig.preset} onChange={event => patch({ preset: event.target.value as any })} className={selectClass}><option value="ultrafast">Ultra fast</option><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow / quality</option></select></Label>
-        </div>}
-      </section>
+  const resolvedResolution =
+    detectedResolution ||
+    (activeConfig.resolution !== "source"
+      ? `${activeConfig.resolution} · configured`
+      : "Not detected");
+  const resolvedFramerate =
+    detectedFramerate ||
+    (activeConfig.framerate
+      ? `${activeConfig.framerate} fps · configured`
+      : "Not detected");
+  const resolvedPixelFormat = detectedPixelFormat
+    ? `${detectedPixelFormat} · detected`
+    : activeConfig.pixelFormat
+      ? `${activeConfig.pixelFormat.toUpperCase()} · configured`
+      : "Not detected";
+  const configuredAudioChannels =
+    activeConfig.audioChannels === 1
+      ? "Mono · 1 channel"
+      : activeConfig.audioChannels === 6
+        ? "5.1 surround · 6 channels"
+        : `${activeConfig.audioChannels || 2} channels`;
+  const resolvedAudioChannels = detectedAudioChannels
+    ? `${detectedAudioChannels} · detected`
+    : `${configuredAudioChannels} · configured`;
+  const resolvedAudioSampleRate = detectedAudioSampleRate
+    ? `${detectedAudioSampleRate / 1000} kHz · detected`
+    : activeConfig.sampleRate
+      ? `${activeConfig.sampleRate / 1000} kHz · configured`
+      : "Not detected";
+  const resolvedSignalStatus =
+    previewing && signalDetected && !previewError
+      ? "Stable"
+      : previewing && !previewError
+        ? "Preview active · metadata pending"
+      : previewStarting
+        ? "Detecting..."
+        : videoDevice || selectedStreamKey
+          ? "Device Ready"
+          : "Standby / Idle";
 
-      <section className="app-panel rounded-2xl border border-slate-200 p-4 dark:border-[#311B4E] dark:bg-[#1E1130]/40">
-        <h3 className="panel-kicker mb-4">3. Professional audio</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Label>Audio codec<select value={activeConfig.audioCodec} onChange={event => patch({ audioCodec: event.target.value as any })} className={selectClass}><option value="aac">AAC</option><option value="mp3">MP3</option><option value="opus">Opus</option></select></Label>
-          <Label>Audio bitrate (Kbps)<input type="number" min="32" max="1024" value={activeConfig.audioBitrate} onChange={event => patch({ audioBitrate: Number(event.target.value) })} className={inputClass} /></Label>
-          <Label>Sample rate<select value={activeConfig.sampleRate} onChange={event => patch({ sampleRate: Number(event.target.value) })} className={selectClass}><option value="32000">32 kHz</option><option value="44100">44.1 kHz</option><option value="48000">48 kHz broadcast</option><option value="96000">96 kHz</option></select></Label>
-          <Label>Audio channels<select value={activeConfig.audioChannels} onChange={event => patch({ audioChannels: Number(event.target.value) })} className={selectClass}><option value="1">Mono</option><option value="2">Stereo</option><option value="6">5.1 surround</option><option value="8">7.1 surround</option></select></Label>
-        </div>
-      </section>
+  const selectedProfileObj = profiles.find((p) => p.id === profileId);
 
-      <section className="app-panel col-span-full rounded-2xl border border-slate-200 p-4 dark:border-[#311B4E] dark:bg-[#1E1130]/40">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+  const showWorkflowStep = (step: number) => {
+    setActiveStep(step);
+    setProfileDrawerOpen(step === 4);
+    setDestinationDrawerOpen(step === 5);
+    window.requestAnimationFrame(() => {
+      workflowWorkspaceRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
+  const openDeviceSetup = () => {
+    showWorkflowStep(1);
+    if (
+      !devicesLoading &&
+      videoDevices.length === 0 &&
+      audioDevices.length === 0
+    )
+      void refreshDevices();
+    window.requestAnimationFrame(() => {
+      deviceSetupRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  };
+
+  // Stepper Items
+  const workflowSteps = [
+    {
+      number: 1,
+      title: "Select Capture Device",
+      desc: "Choose your video & audio source",
+      completed: Boolean(videoDevice || selectedStreamKey),
+      onClick: openDeviceSetup,
+    },
+    {
+      number: 2,
+      title: "Signal Detection",
+      desc: "Detect & preview the incoming signal",
+      completed: signalDetected,
+      onClick: () => showWorkflowStep(2),
+    },
+    {
+      number: 3,
+      title: "Output Format",
+      desc: "Choose one or more containers",
+      completed: activeFormats.length > 0,
+      onClick: () => showWorkflowStep(3),
+    },
+    {
+      number: 4,
+      title: "Encoding Profile",
+      desc: "Auto preset or manual CPU/GPU encoding",
+      completed: true,
+      onClick: () => showWorkflowStep(4),
+    },
+    {
+      number: 5,
+      title: "Destination",
+      desc: "Set storage location",
+      completed: true,
+      onClick: () => showWorkflowStep(5),
+    },
+    {
+      number: 6,
+      title: "Ready to Record",
+      desc: "Review settings and start",
+      completed: !startDisabled,
+      onClick: () => showWorkflowStep(6),
+    },
+  ];
+
+  // Format options
+  const baseFormatOptions: Array<{
+    id: Format;
+    label: string;
+    desc: string;
+    isMaster?: boolean;
+  }> = [
+    { id: "mov", label: "MOV", desc: "V210 10-bit 4:2:2 / PCM 8ch", isMaster: true },
+    { id: "mkv", label: "MKV", desc: "V210 10-bit 4:2:2 / PCM 8ch", isMaster: true },
+    { id: "mxf", label: "MXF", desc: "MPEG-2 4:2:2 50 Mbps / PCM 8ch", isMaster: true },
+    { id: "mp4", label: "MP4", desc: "H.264 / HEVC · Auto GPU or CPU · AAC" },
+    { id: "flv", label: "FLV", desc: "H.264 · Auto GPU or CPU · AAC" },
+  ];
+
+  const formatOptions: Array<{
+    id: Format;
+    label: string;
+    desc: string;
+    isMaster?: boolean;
+    available?: boolean;
+    warning?: string;
+  }> = baseFormatOptions.map(option => {
+    const serverProfile = recordingProfiles.find(profile => profile.extension === option.id);
+    return serverProfile
+      ? {
+          ...option,
+          desc: serverProfile.description,
+          available: serverProfile.available,
+          warning: serverProfile.warning,
+        }
+      : option;
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* PRESETS TOOLBAR: Define, Load, Save, Manage Presets */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="panel-kicker">4. Simultaneous output formats</h3>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500">(Select one or multiple archival formats)</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-300">
+              <FiSliders size={14} />
+            </span>
+            <span className="text-[12px] font-extrabold uppercase tracking-wider text-slate-800 dark:text-white">
+              Recording Preset:
+            </span>
           </div>
-          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            MOV &amp; MKV = 100% Uncompressed Master Quality
-          </span>
+
+          <div className="relative min-w-[260px] max-w-[380px]">
+            <select
+              value={selectedPresetId}
+              onChange={(e) => handleLoadPreset(e.target.value)}
+              className="h-8 w-full appearance-none rounded-lg border border-slate-200 bg-[#F8F7FA] px-3 pr-8 text-[11px] font-bold text-slate-800 outline-none focus:border-violet-600 dark:bg-[#25163C] dark:border-[#371F59] dark:text-white"
+            >
+              <optgroup label="Broadcast Standards & Defaults">
+                {savedPresets
+                  .filter((p) => DEFAULT_PRESETS.some((dp) => dp.id === p.id))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </optgroup>
+              {savedPresets.filter(
+                (p) => !DEFAULT_PRESETS.some((dp) => dp.id === p.id),
+              ).length > 0 && (
+                <optgroup label="User Custom Presets">
+                  {savedPresets
+                    .filter(
+                      (p) => !DEFAULT_PRESETS.some((dp) => dp.id === p.id),
+                    )
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
+            </select>
+            <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+              <FiChevronDown size={14} />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleLoadPreset(selectedPresetId)}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
+          >
+            <FiUpload size={12} /> Load Preset
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {([
-            { id: 'mp4', name: 'MP4', badge: 'Compressed', desc: 'H.264 / HEVC Stream', uncompressed: false },
-            { id: 'mkv', name: 'MKV', badge: 'Uncompressed', desc: 'Master 4:2:2 (rawvideo)', uncompressed: true },
-            { id: 'mov', name: 'MOV', badge: 'Uncompressed', desc: 'Master 4:2:2 (2vuy/uyvy)', uncompressed: true },
-            { id: 'ts',  name: 'TS',  badge: 'Broadcast',   desc: 'MPEG-TS Transport', uncompressed: false },
-            { id: 'flv', name: 'FLV', badge: 'Streaming',   desc: 'RTMP / Flash Container', uncompressed: false },
-          ] as const).map(fmt => {
-            const isSelected = activeFormats.includes(fmt.id);
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSetupNameInput(`${sourceName} Setup`);
+              setSaveSetupModalOpen(true);
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 text-[11px] font-bold text-white shadow-xs hover:bg-violet-700 transition-colors"
+          >
+            <FiSave size={12} /> Save Preset
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setManagePresetsOpen(true)}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
+          >
+            <FiFolder size={12} /> Manage Presets
+          </button>
+        </div>
+      </div>
+
+      {/* Top 2-Column Split: Left Stepper Navigation + Right Main Signal Detection & Confidence Preview */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        {/* Left Column: Interactive Workflow Stepper */}
+        <div className="lg:col-span-4 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-2">
+          {workflowSteps.map((step) => {
+            const isActive = activeStep === step.number;
             return (
               <button
                 type="button"
-                key={fmt.id}
-                onClick={() => toggleFormat(fmt.id)}
-                className={`recording-format-btn group relative flex flex-col items-start justify-between rounded-xl border p-3 text-left transition-all duration-150 select-none ${
-                  isSelected
-                    ? 'border-[#7C3AED] bg-[#7C3AED] text-white shadow-sm ring-2 ring-[#7C3AED]/25 dark:border-[#7C3AED] dark:bg-[#7C3AED]'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-violet-300 hover:bg-slate-50/90 dark:bg-[#211335] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2B1744] dark:hover:border-[#522D85]'
+                key={step.number}
+                onClick={step.onClick}
+                className={`w-full flex items-center justify-between gap-3 rounded-xl p-3 text-left transition-all duration-150 select-none ${
+                  isActive
+                    ? "border-2 border-violet-600 bg-violet-50/60 shadow-xs dark:bg-violet-950/30 dark:border-violet-500"
+                    : "border border-transparent hover:bg-slate-50 hover:border-slate-200 dark:hover:bg-[#25163C] dark:hover:border-[#371F59]"
                 }`}
               >
-                <div className="flex w-full items-center justify-between gap-1">
-                  <span className="text-xs font-black uppercase tracking-wider">{fmt.name}</span>
-                  <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-tight ${
-                    isSelected
-                      ? 'bg-white/20 text-white'
-                      : fmt.uncompressed
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                  }`}>
-                    {fmt.badge}
-                  </span>
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
+                      isActive
+                        ? "bg-violet-600 text-white shadow-xs"
+                        : step.completed
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-500 dark:bg-[#2A1744] dark:text-[#B9A5CD]"
+                    }`}
+                  >
+                    {step.number}
+                  </div>
+                  <div>
+                    <h4
+                      className={`text-[13px] font-bold leading-tight ${isActive ? "text-violet-900 dark:text-violet-200" : "text-slate-800 dark:text-[#F1EAFA]"}`}
+                    >
+                      {step.title}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-tight mt-0.5">
+                      {step.desc}
+                    </p>
+                  </div>
                 </div>
-                <span className={`mt-2 block w-full truncate text-[10px] font-medium leading-tight ${
-                  isSelected ? 'text-violet-100' : 'text-slate-500 dark:text-slate-400'
-                }`}>
-                  {fmt.desc}
-                </span>
+
+                {step.completed && (
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    <FiCheck size={12} strokeWidth={3} />
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-2.5 text-[10px] leading-relaxed text-slate-600 dark:bg-[#211335]/40 dark:border-[#371F59] dark:text-slate-300">
-          <p className="font-semibold text-slate-700 dark:text-slate-200">Broadcast Quality Architecture:</p>
-          <ul className="mt-1 list-disc list-inside space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
-            <li><b className="text-slate-700 dark:text-slate-200">MOV (QuickTime):</b> 100% Broadcast Uncompressed Master (<code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">rawvideo</code> 4:2:2 <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">uyvy422</code> / <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">2vuy</code> + <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">pcm_s16le</code> audio).</li>
-            <li><b className="text-slate-700 dark:text-slate-200">MKV (Matroska):</b> 100% Uncompressed Master Quality (<code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">rawvideo</code> 4:2:2 <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">yuv422p</code> + <code className="font-mono text-[9px] bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded">pcm_s16le</code> audio).</li>
-            <li><b className="text-slate-700 dark:text-slate-200">MP4, TS &amp; FLV:</b> Streaming &amp; transport streams encoded with configured hardware (NVENC/AMF/QSV) or CPU encoder.</li>
-          </ul>
-        </div>
-      </section>
-    </div>
 
-    <section className="app-panel mt-3 p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="panel-kicker">5. Storage Destination & Network Target</h3>
-        <button
-          type="button"
-          onClick={handleTestStorageConnection}
-          disabled={testingConnection}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50 transition-colors"
+        {/* Right Column: 2. SIGNAL DETECTION & PREVIEW */}
+        <div
+          ref={workflowWorkspaceRef}
+          className="scroll-mt-4 lg:col-span-8 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-3"
         >
-          {testingConnection ? <FiRefreshCw className="animate-spin" /> : <FiDisc />}
-          {testingConnection ? 'Testing Connection…' : 'Test Connection & Access'}
-        </button>
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2.5 dark:border-[#371F59]">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                {activeStep}.{" "}
+                {workflowSteps.find((step) => step.number === activeStep)
+                  ?.title || "Signal Detection"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                  signalDetected && !previewError
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                    : previewing
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
+                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${signalDetected && !previewError ? "bg-emerald-500 animate-pulse" : previewing ? "bg-amber-500 animate-pulse" : "bg-slate-400"}`}
+                />
+                {signalDetected && !previewError
+                  ? "Signal Detected"
+                  : previewing
+                    ? "Preview Active · Detecting Metadata"
+                  : previewStarting
+                    ? "Detecting..."
+                    : "Standby / Ready"}
+              </span>
+            </div>
+          </div>
+
+          {/* Sub-grid: Left Details & Specs + Right Live Confidence Monitor */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+            {/* Left Details (REAL HARDWARE TELEMETRY) */}
+            <div className={`${activeStep === 2 ? "md:col-span-5" : "md:col-span-7"} flex flex-col justify-between space-y-3`}>
+              <div
+                ref={workflowInlinePanelRef}
+                className={activeStep === 4 || activeStep === 5 ? "block" : "hidden"}
+              />
+
+              {activeStep === 1 && (
+                <section ref={deviceSetupRef} className="scroll-mt-4 rounded-xl border border-violet-300 bg-violet-50/60 p-3.5 dark:border-[#51306F] dark:bg-[#25163C]">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5">
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-600 text-white">
+                        <FiTv size={15} />
+                      </span>
+                      <div>
+                        <h3 className="text-[12px] font-extrabold text-slate-900 dark:text-white">
+                          Capture Device &amp; Signal Input
+                        </h3>
+                        <p className="mt-0.5 text-[10px] text-slate-500 dark:text-[#B9A5CD]">
+                          Choose the source that will feed the confidence preview.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void refreshDevices()}
+                      disabled={devicesLoading}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 text-[10px] font-bold text-violet-700 disabled:opacity-50 dark:border-violet-800 dark:bg-[#1E1130] dark:text-violet-300"
+                    >
+                      <FiRefreshCw size={11} className={devicesLoading ? "animate-spin" : ""} />
+                      Refresh
+                    </button>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-[#371F59] dark:bg-[#211335]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSourceType("device");
+                        patch({ sourceType: "device" });
+                      }}
+                      className={`rounded-md px-2 py-1.5 text-[10px] font-bold transition ${sourceType === "device" ? "bg-violet-600 text-white" : "text-slate-600 dark:text-[#B9A5CD]"}`}
+                    >
+                      Capture Device
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSourceType("ingest");
+                        patch({ sourceType: "ingest" });
+                      }}
+                      className={`rounded-md px-2 py-1.5 text-[10px] font-bold transition ${sourceType === "ingest" ? "bg-violet-600 text-white" : "text-slate-600 dark:text-[#B9A5CD]"}`}
+                    >
+                      Live Ingest Stream
+                    </button>
+                  </div>
+
+                  {sourceType === "device" ? (
+                    <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                      <Label>
+                        Video Device
+                        <select value={videoDevice} onChange={(event) => setVideoDevice(event.target.value)} className={selectClass}>
+                          <option value="">Select video hardware…</option>
+                          {videoDevices.map((device) => <option key={device} value={device}>{device}</option>)}
+                        </select>
+                      </Label>
+                      <Label>
+                        Audio Device
+                        <select value={audioDevice} onChange={(event) => setAudioDevice(event.target.value)} className={selectClass}>
+                          <option value="">Select audio hardware…</option>
+                          {audioDevices.map((device) => <option key={device} value={device}>{device}</option>)}
+                        </select>
+                      </Label>
+                      <Label>
+                        Video Input
+                        <select value={activeConfig.videoInput || "hdmi"} onChange={(event) => patch({ videoInput: event.target.value })} className={selectClass}>
+                          <option value="hdmi">HDMI Input</option>
+                          <option value="sdi">SDI Input</option>
+                          <option value="optical_sdi">Optical SDI</option>
+                          <option value="component">Component Video</option>
+                          <option value="composite">Composite Video</option>
+                        </select>
+                      </Label>
+                      <Label>
+                        Signal Standard
+                        <select
+                          value={activeConfig.formatCode || ""}
+                          onChange={(event) => {
+                            const formatCode = event.target.value;
+                            const format = (deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS).find((item) => item.code === formatCode);
+                            patch({ formatCode, ...(format ? { resolution: format.resolution, framerate: Number(format.fps) } : { resolution: "source" }) });
+                          }}
+                          className={selectClass}
+                        >
+                          <option value="">Auto Detect Format</option>
+                          {(deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS).map((format) => (
+                            <option key={format.code} value={format.code}>{format.description || format.code} · {format.resolution} @ {format.fps} fps</option>
+                          ))}
+                        </select>
+                      </Label>
+                      <Label>
+                        Resolution
+                        <select value={activeConfig.resolution || "source"} onChange={(event) => patch({ resolution: event.target.value })} className={selectClass}>
+                          <option value="source">Follow detected signal</option>
+                          <option value="3840x2160">3840×2160 UHD</option>
+                          <option value="1920x1080">1920×1080 HD</option>
+                          <option value="1280x720">1280×720 HD</option>
+                          <option value="720x576">720×576 PAL</option>
+                          <option value="720x480">720×480 NTSC</option>
+                        </select>
+                      </Label>
+                      <Label>
+                        Frame Rate
+                        <select value={activeConfig.framerate || 50} onChange={(event) => patch({ framerate: Number(event.target.value) })} className={selectClass}>
+                          {[23.976, 24, 25, 29.97, 30, 50, 59.94, 60].map((rate) => <option key={rate} value={rate}>{rate} fps</option>)}
+                        </select>
+                      </Label>
+                      <Label>
+                        Pixel Format
+                        <select value={activeConfig.pixelFormat || "yuv420p"} onChange={(event) => patch({ pixelFormat: event.target.value as IngestRecordingOptions["pixelFormat"] })} className={selectClass}>
+                          <option value="yuv420p">YUV420P</option>
+                          <option value="yuv422p">YUV422P</option>
+                          <option value="yuv444p">YUV444P</option>
+                        </select>
+                      </Label>
+                      <Label>
+                        Audio Channels
+                        <select value={activeConfig.audioChannels || 2} onChange={(event) => patch({ audioChannels: Number(event.target.value) })} className={selectClass}>
+                          <option value={1}>Mono · 1 channel</option>
+                          <option value={2}>Stereo · 2 channels</option>
+                          <option value={6}>Surround · 6 channels</option>
+                          <option value={8}>Embedded · 8 channels</option>
+                        </select>
+                      </Label>
+                      <Label>
+                        Audio Sample Rate
+                        <select value={activeConfig.sampleRate || 48000} onChange={(event) => patch({ sampleRate: Number(event.target.value) })} className={selectClass}>
+                          <option value={44100}>44.1 kHz</option>
+                          <option value={48000}>48 kHz</option>
+                          <option value={96000}>96 kHz</option>
+                        </select>
+                      </Label>
+                    </div>
+                  ) : (
+                    <div className="mt-3">
+                      <Label>
+                        Active Ingest Stream
+                        <select value={selectedStreamKey} onChange={(event) => setSelectedStreamKey(event.target.value)} className={selectClass}>
+                          <option value="">Select incoming stream key…</option>
+                          {Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || "live"})</option>)}
+                        </select>
+                      </Label>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap items-end gap-2.5 border-t border-slate-200 pt-3 dark:border-[#371F59]">
+                    <div className="min-w-[220px] flex-1">
+                      <Label>
+                        Recording Filename Template
+                        <input type="text" value={activeConfig.fileName || ""} onChange={(event) => patch({ fileName: event.target.value })} className={inputClass} />
+                      </Label>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={previewStarting || (sourceType === "device" ? !videoDevice && !audioDevice : !selectedStreamKey)}
+                      onClick={() => {
+                        setActiveStep(2);
+                        void startSourcePreview();
+                      }}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white disabled:opacity-40"
+                    >
+                      <FiActivity size={12} /> Apply &amp; Detect
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {activeStep === 3 && (
+                <section className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-[#371F59] dark:bg-[#25163C]/60">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">Output Containers</h3>
+                      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-[#B9A5CD]">Select one or more simultaneous recording outputs.</p>
+                    </div>
+                    <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">{activeFormats.length} selected</span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {formatOptions.map((format) => {
+                      const selected = activeFormats.includes(format.id);
+                      return (
+                        <button type="button" key={format.id} disabled={format.available === false} title={format.warning} onClick={() => toggleFormat(format.id)} className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${selected ? "border-violet-600 bg-white ring-1 ring-violet-500 dark:bg-violet-950/30" : "border-slate-200 bg-white dark:border-[#371F59] dark:bg-[#1E1130]"}`}>
+                          <span className="flex items-center justify-between gap-2"><strong className="text-[12px] text-slate-900 dark:text-white">{format.label}</strong>{selected && <FiCheckCircle className="text-violet-600" size={14} />}</span>
+                          <span className="mt-1 block text-[10px] text-slate-500 dark:text-[#B9A5CD]">{format.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button type="button" onClick={() => showWorkflowStep(4)} disabled={!activeFormats.length} className="mt-3 h-9 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white disabled:opacity-40">Continue to Encoding</button>
+                </section>
+              )}
+
+              {activeStep === 6 && (
+                <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                  <div className="flex items-start gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-600 text-white"><FiCheckCircle size={17} /></span>
+                    <div>
+                      <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">Ready to Record</h3>
+                      <p className="mt-0.5 text-[10px] text-slate-600 dark:text-emerald-200/80">Review the source and output settings before recording.</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {[
+                      ["Source", sourceName],
+                      ["Signal", resolvedSignalStatus],
+                      ["Resolution", resolvedResolution],
+                      ["Profile", selectedProfileObj?.name || "Custom profile"],
+                      ["Formats", activeFormats.join(", ").toUpperCase()],
+                      ["Destination", activeConfig.storagePath || "Not configured"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-emerald-200/80 bg-white p-2.5 dark:border-emerald-900/60 dark:bg-[#1E1130]">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">{label}</span>
+                        <p className="mt-1 truncate text-[11px] font-bold text-slate-900 dark:text-white" title={String(value)}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {activeStep === 2 && (<>
+              {/* Device Header Card */}
+              <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 dark:bg-[#25163C] dark:border-[#371F59]">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                  <FiTv size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4
+                    className="truncate text-[13px] font-bold text-slate-900 dark:text-white"
+                    title={sourceName}
+                  >
+                    {sourceName}
+                  </h4>
+                  <p className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 uppercase">
+                    {resolvedInputPort}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={openDeviceSetup}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 dark:bg-[#1E1130] dark:border-[#371F59] dark:text-slate-200"
+                >
+                  Change
+                </button>
+              </div>
+
+              {/* Signal Specifications List (DYNAMIC REAL DATA) */}
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Signal Standard
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                    {resolvedSignalStandard}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Resolution
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                    {resolvedResolution}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Frame Rate
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                    {resolvedFramerate}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Pixel Format
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                    {resolvedPixelFormat}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Audio Channels
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                    {resolvedAudioChannels}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Audio Sample Rate
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                    {resolvedAudioSampleRate}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-slate-500 dark:text-[#B9A5CD]">
+                    Signal Status
+                  </span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    {resolvedSignalStatus}
+                    <FiCheck size={12} className="text-emerald-500" />
+                  </span>
+                </div>
+              </div>
+
+              {/* Re-detect Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  refreshDevices();
+                  void startSourcePreview();
+                }}
+                disabled={previewStarting || devicesLoading}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 transition-colors"
+              >
+                <FiRefreshCw
+                  size={12}
+                  className={
+                    previewStarting || devicesLoading ? "animate-spin" : ""
+                  }
+                />
+                Re-detect Signal
+              </button>
+              </>)}
+            </div>
+
+            {/* Right Live Confidence Monitor & VU Meters */}
+            <div className={`${activeStep === 2 ? "md:col-span-7" : "md:col-span-5"} flex flex-col justify-between space-y-2`}>
+              <div className="relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800 shadow-inner">
+                {/* Confidence Player */}
+                <KashtrixMediaPlayer
+                  src={
+                    previewing
+                      ? activeHlsUrl ||
+                        (devicePreviewIdRef.current
+                          ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8`
+                          : undefined)
+                      : undefined
+                  }
+                  title={sourceName}
+                  isLive={true}
+                  isRecording={isRecordingActive}
+                  showAudioMeter={true}
+                  hasSignal={previewing && signalDetected && !previewError}
+                  signalLabel={
+                    sourceType === "device"
+                      ? "Hardware Input Feed"
+                      : "Active Live Ingest"
+                  }
+                  resolution={resolvedResolution}
+                  framerate={resolvedFramerate}
+                  onResolutionDetected={(res, fps) => {
+                    if (res) setDetectedResolution(res);
+                    if (fps) setDetectedFramerate(fps);
+                  }}
+                  onRefresh={() => {
+                    void startSourcePreview();
+                  }}
+                />
+
+                {/* Status Overlay Badges */}
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10 pointer-events-none">
+                  <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
+                    Preview
+                  </span>
+                  <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
+                    {resolvedResolution}
+                  </span>
+                  <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
+                    16:9
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
+                Confidence preview monitor shows live feed from {sourceName}.
+                Ensure video and audio levels look correct before recording.
+              </p>
+
+              <RecordingElapsedTimer
+                recordings={activeRecordings}
+                title="Recording Timer & Details"
+                compact
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Live Target Harddisk Capacity Indicator */}
-      {storageStatus && (
-        <div className={`mb-3 rounded-xl border p-3 text-[11px] flex flex-wrap items-center justify-between gap-3 shadow-xs ${
-          storageStatus.isFull
-            ? 'border-rose-300 bg-rose-50/95 text-rose-950 dark:border-rose-700/70 dark:bg-gradient-to-r dark:from-rose-950/90 dark:via-[#200a15] dark:to-[#17070f] dark:text-rose-100'
-            : storageStatus.isWarning
-            ? 'border-amber-300 bg-amber-50/95 text-amber-950 dark:border-amber-700/70 dark:bg-gradient-to-r dark:from-amber-950/90 dark:via-[#221204] dark:to-[#180c03] dark:text-amber-100'
-            : 'border-emerald-300 bg-emerald-50/95 text-emerald-950 dark:border-emerald-700/70 dark:bg-gradient-to-r dark:from-emerald-950/90 dark:via-[#092014] dark:to-[#06170e] dark:text-emerald-100'
-        }`}>
-          <div className="flex items-center gap-2">
-            <FiHardDrive className="text-sm" />
-            <span className="font-bold">Target Disk ({storageStatus.mount || '/'}):</span>
-            <span>{storageStatus.usedFmt} / {storageStatus.sizeFmt} ({storageStatus.usePercent.toFixed(1)}% used, {storageStatus.availableFmt} free)</span>
-          </div>
-          <div className="flex items-center gap-2 font-semibold text-[10px]">
-            <span className={`px-2 py-0.5 rounded-full ${
-              storageStatus.isFull
-                ? 'bg-rose-600 text-white font-bold animate-pulse'
-                : storageStatus.isWarning
-                ? 'bg-amber-500 text-white font-bold'
-                : 'bg-emerald-600 text-white font-bold'
-            }`}>
-              {!storageStatus.safetyEnabled
-                ? 'SAFETY ENFORCEMENT OFF'
-                : storageStatus.isFull
-                ? `RECORDING BLOCKED (≥${storageStatus.thresholdPercent || 90}% Limit)`
-                : storageStatus.isWarning
-                ? `STORAGE WARNING (≥${(storageStatus.thresholdPercent || 90) - 5}% Used)`
-                : `STORAGE HEALTHY (<${storageStatus.thresholdPercent || 90}%)`}
-            </span>
-          </div>
-        </div>
-      )}
+      {/* Bottom 4-Card Workflow Matrix Grid */}
+      {false && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* 3. RECORDING PROFILE (Full options display including Max Bitrate) */}
+        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
+          <div>
+            <div className="flex items-center justify-between">
+              <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                3. Recording Profile
+              </h4>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
+              Select a profile or customize
+            </p>
 
-      {testResult && (
-        <div className={`mb-3 rounded-lg border p-3 text-[11px] ${testResult.success ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
-          <p className="font-semibold">{testResult.message}</p>
-          {testResult.directories && testResult.directories.length > 0 && (
-            <div className="mt-2">
-              <span className="font-bold text-[10px] uppercase">Available Remote Directories:</span>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {testResult.directories.map(dir => (
-                  <button
-                    key={dir}
-                    type="button"
-                    onClick={() => patch({ storagePath: dir })}
-                    className="rounded bg-white border border-emerald-300 px-2 py-0.5 font-mono text-[10px] hover:bg-emerald-100 text-emerald-900"
-                  >
-                    Select {dir}
-                  </button>
+            {/* Profile Dropdown */}
+            <div className="relative mt-2.5">
+              <select
+                value={profileId}
+                onChange={(e) => applyProfile(e.target.value)}
+                className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-[12px] font-bold text-slate-900 focus:border-violet-600 focus:outline-none dark:bg-[#25163C] dark:border-[#371F59] dark:text-white"
+              >
+                <option value="source-default">
+                  Broadcast Master HD (1080p)
+                </option>
+                <option value="custom">Custom Recording Profile</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
                 ))}
+              </select>
+              <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <FiChevronDown size={14} />
               </div>
             </div>
-          )}
-        </div>
-      )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Label>Storage Protocol
-          <select
-            value={activeConfig.storageType || 'local'}
-            onChange={e => patch({ storageType: e.target.value as any })}
-            className={selectClass}
+            {/* Profile Key-Value Specs (Including Max Bitrate & CRF) */}
+            <div className="mt-3 space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Video Codec
+                </span>
+                <span className="font-mono font-bold text-slate-800 dark:text-white">
+                  {activeConfig.videoCodec === "hevc"
+                    ? "H.265 / HEVC"
+                    : activeConfig.videoCodec === "v210"
+                      ? "V210 10-bit 4:2:2"
+                      : activeConfig.videoCodec === "mpeg2video"
+                        ? "MPEG-2 4:2:2"
+                        : "H.264 NVENC"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Bitrate Mode
+                </span>
+                <span className="font-mono font-bold text-slate-800 dark:text-white">
+                  {(activeConfig.rateControl || "cbr").toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Target Bitrate
+                </span>
+                <span className="font-mono font-bold text-slate-800 dark:text-white">
+                  {activeConfig.videoBitrate
+                    ? `${Math.round(activeConfig.videoBitrate / 1000)} Mbps`
+                    : "Uncompressed"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Max Bitrate
+                </span>
+                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
+                  {activeConfig.maxBitrate
+                    ? `${Math.round(activeConfig.maxBitrate / 1000)} Mbps`
+                    : "Not applicable"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Preset / Quality
+                </span>
+                <span className="font-mono font-bold text-slate-800 dark:text-white">
+                  {activeConfig.preset || "fast"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Keyframe Interval
+                </span>
+                <span className="font-mono font-bold text-slate-800 dark:text-white">
+                  {Math.round(
+                    (activeConfig.gopSize || 60) /
+                      (activeConfig.framerate || 30),
+                  )}{" "}
+                  sec (GOP {activeConfig.gopSize || 60})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => showWorkflowStep(4)}
+            className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 transition-colors"
           >
-            <option value="local">Local Disk Directory</option>
-            <option value="smb">Network Share (SMB / NAS)</option>
-            <option value="ftp">FTP / SFTP Server</option>
-            <option value="s3">AWS S3 / Cloud Bucket</option>
-          </select>
-        </Label>
+            <FiEdit3 size={12} /> Edit Profile &amp; Advanced Options
+          </button>
+        </div>
 
-        {(activeConfig.storageType || 'local') === 'local' && (
-          <Label>Local Path
-            <input
-              type="text"
-              value={activeConfig.storagePath || '/media/recordings'}
-              onChange={e => patch({ storagePath: e.target.value })}
-              placeholder="/media/recordings or C:\Recordings"
-              className={inputClass}
-            />
-          </Label>
-        )}
+        {/* 4. OUTPUT FORMAT */}
+        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
+          <div>
+            <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+              4. Output Format
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
+              Choose container &amp; stream type
+            </p>
 
-        {activeConfig.storageType === 'smb' && <>
-          <Label>SMB Share UNC Path
-            <input type="text" value={activeConfig.smbShare || ''} onChange={e => patch({ smbShare: e.target.value })} placeholder="\\192.168.1.100\recordings" className={inputClass} />
-          </Label>
-          <Label>SMB Username
-            <input type="text" value={activeConfig.smbUsername || ''} onChange={e => patch({ smbUsername: e.target.value })} placeholder="admin" className={inputClass} />
-          </Label>
-          <Label>SMB Password
-            <input type="password" value={activeConfig.smbPassword || ''} onChange={e => patch({ smbPassword: e.target.value })} placeholder="••••••••" className={inputClass} />
-          </Label>
-        </>}
+            {/* Interactive 2x3 Tiles Grid */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {formatOptions.map((fmt) => {
+                const isSelected = activeFormats.includes(fmt.id);
+                return (
+                  <button
+                    type="button"
+                    key={fmt.id}
+                    disabled={fmt.available === false}
+                    title={fmt.warning}
+                    onClick={() => toggleFormat(fmt.id)}
+                    className={`relative flex flex-col items-start justify-center rounded-xl border p-2.5 text-left transition-all duration-150 select-none disabled:cursor-not-allowed disabled:opacity-45 ${
+                      isSelected
+                        ? "border-violet-600 bg-violet-50/70 text-violet-950 shadow-2xs dark:bg-violet-950/40 dark:border-violet-500 dark:text-violet-200 ring-1 ring-violet-600"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <span className="text-[12px] font-extrabold uppercase">
+                        {fmt.label}
+                      </span>
+                      {isSelected && (
+                        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-600 text-white">
+                          <FiCheck size={10} strokeWidth={3} />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[9px] font-medium text-slate-500 dark:text-[#B9A5CD] mt-0.5 truncate w-full">
+                      {fmt.desc}
+                    </span>
+                  </button>
+                );
+              })}
 
-        {activeConfig.storageType === 'ftp' && <>
-          <Label>FTP Host / IP
-            <input type="text" value={activeConfig.ftpHost || ''} onChange={e => patch({ ftpHost: e.target.value })} placeholder="ftp.broadcast.net" className={inputClass} />
-          </Label>
-          <Label>FTP User
-            <input type="text" value={activeConfig.ftpUsername || ''} onChange={e => patch({ ftpUsername: e.target.value })} placeholder="username" className={inputClass} />
-          </Label>
-          <Label>FTP Password
-            <input type="password" value={activeConfig.ftpPassword || ''} onChange={e => patch({ ftpPassword: e.target.value })} placeholder="••••••••" className={inputClass} />
-          </Label>
-          <Label>Remote Directory
-            <input type="text" value={activeConfig.ftpPath || ''} onChange={e => patch({ ftpPath: e.target.value })} placeholder="/archives/tv/" className={inputClass} />
-          </Label>
-        </>}
+              {/* Custom Tile */}
+              <button
+                type="button"
+                onClick={() => showWorkflowStep(4)}
+                className="flex flex-col items-start justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-2.5 text-left hover:bg-slate-100 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-300"
+              >
+                <span className="text-[12px] font-extrabold text-slate-700 dark:text-slate-200">
+                  Custom
+                </span>
+                <span className="text-[9px] font-medium text-slate-500 dark:text-[#B9A5CD] mt-0.5">
+                  Advanced settings
+                </span>
+              </button>
+            </div>
+          </div>
 
-        {activeConfig.storageType === 's3' && <>
-          <Label>S3 Bucket Name
-            <input type="text" value={activeConfig.s3Bucket || ''} onChange={e => patch({ s3Bucket: e.target.value })} placeholder="s3://kashtrix-recordings" className={inputClass} />
-          </Label>
-          <Label>S3 Region
-            <input type="text" value={activeConfig.s3Region || 'us-east-1'} onChange={e => patch({ s3Region: e.target.value })} placeholder="us-east-1" className={inputClass} />
-          </Label>
-          <Label>Access Key ID
-            <input type="text" value={activeConfig.s3AccessKey || ''} onChange={e => patch({ s3AccessKey: e.target.value })} placeholder="AKIA..." className={inputClass} />
-          </Label>
-          <Label>Secret Access Key
-            <input type="password" value={activeConfig.s3SecretKey || ''} onChange={e => patch({ s3SecretKey: e.target.value })} placeholder="••••••••" className={inputClass} />
-          </Label>
-        </>}
-      </div>
-    </section>
+          <span className="text-[10px] text-slate-400 dark:text-[#8E78A6] italic text-center">
+            Multiple formats write simultaneously in parallel
+          </span>
+        </div>
 
-    <div className="sticky bottom-3 z-20 mt-4 flex flex-col gap-2 rounded-lg border border-[#E8DFF0] bg-white p-3 shadow-md dark:bg-[#1E1130] dark:border-[#371F59] sm:flex-row sm:items-center sm:justify-end">
-      <span className="mr-auto text-[10px] text-slate-500 dark:text-[#B9A5CD]">Save configuration before starting recording sessions.</span>
-      <button type="button" onClick={save} disabled={saving} className="h-9 rounded-md border border-[#E8DFF0] bg-white px-4 text-[11px] font-semibold text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA] hover:bg-[#F4EEFF] dark:hover:bg-[#2D1A45] disabled:opacity-50">{saving ? 'Saving…' : 'Save configuration'}</button>
+        {/* 5. DESTINATION */}
+        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
+          <div>
+            <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+              5. Destination
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
+              Where recordings will be saved
+            </p>
 
-      {isRecordingActive ? (
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-2 rounded-md bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-            <span>RECORDING IN PROGRESS</span>
-            <span className="font-mono text-[12px] bg-rose-700/80 px-2 py-0.5 rounded tracking-wider">
-              {Math.floor(recordingElapsed / 3600).toString().padStart(2, '0')}:{Math.floor((recordingElapsed % 3600) / 60).toString().padStart(2, '0')}:{Math.floor(recordingElapsed % 60).toString().padStart(2, '0')}
+            {/* Destination Selector */}
+            <div className="mt-2.5 flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2 dark:bg-[#25163C] dark:border-[#371F59]">
+              <div className="flex items-center gap-2 min-w-0">
+                <FiHardDrive className="text-violet-600 shrink-0" size={14} />
+                <span className="truncate text-[12px] font-bold text-slate-900 dark:text-white">
+                  {storageStatus
+                    ? `Local Disk (${storageStatus.mount})`
+                    : "Local Disk (checking…)"}
+                </span>
+              </div>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                  storageStatus?.isFull
+                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                    : !storageStatus
+                      ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                }`}
+              >
+                {storageStatus?.isFull
+                  ? "Critical"
+                  : storageStatus
+                    ? "Healthy"
+                    : "Checking"}
+              </span>
+            </div>
+
+            {/* Storage Meter */}
+            <div className="mt-3 space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  {storageStatus
+                    ? `${storageStatus.usedFmt} used of ${storageStatus.sizeFmt}`
+                    : "Storage status unavailable"}
+                </span>
+                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
+                  {storageStatus
+                    ? `${storageStatus.usePercent.toFixed(1)}%`
+                    : "—"}
+                </span>
+              </div>
+
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    storageStatus?.isFull ? "bg-rose-600" : "bg-violet-600"
+                  }`}
+                  style={{
+                    width: `${Math.min(100, Math.max(0, storageStatus?.usePercent ?? 0))}%`,
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] pt-1">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Free Space
+                </span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {storageStatus ? `${storageStatus.availableFmt} free` : "—"}
+                </span>
+              </div>
+            </div>
+
+            {/* Recording Path */}
+            <div className="mt-2.5 flex items-center justify-between text-[11px]">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] text-slate-400 dark:text-[#B9A5CD] block">
+                  Recording Path
+                </span>
+                <span className="font-mono text-[11px] text-slate-800 dark:text-white truncate block">
+                  {storageStatus?.path ||
+                    activeConfig.storagePath ||
+                    PROJECT_RECORDINGS_PATH}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => showWorkflowStep(5)}
+                className="text-[11px] font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400"
+              >
+                Change
+              </button>
+            </div>
+          </div>
+
+          {/* Toggle Daily Folders */}
+          <div className="flex items-center justify-between border-t border-slate-100 pt-2 dark:border-[#371F59]/50">
+            <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200">
+              Auto create daily folders
+            </span>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoCreateDailyFolders}
+                onChange={(e) => setAutoCreateDailyFolders(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-violet-600" />
+            </label>
+          </div>
+        </div>
+
+        {/* 6. READY TO RECORD */}
+        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
+          <div>
+            <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+              6. Ready to Record
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
+              Review your settings
+            </p>
+
+            {/* Summary List */}
+            <div className="mt-3 space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Device
+                </span>
+                <span
+                  className="font-bold text-slate-800 dark:text-white truncate max-w-[130px]"
+                  title={sourceName}
+                >
+                  {sourceName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Signal
+                </span>
+                <span className="font-mono font-bold text-slate-800 dark:text-white truncate max-w-[130px]">
+                  {resolvedResolution}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Profile
+                </span>
+                <span className="font-bold text-slate-800 dark:text-white truncate max-w-[130px]">
+                  {selectedProfileObj?.name || "Broadcast HD (1080p)"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Format
+                </span>
+                <span className="font-bold text-slate-800 dark:text-white truncate max-w-[130px]">
+                  {activeFormats.join(", ").toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-slate-500 dark:text-[#B9A5CD]">
+                  Max Bitrate
+                </span>
+                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
+                  {activeConfig.maxBitrate
+                    ? `${Math.round(activeConfig.maxBitrate / 1000)} Mbps`
+                    : "25 Mbps"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5 text-[11px] text-emerald-900 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-300 flex items-center gap-2">
+            <FiCheckCircle size={14} className="text-emerald-600 shrink-0" />
+            <span className="font-semibold leading-tight">
+              All set! You can start preview or begin recording.
             </span>
           </div>
-          <button
-            type="button"
-            onClick={stopRecording}
-            className="h-9 rounded-md border border-rose-200 bg-rose-50 px-4 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/70 transition-colors"
-          >
-            <FiSquare className="mr-1.5 inline fill-rose-700 dark:fill-rose-400" /> Stop recording
-          </button>
         </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={startDisabled}
-            onClick={async () => {
-              setRecordPreviewModalOpen(true);
-              await startSourcePreview();
-            }}
-            className="h-9 rounded-md border border-[#6D32D9] bg-white px-3 text-[11px] font-semibold text-[#6D32D9] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#7C3AED] dark:text-[#A78BFA] dark:hover:bg-[#2D1A45] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
-            title="Open live preview modal to verify video before recording"
-          >
-            <FiEye className="mr-1.5 inline" /> Preview & Start
-          </button>
-
-          <button
-            type="button"
-            disabled={startDisabled}
-            onClick={async () => {
-              await start();
-            }}
-            className="h-9 rounded-md bg-[#6D32D9] px-4 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
-          >
-            <FiDisc className="mr-2 inline" /> Start recording
-          </button>
         </div>
       )}
-    </div>
 
-    {/* Recording Pre-Flight Confidence Monitor Modal */}
-    <DetailDrawer
-      open={recordPreviewModalOpen}
-      onClose={() => {
-        setRecordPreviewModalOpen(false);
-      }}
-      title="Recording Confidence Monitor"
-      subtitle="Verify live capture feed before beginning recording session"
-      width="max-w-[640px]"
-      footer={
-        <div className="flex items-center justify-end gap-2.5">
+      {/* Bottom Action Bar: Preview, Save Setup, Record Triggers */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+        <div className="flex items-center gap-2.5">
+          {/* Start / Stop Preview Button */}
           <button
             type="button"
             onClick={() => {
-              setRecordPreviewModalOpen(false);
+              if (previewing) {
+                void stopPreview(true);
+              } else {
+                void startSourcePreview();
+              }
             }}
-            className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]"
+            disabled={
+              previewing
+                ? previewStopping
+                : startDisabled || previewStarting || previewStopping
+            }
+            className="flex h-10 items-center gap-2 rounded-xl border border-violet-300 bg-white px-4 text-[12px] font-bold text-violet-700 hover:bg-violet-50 dark:bg-[#25163C] dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/50 disabled:opacity-40 transition-colors"
           >
-            Close
+            {previewStopping ? (
+              <>
+                <FiRefreshCw size={14} className="animate-spin" />
+                <span>Stopping Preview…</span>
+              </>
+            ) : previewStarting ? (
+              <>
+                <FiRefreshCw size={14} className="animate-spin" />
+                <span>Connecting Preview…</span>
+              </>
+            ) : previewing ? (
+              <>
+                <FiEyeOff size={14} />
+                <span>Stop Preview</span>
+              </>
+            ) : (
+              <>
+                <FiPlay size={14} />
+                <span>Start Preview</span>
+              </>
+            )}
           </button>
+
+          {/* Save Setup Preset Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setSetupNameInput(`${sourceName} Preset`);
+              setSaveSetupModalOpen(true);
+            }}
+            title="Save recording configuration and profile as preset"
+            className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[12px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2D1A45] transition-colors"
+          >
+            <FiSave size={14} />
+            <span>Save Preset</span>
+          </button>
+        </div>
+
+        {/* Start / Stop Recording Master Button */}
+        <div>
           {isRecordingActive ? (
-            <button
-              type="button"
-              onClick={async () => {
-                setRecordPreviewModalOpen(false);
-                await stopRecording();
-              }}
-              className="h-9 rounded-md bg-rose-600 px-5 text-[11px] font-semibold text-white hover:bg-rose-700 shadow-sm"
-            >
-              <FiSquare className="mr-1.5 inline fill-white" /> Stop Recording Now
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-[12px] font-bold text-white shadow-md">
+                <span className="h-2.5 w-2.5 rounded-full bg-white animate-pulse" />
+                <span>RECORDING IN PROGRESS</span>
+                <span className="font-mono text-[13px] bg-rose-700/80 px-2 py-0.5 rounded tracking-wider">
+                  {Math.floor(recordingElapsed / 3600)
+                    .toString()
+                    .padStart(2, "0")}
+                  :
+                  {Math.floor((recordingElapsed % 3600) / 60)
+                    .toString()
+                    .padStart(2, "0")}
+                  :
+                  {Math.floor(recordingElapsed % 60)
+                    .toString()
+                    .padStart(2, "0")}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={stopRecording}
+                className="flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 text-[12px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 transition-colors"
+              >
+                <FiSquare size={14} className="fill-current" />
+                <span>Stop Recording</span>
+              </button>
+            </div>
           ) : (
             <button
               type="button"
               disabled={startDisabled}
               onClick={async () => {
-                setRecordPreviewModalOpen(false);
                 await start();
               }}
-              className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+              className="flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 text-[12px] font-bold text-white shadow-md hover:from-violet-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              <FiDisc className="mr-1.5 inline" /> Start Recording Now
+              <FiDisc size={15} />
+              <span>Start Recording</span>
+              <span className="rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-black uppercase text-white tracking-widest ml-1">
+                REC
+              </span>
             </button>
           )}
         </div>
-      }
-    >
-      <div className="space-y-4">
-        <KashtrixMediaPlayer
-          src={previewing ? (activeHlsUrl || (devicePreviewIdRef.current ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8` : undefined)) : undefined}
-          title={sourceName}
-          isLive={true}
-          isRecording={isRecordingActive}
-          showAudioMeter={true}
-          resolution={detectedResolution || (activeConfig.resolution !== 'source' ? activeConfig.resolution : undefined)}
-          framerate={detectedFramerate || (activeConfig.framerate ? `${activeConfig.framerate} fps` : undefined)}
-          onRefresh={() => { void startSourcePreview(); }}
-        />
-        {previewError && (
-          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-300">
-            {previewError}
-          </div>
-        )}
+      </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-[#311B4E] dark:bg-[#211335]/60 space-y-2.5">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">Capture & Recording Specifications</div>
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
-            <div>
-              <span className="text-slate-400 block text-[9px]">Source Device:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{sourceName}</span>
+      {/* ========================================================================= */}
+      {/* Legacy device drawer is disabled; configuration now renders inline.       */}
+      {/* ========================================================================= */}
+      <DetailDrawer
+        open={false}
+        onClose={() => {}}
+        title="Select Capture Device & Input Source"
+        subtitle="Configure video hardware or active RTMP/SRT ingest stream"
+        width="max-w-[500px]"
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD]">
+              Selection updates the Signal Detection workspace immediately.
+            </p>
+            <button
+              type="button"
+              disabled={
+                sourceType === "device"
+                  ? !videoDevice && !audioDevice
+                  : !selectedStreamKey
+              }
+              onClick={() => {
+                setActiveStep(2);
+                void startSourcePreview();
+              }}
+              className="h-8 shrink-0 rounded-lg bg-violet-600 px-3 text-[11px] font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Apply &amp; Detect Signal
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Source Type Toggle */}
+          <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1 dark:bg-[#211335] dark:border-[#371F59]">
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("device");
+                patch({ sourceType: "device" });
+              }}
+              className={`rounded-lg py-1.5 text-[11px] font-bold transition ${sourceType === "device" ? "bg-violet-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 dark:text-[#B9A5CD]"}`}
+            >
+              Capture Device (SDI / HDMI / USB)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSourceType("ingest");
+                patch({ sourceType: "ingest" });
+              }}
+              className={`rounded-lg py-1.5 text-[11px] font-bold transition ${sourceType === "ingest" ? "bg-violet-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 dark:text-[#B9A5CD]"}`}
+            >
+              Live Ingest Stream (RTMP / SRT)
+            </button>
+          </div>
+
+          {sourceType === "device" ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 dark:border-violet-900/70 dark:bg-violet-950/30">
+                <div>
+                  <p className="text-[10px] font-bold text-violet-900 dark:text-violet-200">
+                    Available capture hardware
+                  </p>
+                  <p className="text-[9px] text-violet-700/80 dark:text-violet-300/70">
+                    {videoDevices.length} video · {audioDevices.length} audio
+                    devices
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void refreshDevices()}
+                  disabled={devicesLoading}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-violet-200 bg-white px-2 text-[9px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50 dark:bg-[#25163C] dark:border-violet-800 dark:text-violet-300"
+                >
+                  <FiRefreshCw
+                    size={10}
+                    className={devicesLoading ? "animate-spin" : ""}
+                  />{" "}
+                  Refresh devices
+                </button>
+              </div>
+              <Label>
+                Video Device
+                <select
+                  value={videoDevice}
+                  onChange={(e) => setVideoDevice(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">Select video hardware...</option>
+                  {videoDevices.map((dev) => (
+                    <option key={dev} value={dev}>
+                      {dev}
+                    </option>
+                  ))}
+                </select>
+              </Label>
+
+              <Label>
+                Audio Device
+                <select
+                  value={audioDevice}
+                  onChange={(e) => setAudioDevice(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">Select audio hardware...</option>
+                  {audioDevices.map((dev) => (
+                    <option key={dev} value={dev}>
+                      {dev}
+                    </option>
+                  ))}
+                </select>
+              </Label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Label>
+                  Video Input Port
+                  <select
+                    value={activeConfig.videoInput || "sdi"}
+                    onChange={(e) =>
+                      patch({ videoInput: e.target.value as any })
+                    }
+                    className={selectClass}
+                  >
+                    <option value="sdi">SDI Input</option>
+                    <option value="hdmi">HDMI Input</option>
+                    <option value="optical">Optical SDI</option>
+                    <option value="composite">Composite Video</option>
+                    <option value="component">Component Video</option>
+                  </select>
+                </Label>
+
+                <Label>
+                  Hardware Format Standard
+                  <select
+                    value={activeConfig.formatCode || ""}
+                    onChange={(e) => patch({ formatCode: e.target.value })}
+                    className={selectClass}
+                  >
+                    <option value="">Auto Detect Format</option>
+                    {(
+                      deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS
+                    ).map((f) => (
+                      <option key={f.code} value={f.code}>
+                        {f.code} - {f.description || f.code} ({f.resolution} @{" "}
+                        {f.fps}fps)
+                      </option>
+                    ))}
+                  </select>
+                </Label>
+              </div>
             </div>
-            <div>
-              <span className="text-slate-400 block text-[9px]">Video Input:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100 uppercase">{activeConfig.videoInput || 'HDMI'}</span>
+          ) : (
+            <div className="space-y-3">
+              <Label>
+                Select Active Ingest Stream
+                <select
+                  value={selectedStreamKey}
+                  onChange={(e) => setSelectedStreamKey(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">Select incoming stream key...</option>
+                  {Object.entries(streams).map(([key, val]: [string, any]) => (
+                    <option key={key} value={key}>
+                      {val.name || key} ({val.app || "live"})
+                    </option>
+                  ))}
+                </select>
+              </Label>
             </div>
-            <div>
-              <span className="text-slate-400 block text-[9px]">Signal Standard:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100">{activeConfig.formatCode || (detectedResolution ? `${detectedResolution}${detectedFramerate ? ` @ ${detectedFramerate}` : ''} (Detected)` : 'Auto Detect (Native Signal)')}</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block text-[9px]">Recording Quality:</span>
-              <span className="font-semibold text-slate-800 dark:text-slate-100">
-                {activeFormats.map(f => f === 'mp4' ? `MP4 (${activeConfig.videoBitrate}k)` : `${f.toUpperCase()} (Uncompressed Master)`).join(', ')}
+          )}
+
+          {/* Filename Template */}
+          <div>
+            <Label>
+              Recording Filename Template
+              <input
+                type="text"
+                value={activeConfig.fileName || ""}
+                onChange={(e) => patch({ fileName: e.target.value })}
+                placeholder="{channel}_{date}_{time}"
+                className={inputClass}
+              />
+            </Label>
+            <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400">
+              <span>
+                Variables: {"{channel}"} {"{date}"} {"{time}"}
+              </span>
+              <span className="font-mono text-violet-600 font-bold">
+                {(activeConfig.fileName || "{channel}_{date}_{time}")
+                  .replace(
+                    "{channel}",
+                    sourceName.replace(/[^a-zA-Z0-9_-]/g, "_"),
+                  )
+                  .replace("{date}", "2026-05-19")
+                  .replace("{time}", "14-35-22")}
+                .{activeFormats[0] || "mp4"}
               </span>
             </div>
           </div>
         </div>
+      </DetailDrawer>
 
-        <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] leading-relaxed">
-          Verify live picture framing above. Click <b>Start Recording Now</b> to record live while preview continues simultaneously.
-        </p>
-      </div>
-    </DetailDrawer>
+      {/* ========================================================================= */}
+      {/* DRAWER 2: EDIT RECORDING PROFILE (STEP 3) - COMPLETE BROADCAST OPTIONS     */}
+      {/* ========================================================================= */}
+      <DetailDrawer
+        open={profileDrawerOpen}
+        onClose={() => showWorkflowStep(3)}
+        title="Edit Recording Profile &amp; Advanced Options"
+        subtitle="Fine-tune video quality, max bitrate, CRF, GOP keyframes, pixel format, and audio"
+        width="max-w-[620px]"
+        footer={
+          <div className="flex items-center justify-between gap-2 w-full">
+            <button
+              type="button"
+              onClick={() => {
+                setSetupNameInput(`${selectedRecordingProfile?.label || selectedOutputFormat.toUpperCase()} Preset`);
+                setSaveSetupModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 h-8 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2D1A45] transition-colors"
+            >
+              <FiSave size={13} />
+              <span>Save as Preset</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => showWorkflowStep(3)}
+              className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700 transition-colors"
+            >
+              Apply Profile Settings
+            </button>
+          </div>
+        }
+        inlineTarget={workflowInlinePanelRef.current}
+      >
+        <div className="space-y-4">
+          {standardProfileSelected && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-3 text-[11px] text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <strong>{selectedRecordingProfile?.label || selectedOutputFormat.toUpperCase()} is format-standard.</strong>{' '}
+                  Default codec, pixel format, interlace, bitrate, and audio settings follow the container standard.
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-emerald-200/80 dark:border-emerald-900/60 flex-wrap gap-2">
+                <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-emerald-950 dark:text-emerald-100 select-none">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(activeConfig.unlockStandardOverride)}
+                    onChange={(e) => patch({ unlockStandardOverride: e.target.checked })}
+                    className="h-4 w-4 rounded accent-emerald-600 cursor-pointer"
+                  />
+                  <span>Unlock format standard parameters for custom modification</span>
+                </label>
+                {activeConfig.unlockStandardOverride && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      patch({
+                        unlockStandardOverride: false,
+                        videoCodec: selectedRecordingProfile?.videoCodec || 'mpeg2video',
+                        encoder: 'auto',
+                        videoBitrate: selectedRecordingProfile?.videoBitrate || 50000,
+                        maxBitrate: selectedRecordingProfile?.maxBitrate || 50000,
+                        pixelFormat: selectedRecordingProfile?.pixelFormat || 'yuv422p',
+                        audioCodec: (selectedRecordingProfile?.audioCodec as any) || 'pcm_s24le',
+                        audioChannels: selectedRecordingProfile?.audioChannels || 8,
+                        sampleRate: selectedRecordingProfile?.audioSampleRate || 48000,
+                        framerate: selectedRecordingProfile?.frameRate || 25,
+                        gopSize: selectedRecordingProfile?.gop || 12,
+                      });
+                      toast.success('Reset to standard broadcast profile defaults');
+                    }}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 underline dark:text-emerald-300 dark:hover:text-white"
+                  >
+                    Reset to Defaults
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
-    {/* Save Preset Configuration Modal */}
-    <DetailDrawer
-      open={saveModalOpen}
-      onClose={() => setSaveModalOpen(false)}
-      title="Save Recording Configuration"
-      subtitle="Save complete input device, transcoding profile, and output parameters as a reusable preset"
-      width="max-w-[480px]"
-      footer={
-        <div className="flex items-center justify-end gap-2.5">
-          <button
-            type="button"
-            onClick={() => setSaveModalOpen(false)}
-            className="h-9 rounded-md border border-slate-200 bg-white px-4 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#211335] dark:border-[#371F59] dark:text-[#F1EAFA]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSavePreset}
-            className="h-9 rounded-md bg-[#6D32D9] px-5 text-[11px] font-semibold text-white hover:bg-[#5B21B6] shadow-sm"
-          >
-            Save Preset
-          </button>
+          <fieldset disabled={isLockedFormat} className="space-y-4 disabled:opacity-65">
+          {/* Video Codec & Hardware Encoder */}
+          <div className="grid grid-cols-2 gap-3">
+            <Label>
+              Video Codec
+              <select
+                value={isLockedFormat ? selectedRecordingProfile?.videoCodec : (flvSelected ? 'h264' : (activeConfig.videoCodec || "h264"))}
+                onChange={(e) => patch({ videoCodec: e.target.value as any })}
+                disabled={flvSelected}
+                className={selectClass}
+              >
+                <option value="h264">H.264 / AVC (Broadly Compatible)</option>
+                <option value="hevc">
+                  H.265 / HEVC (High Compression Efficiency)
+                </option>
+                <option value="v210">V210 (10-bit 4:2:2 Uncompressed)</option>
+                <option value="mpeg2video">MPEG-2 Video (Broadcast 4:2:2)</option>
+              </select>
+            </Label>
+
+            <Label>
+              Hardware Encoder
+              <select
+                value={isLockedFormat ? 'standard' : (activeConfig.encoder === 'standard' ? 'auto' : (activeConfig.encoder || 'auto'))}
+                onChange={(e) => patch({ encoder: e.target.value as any })}
+                className={selectClass}
+              >
+                {isLockedFormat && <option value="standard">Format Standard (Automatic)</option>}
+                {!isLockedFormat && <option value="auto">Auto (Best Available GPU, then CPU)</option>}
+                {!isLockedFormat && (recordingEncoders.length
+                  ? recordingEncoders.filter(encoder => encoder.id !== 'auto').map(encoder => (
+                      <option key={encoder.id} value={encoder.id} disabled={!encoder.available || !encoder.codecs.includes(flvSelected ? 'h264' : (activeConfig.videoCodec === 'hevc' ? 'hevc' : 'h264'))}>
+                        {encoder.label}{encoder.available ? '' : ' (Unavailable)'}
+                      </option>
+                    ))
+                  : <>
+                      <option value="nvidia">NVIDIA NVENC</option>
+                      <option value="intel">Intel Quick Sync</option>
+                      <option value="amd">AMD AMF</option>
+                      <option value="cpu">CPU Software</option>
+                    </>)}
+              </select>
+            </Label>
+          </div>
+
+          {activeFormats.some(format => format === 'mp4' || format === 'flv') && (
+            <Label>
+              Compressed Interlace Handling
+              <select
+                value={activeConfig.nvencInterlaceMode || 'auto'}
+                onChange={(e) => patch({ nvencInterlaceMode: e.target.value as IngestRecordingOptions['nvencInterlaceMode'] })}
+                className={selectClass}
+              >
+                <option value="auto">Auto-detect (recommended)</option>
+                <option value="deinterlace">Deinterlace 1080i50 to 1080p50 (bwdif)</option>
+                <option value="native">Native interlaced NVENC (supported GPUs only)</option>
+              </select>
+            </Label>
+          )}
+
+          {/* Rate Control, Target Bitrate, Max Bitrate, CRF */}
+          <div className="grid grid-cols-3 gap-3">
+            <Label>
+              Bitrate Mode
+              <select
+                value={activeConfig.rateControl || "cbr"}
+                onChange={(e) => patch({ rateControl: e.target.value as any })}
+                className={selectClass}
+              >
+                <option value="cbr">CBR (Constant Bitrate)</option>
+                <option value="vbr">VBR (Variable Bitrate)</option>
+                <option value="crf">CRF (Constant Quality Factor)</option>
+              </select>
+            </Label>
+
+            <Label>
+              Target Bitrate (Kbps)
+              <input
+                type="number"
+                min="1000"
+                max="120000"
+                step="1000"
+                value={activeConfig.videoBitrate ?? 20000}
+                onChange={(e) =>
+                  patch({ videoBitrate: Number(e.target.value) })
+                }
+                className={inputClass}
+              />
+            </Label>
+
+            <Label>
+              Max Bitrate (Kbps)
+              <input
+                type="number"
+                min="1000"
+                max="150000"
+                step="1000"
+                value={activeConfig.maxBitrate ?? 25000}
+                onChange={(e) => patch({ maxBitrate: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </Label>
+          </div>
+
+          {/* CRF Option (Visible when CRF mode is selected) */}
+          {activeConfig.rateControl === "crf" && (
+            <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 dark:bg-[#25163C] dark:border-[#371F59]">
+              <div className="flex items-center justify-between">
+                <Label>Constant Rate Factor (CRF Quality: 0 - 51)</Label>
+                <span className="font-mono text-[12px] font-bold text-violet-700 dark:text-violet-300">
+                  CRF: {activeConfig.crf ?? 20} (Lower = Higher Quality)
+                </span>
+              </div>
+              <input
+                type="range"
+                min="10"
+                max="35"
+                value={activeConfig.crf ?? 20}
+                onChange={(e) => patch({ crf: Number(e.target.value) })}
+                className="w-full mt-2 accent-violet-600"
+              />
+            </div>
+          )}
+
+          {/* Resolution, Framerate, GOP Size, Encoding Preset */}
+          <div className="grid grid-cols-2 gap-3">
+            <Label>
+              Resolution
+              <select
+                value={activeConfig.resolution || "source"}
+                onChange={(e) => patch({ resolution: e.target.value })}
+                className={selectClass}
+              >
+                <option value="source">Source / Original (Native Input)</option>
+                <option value="3840x2160">4K UHD (3840x2160)</option>
+                <option value="1920x1080">Full HD (1920x1080)</option>
+                <option value="1280x720">HD 720p (1280x720)</option>
+                <option value="720x576">PAL 576i (720x576)</option>
+                <option value="720x480">NTSC 480i (720x480)</option>
+              </select>
+            </Label>
+
+            <Label>
+              Frame Rate (FPS)
+              <select
+                value={activeConfig.framerate || 50}
+                onChange={(e) => patch({ framerate: Number(e.target.value) })}
+                className={selectClass}
+              >
+                <option value={0}>Source / Native</option>
+                <option value={50}>50 fps (Broadcast PAL)</option>
+                <option value={59.94}>59.94 fps (Broadcast NTSC)</option>
+                <option value={60}>60 fps</option>
+                <option value={25}>25 fps</option>
+                <option value={29.97}>29.97 fps</option>
+                <option value={24}>24 fps (Cinema Master)</option>
+              </select>
+            </Label>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Label>
+              Encoding Preset
+              <select
+                value={activeConfig.preset || "fast"}
+                onChange={(e) => patch({ preset: e.target.value as any })}
+                className={selectClass}
+              >
+                <option value="ultrafast">Ultrafast (Lowest CPU/GPU)</option>
+                <option value="fast">Fast (Recommended Broadcast)</option>
+                <option value="medium">Medium (Standard)</option>
+                <option value="slow">Slow (High Quality Master)</option>
+                <option value="p4">P4 (NVIDIA Balanced Quality)</option>
+              </select>
+            </Label>
+
+            <Label>
+              GOP / Keyframe (Frames)
+              <input
+                type="number"
+                min="1"
+                max="300"
+                value={activeConfig.gopSize || 60}
+                onChange={(e) => patch({ gopSize: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </Label>
+
+            <Label>
+              Pixel Format
+              <select
+                value={activeConfig.pixelFormat || "yuv420p"}
+                onChange={(e) => patch({ pixelFormat: e.target.value as any })}
+                className={selectClass}
+              >
+                <option value="yuv420p">yuv420p (8-bit 4:2:0 Standard)</option>
+                <option value="yuv422p">
+                  yuv422p (8-bit 4:2:2 Broadcast)
+                </option>
+                <option value="yuv422p10le">yuv422p10le (10-bit 4:2:2 V210)</option>
+                <option value="yuv444p">yuv444p (4:4:4 Studio Master)</option>
+              </select>
+            </Label>
+          </div>
+
+          {/* Audio Configuration Section */}
+          <div className="border-t border-slate-200 pt-3 dark:border-[#371F59]">
+            <h5 className="text-[11px] font-bold text-slate-800 dark:text-white uppercase mb-2">
+              Audio Recording Settings
+            </h5>
+            <div className="grid grid-cols-4 gap-3">
+              <Label>
+                Audio Codec
+                <select
+                  value={activeConfig.audioCodec || "aac"}
+                  onChange={(e) => patch({ audioCodec: e.target.value as any })}
+                  className={selectClass}
+                >
+                  <option value="aac">AAC</option>
+                  <option value="mp3">MP3</option>
+                  <option value="opus">Opus</option>
+                  <option value="pcm_s16le">PCM 16-bit (Lossless WAV)</option>
+                  <option value="pcm_s24le">PCM 24-bit (Broadcast Master)</option>
+                </select>
+              </Label>
+
+              <Label>
+                Sample Rate
+                <select
+                  value={activeConfig.sampleRate || 48000}
+                  onChange={(e) =>
+                    patch({ sampleRate: Number(e.target.value) })
+                  }
+                  className={selectClass}
+                >
+                  <option value={48000}>48 kHz Broadcast Standard</option>
+                  <option value={44100}>44.1 kHz Standard</option>
+                  <option value={32000}>32 kHz</option>
+                  <option value={96000}>96 kHz High-Res Master</option>
+                </select>
+              </Label>
+
+              <Label>
+                Audio Bitrate (Kbps)
+                <select
+                  value={activeConfig.audioBitrate ?? 192}
+                  onChange={(e) =>
+                    patch({ audioBitrate: Number(e.target.value) })
+                  }
+                  className={selectClass}
+                >
+                  <option value={64}>64 Kbps</option>
+                  <option value={128}>128 Kbps</option>
+                  <option value={192}>192 Kbps (Broadcast)</option>
+                  <option value={256}>256 Kbps</option>
+                  <option value={320}>320 Kbps (Studio)</option>
+                  <option value={0}>Uncompressed PCM</option>
+                </select>
+              </Label>
+
+              <Label>
+                Audio Channels
+                <select
+                  value={activeConfig.audioChannels || 2}
+                  onChange={(e) =>
+                    patch({ audioChannels: Number(e.target.value) })
+                  }
+                  className={selectClass}
+                >
+                  <option value={1}>1 Channel (Mono)</option>
+                  <option value={2}>2 Channels (Stereo)</option>
+                  <option value={6}>6 Channels (5.1 Surround)</option>
+                  <option value={8}>8 Channels (7.1 Studio)</option>
+                </select>
+              </Label>
+            </div>
+          </div>
+          </fieldset>
+
+          {/* Operational Toggles */}
+          <div className="border-t border-slate-200 pt-3 dark:border-[#371F59] grid grid-cols-2 gap-3">
+            <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-800 dark:text-white cursor-pointer">
+              <input
+                type="checkbox"
+                checked={activeConfig.continuous !== false}
+                onChange={(e) => patch({ continuous: e.target.checked })}
+                className="rounded text-violet-600"
+              />
+              <span>Continuous Segmented Recording</span>
+            </label>
+
+            <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-800 dark:text-white cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(activeConfig.autoRecord)}
+                onChange={(e) => patch({ autoRecord: e.target.checked })}
+                className="rounded text-violet-600"
+              />
+              <span>Auto-Start Recording on Signal Lock</span>
+            </label>
+          </div>
         </div>
-      }
-    >
-      <div className="space-y-4">
-        <div>
-          <Label>Preset Name
+      </DetailDrawer>
+
+      {/* ========================================================================= */}
+      {/* DRAWER 3: DESTINATION & MULTI-STORAGE LOCATIONS MANAGER (STEP 5)          */}
+      {/* ========================================================================= */}
+      <DetailDrawer
+        open={destinationDrawerOpen}
+        onClose={() => showWorkflowStep(2)}
+        title="Storage Destinations Manager"
+        subtitle="Configure primary storage and simultaneous remote recording targets"
+        width="max-w-[640px]"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <button
+              type="button"
+              onClick={() => handleTestStorageConnection()}
+              disabled={testingConnection}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-[11px] font-bold text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+            >
+              {testingConnection && !testingLocationId ? (
+                <FiRefreshCw className="animate-spin" />
+              ) : (
+                <FiDisc />
+              )}
+              {testingConnection && !testingLocationId
+                ? "Testing All Destinations…"
+                : "Test All Destinations & Access"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => showWorkflowStep(2)}
+              className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700"
+            >
+              Save &amp; Close
+            </button>
+          </div>
+        }
+        inlineTarget={workflowInlinePanelRef.current}
+      >
+        <div className="space-y-3">
+          {/* Storage Capacity Status Banner */}
+          {storageStatus && (
+            <div
+              className={`rounded-xl border p-3 text-[11px] flex flex-wrap items-center justify-between gap-2 ${
+                storageStatus.isFull
+                  ? "border-rose-300 bg-rose-50 text-rose-950 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-200"
+                  : storageStatus.isWarning
+                    ? "border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-200"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:text-emerald-200"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FiHardDrive size={16} />
+                <span className="font-bold">
+                  Target Disk ({storageStatus.mount}):
+                </span>
+                <span>
+                  {storageStatus.usedFmt} / {storageStatus.sizeFmt} (
+                  {storageStatus.usePercent.toFixed(1)}% used,{" "}
+                  {storageStatus.availableFmt} free)
+                </span>
+                {storageStatus.path && (
+                  <span className="font-mono break-all">{storageStatus.path}</span>
+                )}
+              </div>
+              <span
+                className={`font-bold px-2 py-0.5 rounded text-[10px] ${storageStatus.isFull ? "bg-rose-200 text-rose-900" : "bg-emerald-200 text-emerald-900"}`}
+              >
+                {storageStatus.isFull
+                  ? "CRITICAL STORAGE"
+                  : "STORAGE HEALTHY (<98%)"}
+              </span>
+            </div>
+          )}
+
+          {/* Test Results Banner (Rigorously showing real accessibility status) */}
+          {testResult && (
+            <div
+              className={`rounded-xl border p-3 text-[11px] space-y-2 ${
+                testResult.success
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:text-emerald-200"
+                  : "border-rose-200 bg-rose-50 text-rose-950 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-200"
+              }`}
+            >
+              <div className="flex items-center justify-between font-bold">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-grid h-4 w-4 place-items-center rounded-full text-white text-[10px] ${testResult.success ? "bg-emerald-600" : "bg-rose-600"}`}
+                  >
+                    {testResult.success ? "✓" : "✗"}
+                  </span>
+                  <span>{testResult.message}</span>
+                </div>
+                {testResult.total && testResult.total > 1 ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-white/80 dark:bg-black/40 border border-current">
+                    {testResult.passed}/{testResult.total} Verified
+                  </span>
+                ) : null}
+              </div>
+
+              {testResult.results && testResult.results.length > 0 && (
+                <div className="space-y-1.5 pt-1.5 border-t border-current/20">
+                  {testResult.results.map((r, idx) => (
+                    <div
+                      key={r.id || idx}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10px] font-mono"
+                    >
+                      <span>
+                        {r.name || `Destination #${idx + 1}`} (
+                        {r.storageType.toUpperCase()}):
+                      </span>
+                      <span
+                        className={
+                          r.success
+                            ? "text-emerald-700 dark:text-emerald-300 font-bold"
+                            : "text-rose-700 dark:text-rose-300 font-bold"
+                        }
+                      >
+                        {r.message}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Storage Locations List */}
+          {(() => {
+            const locations: StorageLocation[] =
+              activeConfig.storageLocations &&
+              activeConfig.storageLocations.length > 0
+                ? activeConfig.storageLocations
+                : [
+                    {
+                      id: "primary",
+                      name: "Primary Storage",
+                      storageType: activeConfig.storageType || "local",
+                      storagePath:
+                        activeConfig.storagePath || PROJECT_RECORDINGS_PATH,
+                      smbShare: activeConfig.smbShare,
+                      ftpHost: activeConfig.ftpHost,
+                      s3Bucket: activeConfig.s3Bucket,
+                      enabled: true,
+                    },
+                  ];
+
+            const updateLocations = (newLocs: StorageLocation[]) => {
+              const primary = newLocs.find((l) => l.enabled) || newLocs[0];
+              patch({
+                storageLocations: newLocs,
+                storageType: primary?.storageType || "local",
+                storagePath: primary?.storagePath || PROJECT_RECORDINGS_PATH,
+                smbShare: primary?.smbShare,
+                ftpHost: primary?.ftpHost,
+                s3Bucket: primary?.s3Bucket,
+              });
+            };
+
+            const patchLocation = (
+              locId: string,
+              updates: Partial<StorageLocation>,
+            ) => {
+              updateLocations(
+                locations.map((l) =>
+                  l.id === locId ? { ...l, ...updates } : l,
+                ),
+              );
+            };
+
+            const removeLocation = (locId: string) => {
+              if (locations.length <= 1) return;
+              updateLocations(locations.filter((l) => l.id !== locId));
+            };
+
+            const addLocation = () => {
+              const nextLoc: StorageLocation = {
+                id: `loc_${Date.now()}`,
+                name: `Storage Destination ${locations.length + 1}`,
+                storageType: locations.length === 1 ? "smb" : "local",
+                storagePath:
+                  locations.length === 1 ? "" : "media/recordings-backup",
+                smbShare:
+                  locations.length === 1 ? "\\\\192.168.1.100\\recordings" : "",
+                enabled: true,
+              };
+              updateLocations([...locations, nextLoc]);
+            };
+
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-slate-800 dark:text-white">
+                    Simultaneous Storage Destinations ({locations.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addLocation}
+                    className="flex items-center gap-1 text-[11px] font-bold text-violet-700 hover:text-violet-800 dark:text-violet-300"
+                  >
+                    <FiPlus size={13} /> Add Storage Location
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {locations.map((loc, locIdx) => (
+                    <div
+                      key={loc.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5 dark:bg-[#25163C] dark:border-[#371F59]"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-violet-100 text-violet-700 px-2 py-0.5 text-[9px] font-bold uppercase dark:bg-violet-950 dark:text-violet-300">
+                            {loc.storageType || "LOCAL"}
+                          </span>
+                          <input
+                            type="text"
+                            value={loc.name || `Destination #${locIdx + 1}`}
+                            onChange={(e) =>
+                              patchLocation(loc.id, { name: e.target.value })
+                            }
+                            className="h-6 rounded border border-transparent hover:border-slate-300 focus:border-violet-600 px-1 text-[11px] font-bold text-slate-800 dark:text-white bg-transparent outline-none"
+                            placeholder="Storage alias..."
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={testingConnection}
+                            onClick={() => handleTestStorageConnection(loc)}
+                            className="flex items-center gap-1 rounded bg-white px-2 py-0.5 text-[10px] font-semibold text-violet-700 border border-violet-200 hover:bg-violet-50 dark:bg-[#1E1130] dark:border-violet-800 dark:text-violet-300"
+                          >
+                            {testingLocationId === loc.id ? (
+                              <FiRefreshCw className="animate-spin" size={10} />
+                            ) : (
+                              <FiDisc size={10} />
+                            )}
+                            Test Target
+                          </button>
+
+                          <label className="flex items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-[#B9A5CD] cursor-pointer ml-1">
+                            <input
+                              type="checkbox"
+                              checked={loc.enabled !== false}
+                              onChange={(e) =>
+                                patchLocation(loc.id, {
+                                  enabled: e.target.checked,
+                                })
+                              }
+                              className="rounded text-violet-600"
+                            />
+                            <span>Active</span>
+                          </label>
+
+                          {locations.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeLocation(loc.id)}
+                              className="text-slate-400 hover:text-rose-600 p-0.5 transition-colors"
+                            >
+                              <FiTrash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Protocol Parameters */}
+                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                        <Label>
+                          Storage Protocol
+                          <select
+                            value={loc.storageType || "local"}
+                            onChange={(e) =>
+                              patchLocation(loc.id, {
+                                storageType: e.target.value as any,
+                              })
+                            }
+                            className={selectClass}
+                          >
+                            <option value="local">Local Disk Directory</option>
+                            <option value="smb">
+                              Network Share (SMB / NAS)
+                            </option>
+                            <option value="ftp">FTP / SFTP Server</option>
+                            <option value="s3">AWS S3 / Cloud Bucket</option>
+                          </select>
+                        </Label>
+
+                        {(!loc.storageType || loc.storageType === "local") && (
+                          <Label>
+                            Local Path
+                            <input
+                              type="text"
+                              value={loc.storagePath || PROJECT_RECORDINGS_PATH}
+                              onChange={(e) =>
+                                patchLocation(loc.id, {
+                                  storagePath: e.target.value,
+                                })
+                              }
+                              placeholder={PROJECT_RECORDINGS_PATH}
+                              className={inputClass}
+                            />
+                          </Label>
+                        )}
+
+                        {loc.storageType === "smb" && (
+                          <Label>
+                            SMB Share UNC Path
+                            <input
+                              type="text"
+                              value={loc.smbShare || ""}
+                              onChange={(e) =>
+                                patchLocation(loc.id, {
+                                  smbShare: e.target.value,
+                                })
+                              }
+                              placeholder="\\192.168.1.100\recordings"
+                              className={inputClass}
+                            />
+                          </Label>
+                        )}
+
+                        {loc.storageType === "ftp" && (
+                          <Label>
+                            FTP Host / IP
+                            <input
+                              type="text"
+                              value={loc.ftpHost || ""}
+                              onChange={(e) =>
+                                patchLocation(loc.id, {
+                                  ftpHost: e.target.value,
+                                })
+                              }
+                              placeholder="ftp.broadcast.tv"
+                              className={inputClass}
+                            />
+                          </Label>
+                        )}
+
+                        {loc.storageType === "s3" && (
+                          <Label>
+                            S3 Bucket Name
+                            <input
+                              type="text"
+                              value={loc.s3Bucket || ""}
+                              onChange={(e) =>
+                                patchLocation(loc.id, {
+                                  s3Bucket: e.target.value,
+                                })
+                              }
+                              placeholder="s3://bucket-name"
+                              className={inputClass}
+                            />
+                          </Label>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </DetailDrawer>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: SAVE SETUP AS PRESET                                             */}
+      {/* ========================================================================= */}
+      <DetailDrawer
+        open={saveSetupModalOpen}
+        onClose={() => setSaveSetupModalOpen(false)}
+        title="Save Recording Preset"
+        subtitle="Save this complete hardware, video profile, and storage configuration"
+        width="max-w-[440px]"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSaveSetupModalOpen(false)}
+              className="h-8 rounded-lg border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSavePreset}
+              className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700"
+            >
+              Save Preset
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <Label>
+            Preset Name
             <input
               type="text"
-              value={presetNameInput}
-              onChange={e => setPresetNameInput(e.target.value)}
-              placeholder="e.g. DeckLink 1080p50 Master Record"
+              value={setupNameInput}
+              onChange={(e) => setSetupNameInput(e.target.value)}
+              placeholder="e.g. Master Studio Ingest 1080p50"
               className={inputClass}
             />
           </Label>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-[#311B4E] dark:bg-[#211335]/60 space-y-2 text-[11px]">
-          <div className="font-bold uppercase tracking-wider text-slate-500 text-[10px]">Parameters to be saved:</div>
-          <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-200">
-            <div>• Source: <b>{sourceType === 'device' ? (videoDevice || 'Capture Device') : (selectedStreamKey || 'Ingest Feed')}</b></div>
-            <div>• Quality: <b>{activeConfig.videoBitrate} Kbps (Max: {activeConfig.maxBitrate}k)</b></div>
-            <div>• Frame Rate: <b>{activeConfig.framerate || 50} FPS</b></div>
-            <div>• Encoder: <b>{activeConfig.encoder.toUpperCase()}</b></div>
-            <div>• Resolution: <b>{activeConfig.resolution}</b></div>
-            <div>• Audio: <b>{activeConfig.audioCodec.toUpperCase()} {activeConfig.audioBitrate}k</b></div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600 dark:bg-[#25163C] dark:border-[#371F59] dark:text-[#B9A5CD] space-y-1">
+            <p className="font-semibold text-slate-800 dark:text-white">
+              Preset will capture:
+            </p>
+            <p>
+              • Source: {sourceName} ({resolvedInputPort})
+            </p>
+            <p>
+              • Profile: {activeConfig.videoCodec?.toUpperCase()} @{" "}
+              {activeConfig.videoBitrate}k (Max: {activeConfig.maxBitrate}k)
+            </p>
+            <p>• Containers: {activeFormats.join(", ").toUpperCase()}</p>
           </div>
         </div>
-      </div>
-    </DetailDrawer>
-  </>;
+      </DetailDrawer>
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: MANAGE RECORDING PRESETS                                         */}
+      {/* ========================================================================= */}
+      <DetailDrawer
+        open={managePresetsOpen}
+        onClose={() => setManagePresetsOpen(false)}
+        title="Manage Recording Presets"
+        subtitle="View, load, delete, or reset broadcast recording presets"
+        width="max-w-[560px]"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <button
+              type="button"
+              onClick={handleResetPresets}
+              className="h-8 rounded-lg border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
+            >
+              Reset to Defaults
+            </button>
+            <button
+              type="button"
+              onClick={() => setManagePresetsOpen(false)}
+              className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700"
+            >
+              Done
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          {savedPresets.map((preset) => {
+            const isDefault = DEFAULT_PRESETS.some((dp) => dp.id === preset.id);
+            const isSelected = selectedPresetId === preset.id;
+            return (
+              <div
+                key={preset.id}
+                className={`flex items-center justify-between gap-3 rounded-xl border p-3 transition ${
+                  isSelected
+                    ? "border-violet-600 bg-violet-50/50 dark:bg-violet-950/30 dark:border-violet-500"
+                    : "border-slate-200 bg-white dark:bg-[#25163C] dark:border-[#371F59]"
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h5 className="font-bold text-[12px] text-slate-900 dark:text-white truncate">
+                      {preset.name}
+                    </h5>
+                    {isDefault && (
+                      <span className="rounded bg-slate-100 text-slate-600 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-slate-800 dark:text-slate-300">
+                        Default
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] mt-0.5 truncate">
+                    {preset.config?.videoCodec?.toUpperCase()}{" "}
+                    {preset.config?.videoBitrate}k | Max{" "}
+                    {preset.config?.maxBitrate}k |{" "}
+                    {preset.config?.formats?.join(", ").toUpperCase()}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleLoadPreset(preset.id);
+                      setManagePresetsOpen(false);
+                    }}
+                    className="rounded bg-violet-50 border border-violet-200 px-2.5 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950 dark:border-violet-800 dark:text-violet-300"
+                  >
+                    Load
+                  </button>
+
+                  {!isDefault && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePreset(preset.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 transition"
+                      title="Delete Preset"
+                    >
+                      <FiTrash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </DetailDrawer>
+    </div>
+  );
 };
 
 export default ProfessionalRecordingControl;

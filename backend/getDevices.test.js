@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseDeckLink } = require('./getDevices');
+const { parseDeckLink, parseFFmpegDeviceOutput } = require('./getDevices');
 
 test('parses FFmpeg 8 DeckLink display names instead of internal handles', () => {
     const output = `ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers
@@ -71,4 +71,34 @@ test('does not parse device-shaped text without the DeckLink sources header', ()
 `;
 
     assert.deepEqual(parseDeckLink(output), { video: [], audio: [], decklinkMap: {}, decklinkDevices: [] });
+});
+
+test('parses modern DirectShow rows annotated with video and audio types', () => {
+    const output = `[dshow @ 000001] "USB2.0 FHD UVC WebCam" (video)\r
+[dshow @ 000001]   Alternative name "@device_pnp_\\\\?\\usb#camera"\r
+[dshow @ 000001] "Capture Card" (video, audio)\r
+[dshow @ 000001] "Microphone Array (Realtek(R) Audio)" (audio)\r
+[dshow @ 000001] "Unavailable Virtual Camera" (none)\r
+dummy: Immediate exit requested\r
+`;
+
+    assert.deepEqual(parseFFmpegDeviceOutput(output), {
+        video: ['USB2.0 FHD UVC WebCam', 'Capture Card'],
+        audio: ['Capture Card', 'Microphone Array (Realtek(R) Audio)'],
+    });
+});
+
+test('continues to parse legacy section-based DirectShow output', () => {
+    const output = `[dshow @ 000001] DirectShow video devices (some may be both video and audio devices)\r
+[dshow @ 000001]  "Legacy Camera"\r
+[dshow @ 000001]     Alternative name "@device_pnp_legacy_camera"\r
+[dshow @ 000001] DirectShow audio devices\r
+[dshow @ 000001]  "Legacy Microphone"\r
+[dshow @ 000001]     Alternative name "@device_cm_legacy_microphone"\r
+`;
+
+    assert.deepEqual(parseFFmpegDeviceOutput(output), {
+        video: ['Legacy Camera'],
+        audio: ['Legacy Microphone'],
+    });
 });

@@ -37,9 +37,13 @@ test('JWT role claims are ignored in favor of persisted MySQL role', () => {
 test('admin and user payloads cannot assign superadmin', () => {
   assert.equal(parseManagedRole('admin'), 'admin');
   assert.equal(parseManagedRole('user'), 'user');
+  assert.equal(parseManagedRole('operator'), 'operator');
+  assert.equal(parseManagedRole('archive'), 'archive');
   assert.equal(parseManagedRole('superadmin'), null);
   assert.equal(parseManagedRole('SUPER_ADMIN'), null);
   assert.equal(isSuperadmin({ role: 'admin' }), false);
+  assert.equal(isSuperadmin({ role: 'operator' }), false);
+  assert.equal(isSuperadmin({ role: 'archive' }), false);
   assert.equal(isSuperadmin({ role: 'user' }), false);
   assert.equal(isSuperadmin({ role: 'SUPER_ADMIN' }), true);
 });

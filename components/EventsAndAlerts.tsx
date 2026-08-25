@@ -30,7 +30,7 @@ const mockEvents: EventItem[] = [
   { id: '2', title: 'Telemetry Data Stream Restored', category: 'System', severity: 'success', source: 'Realtime Sync Engine', details: 'Reconnected to hardware monitoring daemon.', timestamp: '14 minutes ago' },
   { id: '3', title: 'Interface eth0 State UP', category: 'System', severity: 'info', source: 'eth0 (192.168.1.10)', details: 'Link state UP at 1000Mbps Full Duplex.', timestamp: '45 minutes ago' },
   { id: '4', title: 'Stream Session Initialized', category: 'Stream', severity: 'info', source: 'rtmp://live/main-feed', details: 'Incoming RTMP publisher connected successfully.', timestamp: '1 hour ago' },
-  { id: '5', title: 'Storage Warning (>85% Full)', category: 'Storage', severity: 'warning', source: '/var/media/recordings', details: 'Partition storage usage reached 86.2% capacity.', timestamp: '2 hours ago' },
+  { id: '5', title: 'Storage Warning (>85% Full)', category: 'Storage', severity: 'warning', source: 'media/recordings', details: 'Partition storage usage reached 86.2% capacity.', timestamp: '2 hours ago' },
   { id: '6', title: 'Transcoder Engine Started', category: 'Transcoder', severity: 'success', source: 'Transcoder Engine', details: 'Channel Main Feed initialized with NVENC profile.', timestamp: '3 hours ago' },
   { id: '7', title: 'License Validated', category: 'License', severity: 'success', source: 'HWID KTX-8F4A', details: 'PRO License hardware binding verified.', timestamp: '5 hours ago' },
 ];

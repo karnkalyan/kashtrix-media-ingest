@@ -86,12 +86,35 @@ export interface TranscodingProfile {
   tune?: string;
 }
 
+export interface StorageLocation {
+  id: string;
+  name?: string;
+  storageType: 'local' | 'smb' | 'ftp' | 's3';
+  storagePath?: string;
+  smbShare?: string;
+  smbUsername?: string;
+  smbPassword?: string;
+  ftpHost?: string;
+  ftpPort?: number;
+  ftpUsername?: string;
+  ftpPassword?: string;
+  ftpPath?: string;
+  s3Bucket?: string;
+  s3Region?: string;
+  s3AccessKey?: string;
+  s3SecretKey?: string;
+  enabled?: boolean;
+}
+
 export interface RecordingOptions {
   fileName?: string;
-  format: 'mp4' | 'mkv' | 'mov' | 'ts' | 'flv';
+  format: 'mp4' | 'mkv' | 'mov' | 'mxf' | 'ts' | 'flv';
   videoBitrate?: number;
   resolution?: string;
   framerate?: number;
+  storageType?: 'local' | 'smb' | 'ftp' | 's3';
+  storagePath?: string;
+  locations?: StorageLocation[];
 }
 
 export interface DecklinkFormat {
@@ -109,30 +132,47 @@ export interface DecklinkFormat {
 
 export interface IngestRecordingOptions {
   fileName?: string;
-  formats: Array<'mp4' | 'mkv' | 'mov' | 'ts' | 'flv'>;
-  encoder: 'copy' | 'cpu' | 'nvidia' | 'intel' | 'amd';
+  formats: Array<'mp4' | 'mkv' | 'mov' | 'mxf' | 'ts' | 'flv'>;
+  encoder: 'auto' | 'standard' | 'copy' | 'cpu' | 'nvidia' | 'intel' | 'amd';
+  encoderSelectionVersion?: number;
   videoBitrate: number;
   audioBitrate: number;
   resolution: 'source' | string;
   framerate: number;
-  preset: 'ultrafast' | 'fast' | 'medium' | 'slow';
+  preset: 'ultrafast' | 'fast' | 'medium' | 'slow' | 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7';
   continuous: boolean;
   autoRecord?: boolean;
   sourceType?: 'ingest' | 'device';
   videoDevice?: string;
   audioDevice?: string;
-  videoCodec?: 'h264' | 'hevc';
+  videoCodec?: 'h264' | 'hevc' | 'v210' | 'mpeg2video';
   rateControl?: 'cbr' | 'vbr' | 'crf';
   maxBitrate?: number;
   crf?: number;
   gopSize?: number;
-  pixelFormat?: 'yuv420p' | 'yuv422p' | 'yuv444p';
-  audioCodec?: 'aac' | 'mp3' | 'opus';
+  pixelFormat?: 'yuv420p' | 'yuv422p' | 'yuv422p10le' | 'yuv444p';
+  audioCodec?: 'aac' | 'mp3' | 'opus' | 'pcm_s16le' | 'pcm_s24le';
   sampleRate?: number;
   audioChannels?: number;
   videoInput?: 'unset' | 'sdi' | 'hdmi' | 'optical_sdi' | 'component' | 'composite' | 's_video' | string;
   formatCode?: string;
   rawFormat?: string;
+  nvencInterlaceMode?: 'auto' | 'native' | 'deinterlace';
+  unlockStandardOverride?: boolean;
+  profileOverrides?: Record<string, {
+    videoCodec?: 'h264' | 'hevc' | 'v210' | 'mpeg2video' | string;
+    videoBitrate?: number;
+    maxBitrate?: number;
+    audioCodec?: 'aac' | 'mp3' | 'opus' | 'pcm_s16le' | 'pcm_s24le' | string;
+    audioBitrate?: number;
+    audioChannels?: number;
+    audioSampleRate?: number;
+    gop?: number;
+    preset?: string;
+    pixelFormat?: string;
+    framerate?: number;
+    resolution?: string;
+  }>;
   // Storage Destination Options
   storageType?: 'local' | 'smb' | 'ftp' | 's3';
   storagePath?: string;
@@ -148,16 +188,56 @@ export interface IngestRecordingOptions {
   s3Region?: string;
   s3AccessKey?: string;
   s3SecretKey?: string;
+  storageLocations?: StorageLocation[];
+}
+
+export interface RecordingProfileSummary {
+  extension: 'mov' | 'mkv' | 'mxf' | 'mp4' | 'flv';
+  label: string;
+  description: string;
+  muxer: string;
+  videoCodec: 'v210' | 'mpeg2video' | 'h264' | 'hevc';
+  pixelFormat: 'yuv422p10le' | 'yuv422p' | 'yuv420p';
+  capturePixelFormat: string;
+  videoBitrate: number;
+  maxBitrate: number;
+  frameRate: number;
+  fieldOrder: string;
+  interlaced: boolean;
+  gop: number;
+  bf: number;
+  preset: string;
+  audioCodec: 'pcm_s24le' | 'aac';
+  audioBitrate: number;
+  audioSampleRate: number;
+  audioChannels: number;
+  useNvenc: boolean;
+  compressed?: boolean;
+  hardwareAcceleration?: string | null;
+  available?: boolean;
+  warning?: string;
+}
+
+export interface RecordingEncoderCapability {
+  id: 'auto' | 'nvidia' | 'intel' | 'amd' | 'cpu';
+  label: string;
+  available: boolean;
+  hardware: boolean;
+  codecs: Array<'h264' | 'hevc'>;
+  warning?: string;
 }
 
 export interface ChannelDestination {
   id: string;
-  name: string;
+  name?: string;
   protocol: Protocol;
   url: string;
   playbackUrl?: string;
   streamKey?: string;
   recording?: RecordingOptions;
+  storageType?: 'local' | 'smb' | 'ftp' | 's3';
+  storagePath?: string;
+  locations?: StorageLocation[];
   decklinkPort?: 'hdmi' | 'sdi' | 'optical_sdi' | 'component' | 'composite';
   decklinkDevice?: string;
   decklinkDeviceId?: string;      // Device handle ID (e.g. '75:05326625:00000000')
@@ -165,17 +245,39 @@ export interface ChannelDestination {
   decklinkFormatCode?: string;    // Output format code (e.g. 'Hi50')
 }
 
+export type Destination = ChannelDestination;
+
 export interface LicenseInfo {
-  status: 'trial' | 'activated' | 'expired' | 'suspended' | 'hardware_mismatch';
+  status: 'unlicensed' | 'connecting' | 'activated' | 'expired' | 'suspended' | 'revoked' | 'client_banned' | 'hardware_mismatch';
+  reason?: string;
   customerName?: string;
   customerEmail?: string;
   expiresAt?: string;
   features?: string[];
+  modules?: string[];
+  entitlements?: Record<string, boolean | number>;
+  provisioningId?: string;
   systemHwid?: string;
   hardwareId?: string;
   hardwareBound?: boolean;
   hardwareMatch?: boolean;
   maxRecordingDevices?: number;
+  maxTranscodeQueueItems?: number;
+  licenseId?: string;
+  licenseSerial?: string;
+  clientId?: string;
+  validFrom?: string;
+  maxActivations?: number;
+  clientAppVersion?: string;
+  clientPlatform?: string;
+  tenantId?: string;
+  applicationId?: string;
+  entitlementVersion?: number;
+  validatedAt?: string;
+  lastEvent?: string;
+  configured?: boolean;
+  remoteActivationReady?: boolean;
+  validationMode?: 'online' | 'offline';
 }
 
 export interface AppSettings {
@@ -246,6 +348,7 @@ export interface StorageDetails {
 export interface StorageStatusResponse extends StorageDetails {
   success: boolean;
   message: string;
+  path?: string;
 }
 
 export interface TranscodeJobOptions {

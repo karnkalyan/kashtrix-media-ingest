@@ -29,9 +29,6 @@ async function migrate() {
     try { name = JSON.parse(row.data).name || row.id; } catch {}
     await prisma.transcodeChannel.upsert({ where: { id: row.id }, update: { name, data: row.data }, create: { id: row.id, name, data: row.data } });
   }
-  for (const row of sqlite.prepare('SELECT * FROM generated_licenses').all()) {
-    await prisma.generatedLicense.upsert({ where: { id: Number(row.id) }, update: { status: row.status }, create: { id: Number(row.id), customerName: row.customer_name, customerEmail: row.customer_email || null, licenseKey: row.license_key, status: row.status, expiresAt: date(row.expires_at) } });
-  }
   for (const row of sqlite.prepare('SELECT * FROM stream_sessions').all()) {
     await prisma.streamSession.upsert({ where: { id: Number(row.id) }, update: {}, create: { id: Number(row.id), app: row.app, stream: row.stream, startTime: date(row.start_time), endTime: date(row.end_time), maxViewers: Number(row.max_viewers || 0), totalBytes: bigint(row.total_bytes), outgoingBytes: bigint(row.outgoing_bytes), videoInfo: row.video_info, audioInfo: row.audio_info } });
   }

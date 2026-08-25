@@ -364,10 +364,10 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               onChange={e => setFormRole(e.target.value)}
               className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 text-[12px] font-semibold text-[#1B1024] outline-none dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             >
-              <option value="admin">Administrator (Full Access)</option>
-              <option value="operator">Operator (Operations Access)</option>
-              <option value="archive">Archive (Recordings Only)</option>
-              <option value="user">Standard User</option>
+              <option value="admin">Administrator (Full Access & User Management)</option>
+              <option value="operator">Operator (Live Playout & Operations)</option>
+              <option value="archive">Archive (Recordings, VOD & Transcode Jobs)</option>
+              <option value="user">Standard User (View Only)</option>
             </select>
           </div>
         </div>

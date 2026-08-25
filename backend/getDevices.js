@@ -85,13 +85,25 @@ function parseFFmpegDeviceOutput(output) {
             continue;
         }
 
+        // FFmpeg 6+ no longer prints the "DirectShow video/audio devices"
+        // section headers. It annotates every row instead, for example:
+        //   "USB Camera" (video)
+        //   "Microphone" (audio)
+        // Keep supporting the older section-based output used by the bundled
+        // FFmpeg build as well.
+        const typeMatch = line.match(/\((video|audio)(?:\s*,\s*(video|audio))?\)\s*\r?$/i);
+        const rowTypes = typeMatch
+            ? new Set([typeMatch[1], typeMatch[2]].filter(Boolean).map(type => type.toLowerCase()))
+            : null;
         const quotedMatches = [...line.matchAll(/"([^"]+)"/g)].map(match => match[1].trim()).filter(Boolean);
         for (const deviceName of quotedMatches) {
             if (deviceName.startsWith('@device_')) continue;
-            if (isVideo && !videoDevices.includes(deviceName)) {
+            const rowIsVideo = rowTypes ? rowTypes.has('video') : isVideo;
+            const rowIsAudio = rowTypes ? rowTypes.has('audio') : isAudio;
+            if (rowIsVideo && !videoDevices.includes(deviceName)) {
                 videoDevices.push(deviceName);
             }
-            if (isAudio && !audioDevices.includes(deviceName)) {
+            if (rowIsAudio && !audioDevices.includes(deviceName)) {
                 audioDevices.push(deviceName);
             }
         }

@@ -8,6 +8,9 @@ node_modules
 dist
 backend/data
 backend/media
+# Certificates are mounted read-only by docker-compose at runtime. Never copy
+# client private keys into the frontend or backend image layers.
+certs
 media
 recordings
 uploads
@@ -18,4 +21,3 @@ uploads
 *.7z
 *.rar
 *.part
-
