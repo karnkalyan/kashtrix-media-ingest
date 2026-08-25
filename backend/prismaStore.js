@@ -15,6 +15,12 @@ class PrismaStore {
 
   async initialize() {
     await this.prisma.$connect();
+    try {
+      await this.prisma.$executeRawUnsafe('DROP TABLE IF EXISTS `GeneratedLicense`');
+      await this.prisma.$executeRawUnsafe("DELETE FROM `KvStore` WHERE `key` IN ('license', 'system_hwid')");
+    } catch (_) {
+      // Ignore if table/rows do not exist or user lacks drop privileges
+    }
     const [users, kv, profiles, channels, sessions, recordings] = await Promise.all([
       this.prisma.user.findMany().catch(() => []),
       this.prisma.kvStore.findMany().catch(() => []),

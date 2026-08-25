@@ -14,8 +14,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@license/node-sdk": "file:../sdk/node",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@license/node-sdk": "file:./lib/license-sdk",
     "@prisma/client": "^6.2.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -25,6 +25,7 @@
     "fs": "^0.0.1-security",
     "jose": "^6.0.12",
     "jsonwebtoken": "^9.0.3",
+    "kasvhi-transcode-engine": "file:..",
     "multer": "^2.0.2",
     "node-media-server": "^4.2.4",
     "systeminformation": "^5.27.10",

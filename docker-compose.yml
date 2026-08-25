@@ -20,8 +20,6 @@ services:
   backend:
     build:
       context: ./backend
-      additional_contexts:
-        license-sdk: ./sdk/node
     restart: unless-stopped
     depends_on:
       mysql:

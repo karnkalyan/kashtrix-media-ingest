@@ -11,6 +11,7 @@ node_modules
 **/node_modules/
 dist
 !sdk/**/dist
+!backend/lib/**/dist
 dist-ssr
 *.local
 

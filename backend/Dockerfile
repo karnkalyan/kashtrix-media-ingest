@@ -9,13 +9,6 @@ WORKDIR /app
 
 COPY --from=node-runtime /usr/local/ /usr/local/
 
-# The secure client is supplied as a named build context by docker-compose.
-# Only its distributable client package is copied; no license-server secrets
-# or signing private keys enter this image.
-COPY --from=license-sdk package.json /sdk/node/package.json
-COPY --from=license-sdk dist /sdk/node/dist
-RUN npm install --omit=dev --ignore-scripts --prefix /sdk/node
-
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
@@ -25,6 +18,7 @@ ENV NODE_ENV=production \
     FFPROBE_PATH=/usr/local/bin/ffprobe
 
 COPY package.json package-lock.json ./
+COPY lib ./lib
 RUN npm ci --include=dev
 COPY prisma ./prisma
 RUN npx prisma generate --schema prisma/schema.prisma

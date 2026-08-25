@@ -115,7 +115,17 @@ class SecureLicenseRuntime extends EventEmitter {
   }
 
   async loadSdk() {
-    if (!this.sdk) this.sdk = await import('@license/node-sdk');
+    if (!this.sdk) {
+      try {
+        this.sdk = await import('@license/node-sdk');
+      } catch {
+        try {
+          this.sdk = await import('./lib/license-sdk/dist/index.js');
+        } catch {
+          this.sdk = await import('../sdk/node/dist/index.js');
+        }
+      }
+    }
     return this.sdk;
   }
 
