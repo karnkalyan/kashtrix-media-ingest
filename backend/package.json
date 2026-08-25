@@ -14,7 +14,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@license/node-sdk": "file:../../sdk/node",
+    "@license/node-sdk": "file:../sdk/node",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@prisma/client": "^6.2.1",
     "bcryptjs": "^3.0.3",
