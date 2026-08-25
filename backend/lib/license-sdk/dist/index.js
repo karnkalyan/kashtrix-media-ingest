@@ -384,12 +384,23 @@ export class LicenseClient {
     }
     async verifyAndApply(event, signedEvent) {
         const payload = await this.verifySignedEvent(event, signedEvent);
-        if (Array.isArray(payload.mod) &&
+        const isTerminal = event === "LICENSE_REVOKED" ||
+            event === "LICENSE_SUSPENDED" ||
+            event === "LICENSE_EXPIRED" ||
+            event === "CLIENT_BANNED" ||
+            event === "TENANT_SUSPENDED";
+        if (!isTerminal &&
+            Array.isArray(payload.mod) &&
             payload.ent &&
             typeof payload.ent === "object" &&
             Number.isInteger(payload.ev) &&
-            this.snapshot)
+            this.snapshot) {
             this.applySnapshot(this.snapshot.licenseId, payload.mod, payload.ent, Number(payload.ev));
+        }
+        if (isTerminal) {
+            this.snapshot = undefined;
+            this.state = "DENIED";
+        }
         this.options.onStateChange(event, typeof payload.reason === "string" ? payload.reason : undefined);
         if (event === "REVALIDATE_NOW") {
             void this.refreshEntitlements().catch((error) => this.connectionLost(error));
@@ -397,12 +408,7 @@ export class LicenseClient {
         }
         if (event === "LICENSE_KEY_REISSUED")
             return;
-        if (event === "LICENSE_REVOKED" ||
-            event === "LICENSE_SUSPENDED" ||
-            event === "LICENSE_EXPIRED" ||
-            event === "CLIENT_BANNED" ||
-            event === "TENANT_SUSPENDED") {
-            this.state = "DENIED";
+        if (isTerminal) {
             this.close(false);
         }
     }
