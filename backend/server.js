@@ -7138,9 +7138,10 @@ app.get('/api/system/hardware-extended', authMiddleware, async (req, res) => {
             ? devices.decklinkDevices
             : (Array.isArray(devices?.video) ? devices.video.filter(v => /decklink|intensity|sdi|magewell|aja|blackmagic/i.test(v)).map(name => ({ id: name, name })) : []);
 
-        const sdiBoardName = decklinkDevices.length > 0
+        const isSdiDetected = decklinkDevices.length > 0;
+        const sdiBoardName = isSdiDetected
             ? decklinkDevices.map(d => d.name || d.id).join(' / ')
-            : (devices?.video?.length > 0 ? devices.video[0] : 'DeckLink SDI 4K / DirectShow Host');
+            : null;
 
         const fanSpeed = Math.round(2400 + (cpuUsage * 15));
 
@@ -7164,25 +7165,33 @@ app.get('/api/system/hardware-extended', authMiddleware, async (req, res) => {
                 { name: 'PS1 (Primary AC)', status: 'Active (Online)', inputVoltage: '230 VAC / 50Hz', wattage: `${Math.round(180 + (cpuUsage * 1.5))} W` },
                 { name: 'PS2 (Redundant AC)', status: 'Standby (Ready)', inputVoltage: '230 VAC / 50Hz', wattage: '15 W' }
             ],
-            sdiHardware: {
+            sdiHardware: isSdiDetected ? {
+                isDetected: true,
                 boardName: sdiBoardName,
-                driverVersion: 'Desktop Video v14.2.1 / DVB Core',
-                firmwareFpga: 'FPGA v3.19 (DVB-ASI/SDI Native)',
-                genlockStatus: 'Locked (Tri-Level Sync / 1080i50)',
+                driverVersion: 'Desktop Video (Detected)',
+                firmwareFpga: 'FPGA Interface Native',
+                genlockStatus: 'Signal Locked / Active',
                 ports: decklinkDevices.map(device => ({
                     port: device.name || device.id,
-                    standard: 'HD-SDI 1080i50 / 3G-SDI',
+                    standard: 'HD-SDI / 3G-SDI',
                     bmdCode: device.id || device.name,
                 }))
+            } : {
+                isDetected: false,
+                boardName: null,
+                driverVersion: null,
+                firmwareFpga: null,
+                genlockStatus: null,
+                ports: []
             },
             ntpSynchronized: true,
             vcaNodes: [],
             telemetryAvailability: {
-                cpuTemperature: true,
+                cpuTemperature: cpu1 !== undefined,
                 fans: true,
                 powerSupplies: true,
                 ntp: true,
-                decklink: true,
+                decklink: isSdiDetected,
             }
         };
         res.json(data);

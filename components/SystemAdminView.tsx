@@ -206,14 +206,12 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
             { name: 'PS2 (Redundant AC)', status: 'Standby (Ready)', inputVoltage: '230 VAC / 50Hz', wattage: '15 W' }
           ],
           sdiHardware: {
-            boardName: 'DeckLink SDI 4K / DirectShow Host',
-            driverVersion: 'Desktop Video v14.2.1 / DVB Core',
-            firmwareFpga: 'FPGA v3.19 (DVB-ASI/SDI Native)',
-            genlockStatus: 'Locked (Tri-Level Sync / 1080i50)',
-            ports: [
-              { port: 'SDI Input 1', standard: 'HD-SDI 1080i50 / 3G-SDI', bmdCode: 'sdi1' },
-              { port: 'SDI Output 1', standard: 'HD-SDI 1080i50 / 3G-SDI', bmdCode: 'sdi2' }
-            ]
+            isDetected: false,
+            boardName: undefined,
+            driverVersion: undefined,
+            firmwareFpga: undefined,
+            genlockStatus: undefined,
+            ports: []
           },
           ntpSynchronized: true,
           vcaNodes: [],
@@ -222,7 +220,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
             fans: true,
             powerSupplies: true,
             ntp: true,
-            decklink: true,
+            decklink: false,
           }
         });
       }
@@ -1566,29 +1564,41 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                   SDI Video Capture Board & FPGA Interface
                 </h3>
               </div>
-              <span className="rounded bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-[#7C3AED] dark:bg-[#311754] dark:text-[#E2D1F9]">
-                {hardware?.sdiHardware?.boardName ? 'Detected' : 'Not detected'}
+              <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                hardware?.sdiHardware?.isDetected || (hardware?.sdiHardware?.boardName && hardware?.sdiHardware?.boardName !== 'Not detected' && hardware?.sdiHardware?.boardName !== 'No card available')
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {hardware?.sdiHardware?.isDetected || (hardware?.sdiHardware?.boardName && hardware?.sdiHardware?.boardName !== 'Not detected' && hardware?.sdiHardware?.boardName !== 'No card available')
+                  ? 'Detected'
+                  : 'Not detected'}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Board Model</span>
-                <b className="text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.boardName || 'Not detected'}</b>
+            {hardware?.sdiHardware?.isDetected || (hardware?.sdiHardware?.boardName && hardware?.sdiHardware?.boardName !== 'Not detected' && hardware?.sdiHardware?.boardName !== 'No card available') ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Board Model</span>
+                  <b className="text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.boardName}</b>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Driver & Desktop Video</span>
+                  <b className="text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.driverVersion || 'Desktop Video (Active)'}</b>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">FPGA Firmware</span>
+                  <b className="font-mono text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.firmwareFpga || 'FPGA Interface Native'}</b>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Genlock Status</span>
+                  <b className="text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.genlockStatus || 'Signal Active'}</b>
+                </div>
               </div>
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Driver & Desktop Video</span>
-                <b className="text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.driverVersion || 'Not reported'}</b>
+            ) : (
+              <div className="rounded-lg border border-dashed border-[#E8DFF0] bg-[#F8F7FA] p-4 text-center text-xs text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
+                No SDI / DeckLink video capture card available or detected on this host.
               </div>
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">FPGA Firmware</span>
-                <b className="font-mono text-[#1B1024] dark:text-white">{hardware?.sdiHardware?.firmwareFpga || 'Not reported'}</b>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Genlock Status</span>
-                <b className="text-[#6F6078] dark:text-[#B9A5CD]">{hardware?.sdiHardware?.genlockStatus || 'Not reported'}</b>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}

@@ -599,6 +599,7 @@ export interface SystemHardwareExtended {
   ps1Status?: string;
   ps2Status?: string;
   sdiHardware?: {
+    isDetected?: boolean;
     boardName?: string;
     driverVersion?: string;
     firmwareFpga?: string;
