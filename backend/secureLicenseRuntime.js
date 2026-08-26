@@ -48,10 +48,12 @@ const publicError = error => {
 const getSupportedModules = env => {
   return [
     { code: 'CHANNELS', name: 'Channels', description: 'Channel management and playout' },
-    { code: 'LIVE_SERVER', name: 'Live Server', description: 'Live server operations' },
+    { code: 'LIVE_SERVER', name: 'Live Server', description: 'Live server operations and RTMP/SRT broadcast ingestion' },
     { code: 'INGEST_SERVER', name: 'Ingest Server', description: 'Ingest and recording operations' },
+    { code: 'TRANSCODE', name: 'Transcoder Module', description: 'Real-time and offline multi-bitrate transcoding engine' },
     { code: 'STREAMOPS', name: 'StreamOps', description: 'StreamOps control-plane and operational workspace' },
     { code: 'VOD_PLAYOUT', name: 'VOD Playout', description: 'Video-on-demand library and playout operations' },
+    { code: 'MPTS_MUX', name: 'MPTS DVB Multiplexer Engine', description: 'Advanced DVB/ATSC compliant statistical multiplexing and null stuffing' },
     { code: 'RECORDING_DEVICES', name: 'Simultaneous recording devices', description: 'Maximum physical devices that may record simultaneously', type: 'integer', min: 0, max: 1000000, step: 1, defaultValue: 0, unit: 'devices' },
     { code: 'TRANSCODE_QUEUE_ITEMS', name: 'Transcode queue items', description: 'Maximum queued or running transcode jobs', type: 'integer', min: 0, max: 1000000, step: 1, defaultValue: 0, unit: 'jobs' },
   ];

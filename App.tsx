@@ -63,12 +63,15 @@ import VodPlayoutView from "./components/VodPlayoutView";
 import SystemAdminView from "./components/SystemAdminView";
 import { MuxView } from "./components/MuxView";
 import { sendRealtime, subscribeRealtime } from "./services/realtime";
+import { FiSliders } from "react-icons/fi";
+import TranscodingProfilesView from "./components/TranscodingProfilesView";
 
 type ActiveView =
   | "dashboard"
   | "channels"
   | "vod"
   | "mux"
+  | "profiles"
   | "transcode"
   | "live-server"
   | "monitor"
@@ -100,6 +103,11 @@ const LICENSE_MODULE_OPTIONS = [
     description: "Device/stream recording controls and professional encoding.",
   },
   {
+    id: "transcode",
+    label: "Transcoder Module",
+    description: "Real-time and offline multi-bitrate transcoding engine and queue processing.",
+  },
+  {
     id: "streamops",
     label: "StreamOps",
     description: "StreamOps control-plane and operational workspace.",
@@ -110,13 +118,18 @@ const LICENSE_MODULE_OPTIONS = [
     description: "Video-on-demand library and playout operations.",
   },
   {
-    id: "mux",
-    label: "MPTS Multiplexer",
-    description: "Multi-program transport stream multiplexer with DVB PSI/SI and CBR null stuffing.",
+    id: "mpts-mux",
+    label: "MPTS DVB Multiplexer Engine",
+    description: "Advanced DVB/ATSC statistical multiplexer with DVB PSI/SI and CBR null stuffing.",
+  },
+  {
+    id: "recording-devices",
+    label: "Simultaneous Recording Devices",
+    description: "Recording seat limit for physical devices.",
   },
   {
     id: "transcode-queue-items",
-    label: "Transcode Queue",
+    label: "Transcode Queue Items",
     description: "Queue access controlled by the signed numeric item limit.",
   },
 ] as const;
@@ -131,7 +144,24 @@ const hasLicenseModule = (license: LicenseInfo, module?: string) => {
       .replace(/[^A-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "");
   const modules = (license.modules || []).map(normalize);
-  return modules.includes(normalize(module));
+  const features = ((license as any).features || []) as string[];
+  const requested = normalize(module);
+  if (requested === "MUX" || requested === "MPTS_MUX" || requested === "MPTS_MUX_ENGINE") {
+    return (
+      modules.includes("MPTS_MUX") ||
+      modules.includes("MUX") ||
+      modules.includes("STREAMOPS") ||
+      features.includes("mux")
+    );
+  }
+  if (requested === "TRANSCODE" || requested === "TRANSCODER" || requested === "TRANSCODING" || requested === "TRANSCODE_QUEUE_ITEMS") {
+    return (
+      modules.includes("TRANSCODE") ||
+      modules.includes("TRANSCODE_QUEUE_ITEMS") ||
+      features.includes("transcode")
+    );
+  }
+  return modules.includes(requested);
 };
 
 const inputClass =
@@ -1141,14 +1171,26 @@ const navItems: NavItem[] = [
   },
   {
     id: "mux",
-    label: "MPTS Multiplexer",
+    label: "MPTS DVB Multiplexer",
     icon: FiLayers,
     group: "Operations",
     iconColor: "text-[#8B5CF6]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(139,92,246,0.45)]",
     badge: "MPTS",
     badgeColor: "bg-[#8B5CF6]",
-    licenseModule: "streamops",
+    licenseModule: "mpts-mux",
+    allowedRoles: ["superadmin", "admin", "user", "operator"],
+  },
+  {
+    id: "profiles",
+    label: "Transcoding Profiles",
+    icon: FiSliders,
+    group: "Operations",
+    iconColor: "text-[#6366F1]",
+    iconShadow: "drop-shadow-[0_4px_6px_rgba(99,102,241,0.45)]",
+    badge: "DVB",
+    badgeColor: "bg-[#6366F1]",
+    licenseModule: "transcode",
     allowedRoles: ["superadmin", "admin", "user", "operator"],
   },
   {
@@ -1160,7 +1202,7 @@ const navItems: NavItem[] = [
     iconShadow: "drop-shadow-[0_4px_6px_rgba(217,70,239,0.45)]",
     badge: "GPU",
     badgeColor: "bg-[#D946EF]",
-    licenseModule: "transcode-queue-items",
+    licenseModule: "transcode",
     allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
   },
   {
@@ -2595,6 +2637,8 @@ const App: React.FC = () => {
         "dashboard",
         "channels",
         "vod",
+        "mux",
+        "profiles",
         "transcode",
         "live-server",
         "monitor",
@@ -2916,6 +2960,15 @@ const App: React.FC = () => {
               license={engine.auth.license}
               userRole={engine.auth.user?.role}
               ws={null}
+            />
+          )}
+          {activeView === "profiles" && (
+            <TranscodingProfilesView
+              profiles={engine.state.profiles}
+              addProfile={engine.addProfile}
+              updateProfile={engine.updateProfile}
+              removeProfile={engine.removeProfile}
+              userRole={engine.auth.user?.role}
             />
           )}
           {activeView === "transcode" && (

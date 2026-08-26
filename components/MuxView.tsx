@@ -1,43 +1,35 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  FiPlus,
-  FiPlay,
-  FiSquare,
-  FiRefreshCw,
-  FiEdit2,
-  FiTrash2,
-  FiCopy,
-  FiActivity,
-  FiCpu,
-  FiRadio,
-  FiLayers,
-  FiSearch,
-  FiCheck,
-  FiX,
-  FiAlertTriangle,
-  FiArrowUp,
-  FiArrowDown,
-  FiEye,
-  FiTerminal,
-  FiSliders,
-  FiZap,
-  FiTv,
-  FiShield,
-  FiShare2,
-  FiGlobe,
-  FiInbox,
-  FiSend
-} from 'react-icons/fi';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
+  FiActivity,
+  FiArrowDown,
+  FiArrowLeft,
+  FiArrowUp,
+  FiCheck,
+  FiCopy,
+  FiEdit2,
+  FiInbox,
+  FiLayers,
+  FiPlay,
+  FiPlus,
+  FiRefreshCw,
+  FiSearch,
+  FiSettings,
+  FiSliders,
+  FiSquare,
+  FiTrash2,
+  FiWifi,
+  FiX,
+} from 'react-icons/fi';
+import {
+  AppSettings,
+  Channel,
+  LicenseInfo,
   MuxConfig,
   MuxServiceInput,
   MuxStats,
-  MuxProcessingMode,
-  Channel,
+  PhysicalInterface,
   TranscodingProfile,
-  AppSettings,
-  LicenseInfo
 } from '../types';
 
 interface MuxViewProps {
@@ -56,1790 +48,1011 @@ interface DiscoveredSource {
   name: string;
   sourceType: 'channel' | 'vod' | 'udp' | 'rtmp' | 'srt' | 'custom';
   inputUrl: string;
-  codec: string;
-  bitrateKbps: number;
-  status: 'ONLINE' | 'OFFLINE';
+  codec?: string;
+  bitrateKbps?: number;
+  status?: 'ONLINE' | 'OFFLINE';
   details?: string;
 }
 
-const DEFAULT_MUX_CONFIG: Omit<MuxConfig, 'id'> = {
-  name: 'KASHTRIX-MPTS-01',
-  description: 'Broadcast Multi-Program Transport Stream (DVB UDP)',
+type WorkspaceTab = 'services' | 'settings';
+
+const inputClass = 'h-9 w-full rounded-lg border border-[#E8DFF0] bg-white px-3 text-xs text-[#1B1024] outline-none focus:border-violet-500 dark:border-[#371F59] dark:bg-[#211335] dark:text-white';
+const cardClass = 'rounded-xl border border-[#E8DFF0] bg-white shadow-sm dark:border-[#311B4E] dark:bg-[#190E28]';
+
+const DEFAULT_MUX: Omit<MuxConfig, 'id'> = {
+  name: '',
+  description: '',
   status: 'Stopped',
-  outputInterface: 'any',
+  outputInterface: '',
+  outputInterfaceAddress: '',
   outputIp: '239.10.10.10',
   outputPort: 5000,
   packetSize: 1316,
   ttl: 16,
   targetBitrateMbps: 30,
+  outputMode: 'passthrough',
+  globalVideoCodec: 'h264',
+  globalAudioCodec: 'aac',
+  globalResolution: 'source',
+  globalVideoBitrateKbps: 3500,
+  globalAudioBitrateKbps: 192,
+  globalEncoder: 'auto',
+  globalFps: 25,
+  globalGop: 50,
+  globalPreset: 'veryfast',
   tsid: 1,
   onid: 1,
   nid: 1,
   services: [],
-  autoStart: true,
-  autoRestart: true
+  autoStart: false,
+  autoRestart: true,
+  filterNullPackets: false,
 };
 
-export const MuxView: React.FC<MuxViewProps> = ({
-  api,
-  channels,
-  profiles,
-  settings,
-  license,
-  userRole,
-  ws
-}) => {
-  const [muxList, setMuxList] = useState<MuxConfig[]>([]);
+const toService = (source: DiscoveredSource, index: number): MuxServiceInput => {
+  const basePid = (index + 1) * 256;
+  return {
+    id: `svc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    channelId: source.channelId,
+    sourceName: source.name,
+    sourceType: source.sourceType,
+    inputUrl: source.inputUrl,
+    mode: 'copy',
+    serviceId: 101 + index,
+    serviceName: source.name,
+    providerName: 'Kashtrix',
+    pmtPid: `0x${basePid.toString(16)}`,
+    videoPid: `0x${(basePid + 1).toString(16)}`,
+    pcrPid: `0x${(basePid + 1).toString(16)}`,
+    audioStreams: [{ streamIndex: 0, audioPid: `0x${(basePid + 2).toString(16)}`, bitrateKbps: 192, enabled: true }],
+    videoCodec: 'h264',
+    videoBitrateKbps: source.bitrateKbps || 4000,
+    resolution: 'source',
+    fps: 25,
+    gop: 50,
+    encoder: 'auto',
+    preset: 'veryfast',
+    audioCodec: 'aac',
+    audioBitrateKbps: 192,
+    audioSampleRate: 48000,
+    audioChannels: 2,
+    rateControl: 'cbr',
+    enabled: true,
+    orderIndex: index,
+  };
+};
+
+const formatUptime = (seconds = 0) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+export const MuxView: React.FC<MuxViewProps> = ({ api, ws }) => {
+  const [muxes, setMuxes] = useState<MuxConfig[]>([]);
+  const [sources, setSources] = useState<DiscoveredSource[]>([]);
+  const [interfaces, setInterfaces] = useState<PhysicalInterface[]>([]);
+  const [stats, setStats] = useState<Record<string, MuxStats>>({});
   const [loading, setLoading] = useState(true);
-  const [selectedMuxId, setSelectedMuxId] = useState<string | null>(null);
-  const [liveStats, setLiveStats] = useState<Record<string, MuxStats>>({});
-  
-  // Editor State
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editingMux, setEditingMux] = useState<MuxConfig | null>(null);
-  const [editorViewMode, setEditorViewMode] = useState<'studio' | 'pipeline'>('studio');
-  const [availableSources, setAvailableSources] = useState<DiscoveredSource[]>([]);
-  const [sourceSearch, setSourceSearch] = useState('');
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
-  const [customInputUrl, setCustomInputUrl] = useState('');
-  const [customInputName, setCustomInputName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [workspace, setWorkspace] = useState<MuxConfig | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('services');
+  const [sourceSearch, setSourceSearch] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customUrl, setCustomUrl] = useState('');
+  const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
 
-  // Probe & Test Input Modal
-  const [probingUrl, setProbingUrl] = useState<string | null>(null);
-  const [probeResult, setProbeResult] = useState<any | null>(null);
-  const [isProbeOpen, setIsProbeOpen] = useState(false);
-
-  // Duplicate Modal
-  const [duplicateMuxId, setDuplicateMuxId] = useState<string | null>(null);
-  const [dupName, setDupName] = useState('');
-  const [dupIp, setDupIp] = useState('');
-  const [dupPort, setDupPort] = useState<number>(5001);
-
-  // Filter & Search in Mux List
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Running' | 'Stopped'>('all');
-
-  // Logs Console
-  const [muxLogs, setMuxLogs] = useState<string[]>([]);
-
-  // Fetch all MUXes
-  const fetchMuxes = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await api('/api/mux', { method: 'GET' });
-      setMuxList(res.muxes || []);
-    } catch (err: any) {
-      console.error('Fetch MUX error:', err);
+      const [muxResponse, sourceResponse, networkResponse] = await Promise.all([
+        api('/api/mux'),
+        api('/api/mux/sources'),
+        api('/api/system/network'),
+      ]);
+      setMuxes(Array.isArray(muxResponse?.muxes) ? muxResponse.muxes : []);
+      setSources(Array.isArray(sourceResponse?.sources) ? sourceResponse.sources : []);
+      
+      const rawPhysical = Array.isArray(networkResponse?.physical) 
+        ? networkResponse.physical 
+        : (Array.isArray(networkResponse) ? networkResponse : []);
+      
+      const validIfaces = rawPhysical.map((item: any) => ({
+        ...item,
+        address: item.address || item.ip || item.ip4 || '',
+      })).filter((item: PhysicalInterface) => item.address || item.state === 'Up' || item.isOnline);
+      
+      setInterfaces(validIfaces.length > 0 ? validIfaces : rawPhysical);
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not load MPTS configuration');
     } finally {
       setLoading(false);
     }
   }, [api]);
 
-  // Fetch Available Channel/VOD sources
-  const fetchSources = useCallback(async () => {
-    try {
-      const res = await api('/api/mux/sources', { method: 'GET' });
-      setAvailableSources(res.sources || []);
-    } catch (err) {
-      console.warn('Sources discovery error:', err);
-    }
-  }, [api]);
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
 
-  useEffect(() => {
-    fetchMuxes();
-    fetchSources();
-  }, [fetchMuxes, fetchSources]);
-
-  // WebSocket Live MUX stats listener
   useEffect(() => {
     if (!ws) return;
-    const handleMessage = (e: MessageEvent) => {
+    const handleMessage = (event: MessageEvent) => {
       try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'mux_stats' && msg.muxId) {
-          setLiveStats(prev => ({ ...prev, [msg.muxId]: msg.payload }));
+        const message = JSON.parse(event.data);
+        if (message.type === 'mux_stats' && message.muxId) {
+          setStats(current => ({ ...current, [message.muxId]: message.payload }));
         }
       } catch (_) {}
     };
-
     ws.addEventListener('message', handleMessage);
     return () => ws.removeEventListener('message', handleMessage);
   }, [ws]);
 
-  // Polling fallback for stats if WS not connected
   useEffect(() => {
-    const timer = setInterval(async () => {
-      if (muxList.length === 0) return;
-      for (const m of muxList) {
-        if (m.status === 'Running' || selectedMuxId === m.id) {
-          try {
-            const stats = await api(`/api/mux/${m.id}/stats`, { method: 'GET' });
-            setLiveStats(prev => ({ ...prev, [m.id]: stats }));
-          } catch (_) {}
-        }
+    const poll = async () => {
+      for (const mux of muxes.filter(item => item.status === 'Running')) {
+        try {
+          const value = await api(`/api/mux/${encodeURIComponent(mux.id)}/stats`);
+          setStats(current => ({ ...current, [mux.id]: value }));
+        } catch (_) {}
       }
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [api, muxList, selectedMuxId]);
-
-  // Fetch logs when a specific MUX is selected
-  useEffect(() => {
-    if (!selectedMuxId) return;
-    const fetchLogs = async () => {
-      try {
-        const res = await api(`/api/mux/${selectedMuxId}/logs`, { method: 'GET' });
-        setMuxLogs(res.logs || []);
-      } catch (_) {}
     };
-    fetchLogs();
-    const timer = setInterval(fetchLogs, 3000);
-    return () => clearInterval(timer);
-  }, [api, selectedMuxId]);
+    void poll();
+    const timer = window.setInterval(poll, 3000);
+    return () => window.clearInterval(timer);
+  }, [api, muxes]);
 
-  // Action: Start MUX
-  const handleStartMux = async (id: string, name: string) => {
-    try {
-      toast.loading(`Starting MPTS MUX "${name}"...`, { id: `mux-${id}` });
-      await api(`/api/mux/${id}/start`, { method: 'POST' });
-      toast.success(`MUX "${name}" started successfully!`, { id: `mux-${id}` });
-      fetchMuxes();
-    } catch (err: any) {
-      toast.error(`Failed to start "${name}": ${err.message}`, { id: `mux-${id}` });
-    }
-  };
+  const filteredSources = useMemo(() => {
+    const query = sourceSearch.trim().toLowerCase();
+    return sources.filter(source => !query || `${source.name} ${source.inputUrl} ${source.sourceType}`.toLowerCase().includes(query));
+  }, [sourceSearch, sources]);
 
-  // Action: Stop MUX
-  const handleStopMux = async (id: string, name: string) => {
-    try {
-      toast.loading(`Stopping "${name}"...`, { id: `mux-${id}` });
-      await api(`/api/mux/${id}/stop`, { method: 'POST' });
-      toast.success(`MUX "${name}" stopped`, { id: `mux-${id}` });
-      fetchMuxes();
-    } catch (err: any) {
-      toast.error(`Failed to stop: ${err.message}`, { id: `mux-${id}` });
-    }
-  };
+  const selectedInterface = useMemo(
+    () => interfaces.find(item => item.interface === workspace?.outputInterface || item.address === workspace?.outputInterfaceAddress) || interfaces[0],
+    [interfaces, workspace?.outputInterface, workspace?.outputInterfaceAddress],
+  );
 
-  // Action: Restart MUX
-  const handleRestartMux = async (id: string, name: string) => {
-    try {
-      toast.loading(`Restarting "${name}"...`, { id: `mux-${id}` });
-      await api(`/api/mux/${id}/restart`, { method: 'POST' });
-      toast.success(`MUX "${name}" restarted`, { id: `mux-${id}` });
-      fetchMuxes();
-    } catch (err: any) {
-      toast.error(`Failed to restart: ${err.message}`, { id: `mux-${id}` });
-    }
-  };
-
-  // Action: Delete MUX
-  const handleDeleteMux = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete MUX "${name}"? This action cannot be undone.`)) return;
-    try {
-      await api(`/api/mux/${id}`, { method: 'DELETE' });
-      toast.success(`MUX "${name}" deleted`);
-      if (selectedMuxId === id) setSelectedMuxId(null);
-      fetchMuxes();
-    } catch (err: any) {
-      toast.error(`Delete failed: ${err.message}`);
-    }
-  };
-
-  // Action: Duplicate MUX
-  const openDuplicateModal = (m: MuxConfig) => {
-    setDuplicateMuxId(m.id);
-    setDupName(`${m.name} (Copy)`);
-    setDupIp(m.outputIp);
-    setDupPort(Number(m.outputPort) + 1);
-  };
-
-  const handleDuplicateSubmit = async () => {
-    if (!duplicateMuxId) return;
-    try {
-      await api(`/api/mux/${duplicateMuxId}/duplicate`, {
-        method: 'POST',
-        body: JSON.stringify({
-          newName: dupName,
-          newIp: dupIp,
-          newPort: dupPort
-        })
-      });
-      toast.success('MUX duplicated successfully');
-      setDuplicateMuxId(null);
-      fetchMuxes();
-    } catch (err: any) {
-      toast.error(`Duplicate failed: ${err.message}`);
-    }
-  };
-
-  // Action: Open Editor (Create / Edit)
-  const openCreateModal = () => {
-    const newId = `mux-${Date.now()}`;
-    setEditingMux({
-      ...DEFAULT_MUX_CONFIG,
-      id: newId,
-      name: `MPTS-MUX-${muxList.length + 1}`
+  const createMux = () => {
+    const firstInterface = interfaces.find(item => (item.state === 'Up' || item.isOnline) && item.address) || interfaces.find(item => item.address) || interfaces[0];
+    setWorkspace({
+      ...DEFAULT_MUX,
+      id: `mux-${Date.now()}`,
+      name: `MPTS Output ${muxes.length + 1}`,
+      outputInterface: firstInterface?.interface || '',
+      outputInterfaceAddress: firstInterface?.address || '',
     });
-    setEditorViewMode('studio');
-    setSelectedSourceIds([]);
-    setCustomInputUrl('');
-    setCustomInputName('');
-    setIsEditorOpen(true);
-    fetchSources();
+    setWorkspaceTab('services');
   };
 
-  const openEditModal = (m: MuxConfig) => {
-    setEditingMux(JSON.parse(JSON.stringify(m)));
-    setEditorViewMode('studio');
-    setSelectedSourceIds([]);
-    setCustomInputUrl('');
-    setCustomInputName('');
-    setIsEditorOpen(true);
-    fetchSources();
+  const editMux = (mux: MuxConfig) => {
+    const target = JSON.parse(JSON.stringify(mux));
+    if (!target.outputInterface && interfaces.length > 0) {
+      const fallback = interfaces.find(item => item.address) || interfaces[0];
+      target.outputInterface = fallback?.interface || '';
+      target.outputInterfaceAddress = fallback?.address || '';
+    }
+    setWorkspace(target);
+    setWorkspaceTab('services');
   };
 
-  // Editor: Save MUX
-  const handleSaveMux = async () => {
-    if (!editingMux) return;
-    if (!editingMux.name.trim()) {
-      toast.error('MUX Name is required');
-      return;
-    }
-    if (!editingMux.outputIp.trim()) {
-      toast.error('Output Multicast/Unicast IP is required');
-      return;
-    }
-    if (editingMux.services.length === 0) {
-      toast.error('Please add at least one channel/service to this MUX.');
-      return;
-    }
+  const patchWorkspace = (patch: Partial<MuxConfig>) => {
+    setWorkspace(current => current ? { ...current, ...patch } : current);
+  };
 
+  const patchService = (id: string, patch: Partial<MuxServiceInput>) => {
+    setWorkspace(current => current ? {
+      ...current,
+      services: current.services.map(service => service.id === id ? { ...service, ...patch } : service),
+    } : current);
+  };
+
+  const addSource = (source: DiscoveredSource) => {
+    setWorkspace(current => {
+      if (!current || current.services.some(service => service.inputUrl === source.inputUrl)) return current;
+      return { ...current, services: [...current.services, toService(source, current.services.length)] };
+    });
+  };
+
+  const removeService = (id: string) => {
+    setWorkspace(current => current ? {
+      ...current,
+      services: current.services.filter(service => service.id !== id).map((service, index) => ({ ...service, orderIndex: index })),
+    } : current);
+  };
+
+  const moveService = (id: string, delta: number) => {
+    setWorkspace(current => {
+      if (!current) return current;
+      const services = [...current.services];
+      const from = services.findIndex(service => service.id === id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= services.length) return current;
+      [services[from], services[to]] = [services[to], services[from]];
+      return { ...current, services: services.map((service, index) => ({ ...service, orderIndex: index })) };
+    });
+  };
+
+  const addCustomSource = () => {
+    if (!customUrl.trim()) return toast.error('Enter an input URL');
+    addSource({
+      id: `custom-${Date.now()}`,
+      name: customName.trim() || 'Custom input',
+      sourceType: 'custom',
+      inputUrl: customUrl.trim(),
+      status: 'ONLINE',
+    });
+    setCustomName('');
+    setCustomUrl('');
+  };
+
+  const handleSourceDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData('application/x-streamops-source');
+    const source = sources.find(item => item.id === sourceId);
+    if (source) addSource(source);
+  };
+
+  const handleServiceDrop = (event: React.DragEvent<HTMLDivElement>, targetId: string) => {
+    event.preventDefault();
+    if (!draggedServiceId || draggedServiceId === targetId) return;
+    setWorkspace(current => {
+      if (!current) return current;
+      const services = [...current.services];
+      const from = services.findIndex(service => service.id === draggedServiceId);
+      const to = services.findIndex(service => service.id === targetId);
+      if (from < 0 || to < 0) return current;
+      const [moved] = services.splice(from, 1);
+      services.splice(to, 0, moved);
+      return { ...current, services: services.map((service, index) => ({ ...service, orderIndex: index })) };
+    });
+    setDraggedServiceId(null);
+  };
+
+  const saveMux = async () => {
+    if (!workspace) return;
+    if (!workspace.name.trim()) return toast.error('Enter an MPTS output name');
+    if (!workspace.services.length) return toast.error('Drag at least one input into the MPTS output');
+    const iface = selectedInterface || interfaces.find(item => item.address) || interfaces[0];
+    if (!iface) return toast.error('Select an egress NIC with a valid IP address');
+    if (!workspace.outputIp.trim()) return toast.error('Enter a multicast output address');
+    const payload = {
+      ...workspace,
+      outputInterface: iface.interface || workspace.outputInterface,
+      outputInterfaceAddress: iface.address || workspace.outputInterfaceAddress,
+    };
     setSaving(true);
     try {
-      const isNew = !muxList.some(m => m.id === editingMux.id);
-      if (isNew) {
-        await api('/api/mux', {
-          method: 'POST',
-          body: JSON.stringify(editingMux)
-        });
-        toast.success(`MUX "${editingMux.name}" created!`);
-      } else {
-        await api(`/api/mux/${editingMux.id}`, {
-          method: 'PUT',
-          body: JSON.stringify(editingMux)
-        });
-        toast.success(`MUX "${editingMux.name}" updated!`);
-      }
-      setIsEditorOpen(false);
-      setEditingMux(null);
-      fetchMuxes();
-    } catch (err: any) {
-      toast.error(`Save failed: ${err.message}`);
+      const exists = muxes.some(item => item.id === workspace.id);
+      await api(exists ? `/api/mux/${encodeURIComponent(workspace.id)}` : '/api/mux', {
+        method: exists ? 'PUT' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      toast.success(exists ? 'MPTS configuration updated' : 'MPTS output created');
+      setWorkspace(null);
+      await fetchAll();
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not save MPTS configuration');
     } finally {
       setSaving(false);
     }
   };
 
-  // Editor: Auto-assign PIDs
-  const handleAutoAssignPids = async () => {
-    if (!editingMux) return;
+  const runAction = async (mux: MuxConfig, action: 'start' | 'stop' | 'restart') => {
     try {
-      const res = await api('/api/mux/auto-assign-pids', {
-        method: 'POST',
-        body: JSON.stringify({ services: editingMux.services })
-      });
-      if (res.services) {
-        setEditingMux(prev => prev ? { ...prev, services: res.services } : null);
-        toast.success('PIDs auto-assigned with collision prevention!');
-      }
-    } catch (err: any) {
-      toast.error(`PID assignment error: ${err.message}`);
+      await api(`/api/mux/${encodeURIComponent(mux.id)}/${action}`, { method: 'POST' });
+      toast.success(`${mux.name} ${action === 'stop' ? 'stopped' : 'started'}`);
+      await fetchAll();
+    } catch (error: any) {
+      toast.error(error?.message || `Could not ${action} MPTS output`);
     }
   };
 
-  // Editor: Add Discovered Sources
-  const handleAddDiscoveredSources = () => {
-    if (!editingMux || selectedSourceIds.length === 0) return;
-    const toAdd = availableSources.filter(s => selectedSourceIds.includes(s.id));
-    
-    const newServices: MuxServiceInput[] = toAdd.map((s, idx) => {
-      const currentCount = editingMux.services.length + idx;
-      const baseNum = (currentCount + 1) * 100;
-      return {
-        id: `svc-${Date.now()}-${idx}`,
-        channelId: s.channelId,
-        sourceName: s.name,
-        sourceType: s.sourceType,
-        inputUrl: s.inputUrl,
-        mode: 'copy',
-        serviceId: currentCount + 101,
-        serviceName: s.name,
-        providerName: 'StreamOps',
-        pmtPid: `0x${baseNum.toString(16).padStart(3, '0')}`,
-        videoPid: `0x${(baseNum + 1).toString(16).padStart(3, '0')}`,
-        pcrPid: `0x${(baseNum + 1).toString(16).padStart(3, '0')}`,
-        audioStreams: [
-          {
-            streamIndex: 0,
-            audioPid: `0x${(baseNum + 2).toString(16).padStart(3, '0')}`,
-            bitrateKbps: 192,
-            enabled: true
-          }
-        ],
-        videoBitrateKbps: s.bitrateKbps || 4000,
-        enabled: true
-      };
-    });
-
-    setEditingMux(prev => prev ? {
-      ...prev,
-      services: [...prev.services, ...newServices]
-    } : null);
-
-    setSelectedSourceIds([]);
-    toast.success(`Added ${newServices.length} service(s) to MUX`);
-  };
-
-  // Editor: Add Custom Source
-  const handleAddCustomSource = () => {
-    if (!editingMux) return;
-    if (!customInputUrl.trim()) {
-      toast.error('Input URL is required');
-      return;
-    }
-    const currentCount = editingMux.services.length;
-    const baseNum = (currentCount + 1) * 100;
-    const newService: MuxServiceInput = {
-      id: `svc-${Date.now()}`,
-      sourceName: customInputName.trim() || `Custom Service ${currentCount + 1}`,
-      sourceType: 'custom',
-      inputUrl: customInputUrl.trim(),
-      mode: 'copy',
-      serviceId: currentCount + 101,
-      serviceName: customInputName.trim() || `Custom Service ${currentCount + 1}`,
-      providerName: 'StreamOps',
-      pmtPid: `0x${baseNum.toString(16).padStart(3, '0')}`,
-      videoPid: `0x${(baseNum + 1).toString(16).padStart(3, '0')}`,
-      pcrPid: `0x${(baseNum + 1).toString(16).padStart(3, '0')}`,
-      audioStreams: [
-        {
-          streamIndex: 0,
-          audioPid: `0x${(baseNum + 2).toString(16).padStart(3, '0')}`,
-          bitrateKbps: 192,
-          enabled: true
-        }
-      ],
-      videoBitrateKbps: 4000,
-      enabled: true
-    };
-
-    setEditingMux(prev => prev ? {
-      ...prev,
-      services: [...prev.services, newService]
-    } : null);
-
-    setCustomInputUrl('');
-    setCustomInputName('');
-    toast.success('Custom input service added');
-  };
-
-  // Editor: Remove Service
-  const handleRemoveService = (serviceId: string) => {
-    if (!editingMux) return;
-    setEditingMux({
-      ...editingMux,
-      services: editingMux.services.filter(s => s.id !== serviceId)
-    });
-  };
-
-  // Editor: Move Service Up / Down
-  const handleMoveService = (index: number, direction: 'up' | 'down') => {
-    if (!editingMux) return;
-    const list = [...editingMux.services];
-    const targetIdx = direction === 'up' ? index - 1 : index + 1;
-    if (targetIdx < 0 || targetIdx >= list.length) return;
-    const temp = list[index];
-    list[index] = list[targetIdx];
-    list[targetIdx] = temp;
-    setEditingMux({ ...editingMux, services: list });
-  };
-
-  // Probe Source
-  const handleProbeInput = async (url: string) => {
-    setProbingUrl(url);
-    setIsProbeOpen(true);
-    setProbeResult(null);
+  const deleteMux = async (mux: MuxConfig) => {
+    if (!window.confirm(`Delete "${mux.name}"?`)) return;
     try {
-      const res = await api('/api/mux/probe-input', {
-        method: 'POST',
-        body: JSON.stringify({ inputUrl: url })
-      });
-      setProbeResult(res);
-    } catch (err: any) {
-      setProbeResult({ success: false, error: err.message });
+      await api(`/api/mux/${encodeURIComponent(mux.id)}`, { method: 'DELETE' });
+      toast.success('MPTS output deleted');
+      await fetchAll();
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not delete MPTS output');
     }
   };
 
-  // Capacity calculations for editing MUX
-  const capacityInfo = useMemo(() => {
-    if (!editingMux) return { totalInputMbps: 0, targetMbps: 30, percent: 0, isWarning: false, isOver: false };
-    const targetMbps = Number(editingMux.targetBitrateMbps || 30);
-    const totalInputKbps = editingMux.services
-      .filter(s => s.enabled !== false)
-      .reduce((acc, s) => acc + (Number(s.videoBitrateKbps || (s.mode === 'copy' ? 4000 : 3500)) + 192), 0);
-    const totalInputMbps = Math.round((totalInputKbps / 1000) * 100) / 100;
-    const percent = targetMbps > 0 ? Math.round((totalInputMbps / targetMbps) * 100) : 0;
-    return {
-      totalInputMbps,
-      targetMbps,
-      percent,
-      isWarning: percent >= 85 && percent <= 100,
-      isOver: percent > 100
-    };
-  }, [editingMux]);
+  const duplicateMux = async (mux: MuxConfig) => {
+    const name = window.prompt('Name for the duplicated MPTS output', `${mux.name} Copy`);
+    if (!name?.trim()) return;
+    try {
+      await api(`/api/mux/${encodeURIComponent(mux.id)}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify({ newName: name.trim(), newIp: mux.outputIp, newPort: Number(mux.outputPort) + 1 }),
+      });
+      toast.success('MPTS output duplicated');
+      await fetchAll();
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not duplicate MPTS output');
+    }
+  };
 
-  // Filtered Muxes
-  const filteredMuxes = useMemo(() => {
-    return muxList.filter(m => {
-      const matchesSearch = !searchQuery ||
-        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.outputIp.includes(searchQuery) ||
-        String(m.outputPort).includes(searchQuery);
-      const matchesStatus = statusFilter === 'all' || m.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [muxList, searchQuery, statusFilter]);
-
-  const selectedMux = useMemo(() => {
-    return muxList.find(m => m.id === selectedMuxId) || null;
-  }, [muxList, selectedMuxId]);
-
-  const activeStats = selectedMuxId ? liveStats[selectedMuxId] : null;
-
-  return (
-    <div className="space-y-6 animate-fade-in text-[#1B1024] dark:text-[#E2D1F9]">
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#E8DFF0] dark:border-[#311B4E] pb-4">
-        <div>
+  if (workspace) {
+    return (
+      <div className="space-y-4">
+        <div className={`${cardClass} flex flex-wrap items-center justify-between gap-3 p-4`}>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setWorkspace(null)} className="rounded-lg border border-[#E8DFF0] p-2 text-[#6F6078] hover:bg-[#F8F7FA] dark:border-[#371F59] dark:text-[#B9A5CD]">
+              <FiArrowLeft />
+            </button>
+            <div>
+              <h1 className="text-base font-bold text-[#1B1024] dark:text-white">{workspace.name || 'New MPTS Output'}</h1>
+              <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Assign inputs first, then configure the independent MPTS output settings.</p>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-xl font-black text-[#1B1024] dark:text-white flex items-center gap-2">
-              <FiLayers className="text-[#7C3AED]" />
-              Broadcast MPTS Multiplexer
-            </h1>
-            <span className="rounded-full bg-violet-100 border border-violet-200 px-2.5 py-0.5 text-[10px] font-bold text-[#7C3AED] dark:bg-[#311754] dark:border-[#522588] dark:text-[#E2D1F9]">
-              DVB Transport Engine
-            </span>
-          </div>
-          <p className="text-xs text-[#6F6078] dark:text-[#B9A5CD]">
-            Aggregate multiple live video channels, VOD streams, and audio PIDs into single multi-program transport streams (DVB-ASI / UDP Multicast).
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => { fetchMuxes(); fetchSources(); }}
-            className="flex items-center gap-1.5 rounded-xl border border-[#E2E8F0] dark:border-[#371F59] bg-white dark:bg-[#1E1233] px-3.5 py-2 text-xs font-bold text-[#475569] dark:text-[#E2D1F9] hover:bg-[#F8FAFC] dark:hover:bg-[#2A1747] transition-colors shadow-2xs"
-          >
-            <FiRefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-violet-600/25 hover:bg-violet-700 transition-colors"
-          >
-            <FiPlus size={16} />
-            Create MPTS MUX
-          </button>
-        </div>
-      </div>
-
-      {/* ── Metric HUD Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-white/80 dark:bg-[#190E28]/90 p-4 backdrop-blur-md shadow-2xs">
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748B] dark:text-[#A78BFA]">
-            <span>Total MUX Instances</span>
-            <FiLayers className="text-violet-500" />
-          </div>
-          <div className="mt-2 text-2xl font-black">{muxList.length}</div>
-          <div className="mt-1 text-[11px] text-[#94A3B8] dark:text-[#8E78A6]">
-            {muxList.filter(m => m.status === 'Running').length} Online / Running
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-white/80 dark:bg-[#190E28]/90 p-4 backdrop-blur-md shadow-2xs">
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748B] dark:text-[#A78BFA]">
-            <span>Combined Total Services</span>
-            <FiTv className="text-emerald-500" />
-          </div>
-          <div className="mt-2 text-2xl font-black">
-            {muxList.reduce((acc, m) => acc + (m.services?.length || 0), 0)}
-          </div>
-          <div className="mt-1 text-[11px] text-[#94A3B8] dark:text-[#8E78A6]">
-            Program transport streams
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-white/80 dark:bg-[#190E28]/90 p-4 backdrop-blur-md shadow-2xs">
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748B] dark:text-[#A78BFA]">
-            <span>Total Configured Egress</span>
-            <FiRadio className="text-blue-500" />
-          </div>
-          <div className="mt-2 text-2xl font-black">
-            {muxList.reduce((acc, m) => acc + Number(m.targetBitrateMbps || 0), 0)} <span className="text-sm font-bold text-[#64748B]">Mbps</span>
-          </div>
-          <div className="mt-1 text-[11px] text-[#94A3B8] dark:text-[#8E78A6]">
-            CBR Stuffed Multicast bandwidth
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-white/80 dark:bg-[#190E28]/90 p-4 backdrop-blur-md shadow-2xs">
-          <div className="flex items-center justify-between text-xs font-bold text-[#64748B] dark:text-[#A78BFA]">
-            <span>Multiplexer Engine</span>
-            <FiCpu className="text-fuchsia-500" />
-          </div>
-          <div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">
-            DVB-ASI / IP
-          </div>
-          <div className="mt-1 text-[11px] text-[#94A3B8] dark:text-[#8E78A6]">
-            Pass-Through & Statmux Ready
-          </div>
-        </div>
-      </div>
-
-      {/* ── Search & Filter Controls ── */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-          <input
-            type="text"
-            placeholder="Search MUX by name, IP, or port..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-[#E2E8F0] dark:border-[#371F59] bg-white dark:bg-[#1E1233] pl-10 pr-4 py-2 text-xs text-[#0F172A] dark:text-white placeholder-[#94A3B8] focus:outline-hidden focus:ring-2 focus:ring-violet-500 shadow-2xs"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 self-stretch sm:self-auto">
-          <div className="flex rounded-xl border border-[#E2E8F0] dark:border-[#371F59] bg-white dark:bg-[#1E1233] p-1 shadow-2xs text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className={`rounded-lg px-3 py-1 transition-colors ${statusFilter === 'all' ? 'bg-violet-600 text-white' : 'text-[#64748B] dark:text-[#A78BFA] hover:text-[#0F172A]'}`}
-            >
-              All ({muxList.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('Running')}
-              className={`rounded-lg px-3 py-1 transition-colors ${statusFilter === 'Running' ? 'bg-emerald-600 text-white' : 'text-[#64748B] dark:text-[#A78BFA] hover:text-[#0F172A]'}`}
-            >
-              Running ({muxList.filter(m => m.status === 'Running').length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('Stopped')}
-              className={`rounded-lg px-3 py-1 transition-colors ${statusFilter === 'Stopped' ? 'bg-slate-600 text-white' : 'text-[#64748B] dark:text-[#A78BFA] hover:text-[#0F172A]'}`}
-            >
-              Stopped ({muxList.filter(m => m.status === 'Stopped').length})
+            <button type="button" onClick={() => setWorkspace(null)} className="h-9 rounded-lg border border-[#E8DFF0] px-4 text-xs font-semibold text-[#6F6078] dark:border-[#371F59] dark:text-[#B9A5CD]">Cancel</button>
+            <button type="button" onClick={saveMux} disabled={saving} className="inline-flex h-9 items-center gap-2 rounded-lg bg-violet-600 px-5 text-xs font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50 transition-colors">
+              <FiCheck /> {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
-      </div>
 
-      {/* ── MUX Cards List ── */}
-      {filteredMuxes.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-[#CBD5E1] dark:border-[#371F59] bg-white/50 dark:bg-[#190E28]/40 p-12 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600 dark:text-violet-400 mb-3">
-            <FiLayers size={28} />
-          </div>
-          <h3 className="text-base font-extrabold text-[#0F172A] dark:text-white">No MPTS MUX Configurations Found</h3>
-          <p className="mt-1 text-xs text-[#64748B] dark:text-[#A78BFA] max-w-md mx-auto">
-            Create a new MPTS multiplexer to aggregate your existing live channels and VOD UDP feeds into a single broadcast transport stream.
-          </p>
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-violet-700 transition-colors"
-          >
-            <FiPlus size={16} /> Create MPTS MUX
+        <div className={`${cardClass} flex gap-1 p-1.5`}>
+          <button type="button" onClick={() => setWorkspaceTab('services')} className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-bold ${workspaceTab === 'services' ? 'bg-violet-600 text-white' : 'text-[#6F6078] dark:text-[#B9A5CD]'}`}>
+            <FiLayers /> Input assignment <span className="rounded bg-black/10 px-1.5 py-0.5">{workspace.services.length}</span>
+          </button>
+          <button type="button" onClick={() => setWorkspaceTab('settings')} className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-bold ${workspaceTab === 'settings' ? 'bg-violet-600 text-white' : 'text-[#6F6078] dark:text-[#B9A5CD]'}`}>
+            <FiSettings /> MPTS settings
           </button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filteredMuxes.map(mux => {
-            const isRunning = mux.status === 'Running';
-            const stats = liveStats[mux.id];
-            const capacityPercent = stats ? stats.capacityPercent : 0;
-            const isOverCapacity = stats ? stats.isOverCapacity : false;
-            const isWarning = stats ? stats.isCapacityWarning : false;
 
-            return (
-              <div
-                key={mux.id}
-                className={`group relative rounded-2xl border transition-all duration-200 shadow-sm ${
-                  selectedMuxId === mux.id
-                    ? 'border-violet-500 ring-2 ring-violet-500/20 bg-white dark:bg-[#1C1030]'
-                    : 'border-[#E8EDF5] dark:border-[#311B4E] bg-white/90 dark:bg-[#190E28]/95 hover:border-violet-300 dark:hover:border-violet-700'
-                } p-5`}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2.5">
-                      <span className={`relative flex h-3 w-3 ${isRunning ? 'animate-pulse' : ''}`}>
-                        <span className={`inline-flex h-full w-full rounded-full ${isRunning ? 'bg-emerald-500 shadow-sm shadow-emerald-500' : 'bg-slate-400'}`} />
-                      </span>
-                      <h2 className="text-base font-extrabold tracking-tight text-[#0F172A] dark:text-white">
-                        {mux.name}
-                      </h2>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                          isRunning
-                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                            : 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border border-slate-500/30'
-                        }`}
-                      >
-                        {isRunning ? 'RUNNING' : 'STOPPED'}
-                      </span>
+        {workspaceTab === 'services' ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            <section className={`${cardClass} min-h-[560px] p-4`}>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-bold text-[#1B1024] dark:text-white">Available inputs</h2>
+                  <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Drag a channel or VOD source into the output column.</p>
+                </div>
+                <button type="button" onClick={() => void fetchAll()} className="rounded-lg border border-[#E8DFF0] p-2 text-[#6F6078] dark:border-[#371F59] dark:text-[#B9A5CD]"><FiRefreshCw /></button>
+              </div>
+              <div className="relative mb-3">
+                <FiSearch className="absolute left-3 top-2.5 text-[#8E78A6]" />
+                <input className={`${inputClass} pl-9`} value={sourceSearch} onChange={event => setSourceSearch(event.target.value)} placeholder="Search inputs" />
+              </div>
+              <div className="mb-2 grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
+                <input className={inputClass} value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Custom name" />
+                <input className={inputClass} value={customUrl} onChange={event => setCustomUrl(event.target.value)} placeholder="srt://, udp://, rtmp:// or file path" />
+                <button type="button" onClick={addCustomSource} className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-[#251133] px-3 text-xs font-bold text-white"><FiPlus /> Add</button>
+              </div>
+              <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[10px]">
+                <span className="font-semibold text-[#6F6078] dark:text-[#A898BC]">SRT Presets:</span>
+                <button type="button" onClick={() => { setCustomName('SRT Listener'); setCustomUrl('srt://0.0.0.0:8890?mode=listener&latency=200'); }} className="px-2 py-0.5 rounded font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300">
+                  🟢 SRT Listener
+                </button>
+                <button type="button" onClick={() => { setCustomName('SRT Caller'); setCustomUrl('srt://127.0.0.1:9001?mode=caller&latency=200'); }} className="px-2 py-0.5 rounded font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-300">
+                  🔵 SRT Caller
+                </button>
+                <button type="button" onClick={() => { setCustomName('SRT Rendezvous'); setCustomUrl('srt://127.0.0.1:9001?mode=rendezvous&latency=200'); }} className="px-2 py-0.5 rounded font-bold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 dark:bg-purple-950/30 dark:border-purple-800 dark:text-purple-300">
+                  🟣 SRT Rendezvous
+                </button>
+              </div>
+              <div className="space-y-2">
+                {filteredSources.map(source => {
+                  const assigned = workspace.services.some(service => service.inputUrl === source.inputUrl);
+                  return (
+                    <div
+                      key={source.id}
+                      draggable={!assigned}
+                      onDragStart={event => event.dataTransfer.setData('application/x-streamops-source', source.id)}
+                      className={`flex items-center gap-3 rounded-xl border p-3 ${assigned ? 'border-emerald-200 bg-emerald-50/60 opacity-70 dark:border-emerald-900 dark:bg-emerald-950/20' : 'cursor-grab border-[#E8DFF0] bg-[#F8F7FA] dark:border-[#371F59] dark:bg-[#211335]'}`}
+                    >
+                      <div className="rounded-lg bg-violet-100 p-2 text-violet-700 dark:bg-violet-950"><FiWifi /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2"><span className="truncate text-xs font-bold text-[#1B1024] dark:text-white">{source.name}</span><span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#6F6078] dark:bg-[#190E28]">{source.sourceType}</span></div>
+                        <p className="truncate font-mono text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">{source.inputUrl}</p>
+                      </div>
+                      {assigned ? <span className="text-[10px] font-bold text-emerald-600">Assigned</span> : <button type="button" onClick={() => addSource(source)} className="rounded-lg border border-[#E8DFF0] p-2 text-violet-600 dark:border-[#371F59]"><FiPlus /></button>}
                     </div>
-                    {mux.description && (
-                      <p className="text-[11px] text-[#64748B] dark:text-[#A78BFA] line-clamp-1">
-                        {mux.description}
-                      </p>
+                  );
+                })}
+                {!filteredSources.length && <div className="rounded-xl border border-dashed border-[#E8DFF0] p-10 text-center text-xs text-[#6F6078] dark:border-[#371F59] dark:text-[#B9A5CD]"><FiInbox className="mx-auto mb-2 text-2xl" />No matching inputs</div>}
+              </div>
+            </section>
+
+            <section className={`${cardClass} min-h-[560px] p-4`} onDragOver={event => event.preventDefault()} onDrop={handleSourceDrop}>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-bold text-[#1B1024] dark:text-white">MPTS output services</h2>
+                  <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Drop inputs here. Drag assigned services to reorder programs.</p>
+                </div>
+                <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">{workspace.services.length} service(s)</span>
+              </div>
+              {!workspace.services.length ? (
+                <div className="flex min-h-[460px] items-center justify-center rounded-xl border-2 border-dashed border-violet-200 bg-violet-50/40 text-center dark:border-violet-900 dark:bg-violet-950/10">
+                  <div><FiInbox className="mx-auto mb-3 text-4xl text-violet-300" /><p className="text-sm font-bold text-[#1B1024] dark:text-white">Drop inputs into this column</p><p className="mt-1 text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Each input becomes one DVB program in the MPTS output.</p></div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {workspace.services.map((service, index) => (
+                    <div
+                      key={service.id}
+                      draggable
+                      onDragStart={() => setDraggedServiceId(service.id)}
+                      onDragOver={event => event.preventDefault()}
+                      onDrop={event => handleServiceDrop(event, service.id)}
+                      className="cursor-grab rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:border-[#371F59] dark:bg-[#211335]"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-xs font-bold text-white">{index + 1}</div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="grid gap-2 sm:grid-cols-[1fr_130px]">
+                            <input className={inputClass} value={service.serviceName} onChange={event => patchService(service.id, { serviceName: event.target.value })} aria-label="Service name" />
+                            <select className={inputClass} value={service.mode} onChange={event => patchService(service.id, { mode: event.target.value as 'copy' | 'transcode' })}>
+                              <option value="copy">⚡ Pass-through</option><option value="transcode">⚙️ Transcode</option>
+                            </select>
+                          </div>
+                          <p className="truncate font-mono text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">{service.inputUrl}</p>
+                          <div className="flex flex-wrap gap-2 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]"><span>Service {service.serviceId}</span><span>PMT {service.pmtPid}</span><span>Video {service.videoPid}</span><span>Audio {service.audioStreams?.[0]?.audioPid || '0x102'}</span></div>
+
+                          {/* Full Per-Service Transcoding Controls */}
+                          {service.mode === 'transcode' && (
+                            <div className="mt-2 rounded-lg border border-violet-200 bg-white/80 p-3 shadow-2xs dark:border-[#462470] dark:bg-[#1A0E29] space-y-2.5 animate-fadeIn">
+                              <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-1.5 dark:border-[#371F59]">
+                                <span className="text-[11px] font-bold text-violet-900 dark:text-violet-300 flex items-center gap-1">
+                                  <FiSliders size={12} /> Service Transcoding Configuration
+                                </span>
+                                <span className="text-[9px] font-bold uppercase rounded bg-violet-100 px-1.5 py-0.5 text-violet-800 dark:bg-violet-950 dark:text-violet-300">
+                                  {service.videoCodec || 'H.264'} · {service.videoBitrateKbps || 4000}k
+                                </span>
+                              </div>
+
+                              {/* Video Section */}
+                              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Video Codec
+                                  <select
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    value={service.videoCodec || 'h264'}
+                                    onChange={e => patchService(service.id, { videoCodec: e.target.value as any })}
+                                  >
+                                    <option value="h264">H.264 / AVC (Broadcast)</option>
+                                    <option value="hevc">H.265 / HEVC (UHD/HD)</option>
+                                    <option value="copy">Pass-through Video (Copy)</option>
+                                  </select>
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Encoder Engine
+                                  <select
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    value={service.encoder || 'auto'}
+                                    onChange={e => patchService(service.id, { encoder: e.target.value as any })}
+                                  >
+                                    <option value="auto">Auto (Hardware / CPU)</option>
+                                    <option value="nvidia">NVIDIA NVENC</option>
+                                    <option value="cpu">CPU (libx264)</option>
+                                  </select>
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Video Bitrate (kbps)
+                                  <input
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    type="number"
+                                    min="300"
+                                    max="50000"
+                                    step="100"
+                                    value={service.videoBitrateKbps || 4000}
+                                    onChange={e => patchService(service.id, { videoBitrateKbps: Number(e.target.value) })}
+                                  />
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Resolution
+                                  <select
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    value={service.resolution || 'source'}
+                                    onChange={e => patchService(service.id, { resolution: e.target.value })}
+                                  >
+                                    <option value="source">Source (Native)</option>
+                                    <option value="1920x1080">1080p (1920x1080)</option>
+                                    <option value="1280x720">720p (1280x720)</option>
+                                    <option value="720x576">576i PAL (720x576)</option>
+                                    <option value="3840x2160">4K UHD (3840x2160)</option>
+                                  </select>
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Framerate (FPS)
+                                  <select
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    value={service.fps || 25}
+                                    onChange={e => patchService(service.id, { fps: Number(e.target.value) })}
+                                  >
+                                    <option value={25}>25 fps (PAL / DVB)</option>
+                                    <option value={50}>50 fps (50p)</option>
+                                    <option value={29.97}>29.97 fps (NTSC)</option>
+                                    <option value={59.94}>59.94 fps (60p)</option>
+                                    <option value={30}>30 fps</option>
+                                    <option value={60}>60 fps</option>
+                                  </select>
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  GOP Size
+                                  <input
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    type="number"
+                                    min="10"
+                                    max="300"
+                                    value={service.gop || 50}
+                                    onChange={e => patchService(service.id, { gop: Number(e.target.value) })}
+                                  />
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Audio Codec
+                                  <select
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    value={service.audioCodec || 'aac'}
+                                    onChange={e => patchService(service.id, { audioCodec: e.target.value as any })}
+                                  >
+                                    <option value="aac">AAC-LC (Broadcast)</option>
+                                    <option value="mp2">MPEG-1 Layer II (MP2 DVB)</option>
+                                    <option value="ac3">Dolby Digital (AC-3)</option>
+                                    <option value="copy">Pass-through Audio (Copy)</option>
+                                  </select>
+                                </label>
+
+                                <label className="space-y-0.5 text-[10px] font-semibold text-[#1B1024] dark:text-white">
+                                  Audio Bitrate (kbps)
+                                  <select
+                                    className={`${inputClass} text-[11px] h-8`}
+                                    value={service.audioBitrateKbps || 192}
+                                    onChange={e => patchService(service.id, { audioBitrateKbps: Number(e.target.value) })}
+                                  >
+                                    <option value={128}>128 kbps</option>
+                                    <option value={192}>192 kbps (Standard)</option>
+                                    <option value={256}>256 kbps (High Quality)</option>
+                                    <option value={384}>384 kbps (Master)</option>
+                                  </select>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 flex-col gap-1">
+                          <button type="button" onClick={() => moveService(service.id, -1)} disabled={index === 0} className="rounded border border-[#E8DFF0] p-1.5 disabled:opacity-30 dark:border-[#371F59]"><FiArrowUp /></button>
+                          <button type="button" onClick={() => moveService(service.id, 1)} disabled={index === workspace.services.length - 1} className="rounded border border-[#E8DFF0] p-1.5 disabled:opacity-30 dark:border-[#371F59]"><FiArrowDown /></button>
+                          <button type="button" onClick={() => removeService(service.id)} className="rounded border border-rose-200 p-1.5 text-rose-600 dark:border-rose-900"><FiX /></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* MPTS Processing & Transcoding Mode Selector */}
+            <section className={`${cardClass} p-5`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-bold text-[#1B1024] dark:text-white flex items-center gap-2">
+                    <FiSliders className="text-violet-600" /> MPTS Output Processing &amp; Transcoding Mode
+                  </h2>
+                  <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+                    Choose whether this entire MPTS stream passes input packets directly through or transcodes and normalizes all programs.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {/* 1. Pass-through Mode */}
+                <button
+                  type="button"
+                  onClick={() => patchWorkspace({ outputMode: 'passthrough' })}
+                  className={`flex flex-col text-left rounded-xl border p-3.5 transition-all cursor-pointer ${
+                    (workspace.outputMode || 'passthrough') === 'passthrough'
+                      ? 'border-violet-600 bg-violet-50/80 shadow-xs dark:bg-violet-950/40 dark:border-violet-400'
+                      : 'border-[#E8DFF0] bg-[#F8F7FA] hover:bg-slate-100 dark:border-[#371F59] dark:bg-[#211335]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                      ⚡ Pass-Through (Copy)
+                    </span>
+                    {(workspace.outputMode || 'passthrough') === 'passthrough' && (
+                      <span className="h-2 w-2 rounded-full bg-violet-600 dark:bg-violet-400" />
                     )}
                   </div>
+                  <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                    Zero CPU overhead. Muxes original video/audio streams directly into the MPTS container.
+                  </p>
+                </button>
 
-                  {/* Top quick controls */}
-                  <div className="flex items-center gap-1.5">
-                    {isRunning ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleRestartMux(mux.id, mux.name)}
-                          title="Restart MUX Process"
-                          className="rounded-lg p-2 text-[#64748B] hover:text-violet-600 hover:bg-violet-50 dark:text-[#A78BFA] dark:hover:bg-[#2B1745] transition-colors"
-                        >
-                          <FiRefreshCw size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStopMux(mux.id, mux.name)}
-                          title="Stop MUX"
-                          className="rounded-lg bg-rose-50 dark:bg-rose-950/40 p-2 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-colors"
-                        >
-                          <FiSquare size={15} />
-                        </button>
-                      </>
+                {/* 2. Full MPTS Transcode Mode */}
+                <button
+                  type="button"
+                  onClick={() => patchWorkspace({ outputMode: 'transcode' })}
+                  className={`flex flex-col text-left rounded-xl border p-3.5 transition-all cursor-pointer ${
+                    workspace.outputMode === 'transcode'
+                      ? 'border-violet-600 bg-violet-50/80 shadow-xs dark:bg-violet-950/40 dark:border-violet-400'
+                      : 'border-[#E8DFF0] bg-[#F8F7FA] hover:bg-slate-100 dark:border-[#371F59] dark:bg-[#211335]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                      ⚙️ Full MPTS Transcode
+                    </span>
+                    {workspace.outputMode === 'transcode' && (
+                      <span className="h-2 w-2 rounded-full bg-violet-600 dark:bg-violet-400" />
+                    )}
+                  </div>
+                  <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                    Transcodes and normalizes all multiplexed channels to standard broadcast H.264/HEVC + AAC/MP2.
+                  </p>
+                </button>
+
+                {/* 3. Hybrid / Per-Service Mode */}
+                <button
+                  type="button"
+                  onClick={() => patchWorkspace({ outputMode: 'hybrid' })}
+                  className={`flex flex-col text-left rounded-xl border p-3.5 transition-all cursor-pointer ${
+                    workspace.outputMode === 'hybrid'
+                      ? 'border-violet-600 bg-violet-50/80 shadow-xs dark:bg-violet-950/40 dark:border-violet-400'
+                      : 'border-[#E8DFF0] bg-[#F8F7FA] hover:bg-slate-100 dark:border-[#371F59] dark:bg-[#211335]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                      🔀 Per-Service Hybrid
+                    </span>
+                    {workspace.outputMode === 'hybrid' && (
+                      <span className="h-2 w-2 rounded-full bg-violet-600 dark:bg-violet-400" />
+                    )}
+                  </div>
+                  <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                    Configure each program individually (Copy or Transcode) in the Services tab.
+                  </p>
+                </button>
+              </div>
+
+              {/* Transcoding Parameters Form (when Transcode mode is active) */}
+              {workspace.outputMode === 'transcode' && (
+                <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-[#462470] dark:bg-[#201138]">
+                  <h3 className="text-xs font-bold text-violet-950 dark:text-violet-200 mb-3">
+                    Broadcast Transcoding Parameters
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Video Codec
+                      <select
+                        className={inputClass}
+                        value={workspace.globalVideoCodec || 'h264'}
+                        onChange={e => patchWorkspace({ globalVideoCodec: e.target.value as any })}
+                      >
+                        <option value="h264">H.264 / AVC (Broadcast Standard)</option>
+                        <option value="hevc">H.265 / HEVC (High Efficiency)</option>
+                        <option value="copy">Pass-through Video (Copy)</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Audio Codec
+                      <select
+                        className={inputClass}
+                        value={workspace.globalAudioCodec || 'aac'}
+                        onChange={e => patchWorkspace({ globalAudioCodec: e.target.value as any })}
+                      >
+                        <option value="aac">AAC-LC (Broadcast Audio)</option>
+                        <option value="mp2">MPEG-1 Layer II (MP2 DVB)</option>
+                        <option value="ac3">Dolby Digital (AC-3)</option>
+                        <option value="copy">Pass-through Audio (Copy)</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Resolution
+                      <select
+                        className={inputClass}
+                        value={workspace.globalResolution || 'source'}
+                        onChange={e => patchWorkspace({ globalResolution: e.target.value })}
+                      >
+                        <option value="source">Source Resolution (Native)</option>
+                        <option value="1920x1080">1080p Full HD (1920x1080)</option>
+                        <option value="1280x720">720p HD (1280x720)</option>
+                        <option value="720x576">576i PAL SD (720x576)</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Hardware Acceleration
+                      <select
+                        className={inputClass}
+                        value={workspace.globalEncoder || 'auto'}
+                        onChange={e => patchWorkspace({ globalEncoder: e.target.value as any })}
+                      >
+                        <option value="auto">Auto (NVIDIA / QuickSync / CPU)</option>
+                        <option value="nvidia">NVIDIA NVENC</option>
+                        <option value="cpu">CPU (libx264 Software)</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Target Video Bitrate (kbps)
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="500"
+                        max="50000"
+                        step="100"
+                        value={workspace.globalVideoBitrateKbps || 3500}
+                        onChange={e => patchWorkspace({ globalVideoBitrateKbps: Number(e.target.value) })}
+                      />
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Target Audio Bitrate (kbps)
+                      <select
+                        className={inputClass}
+                        value={workspace.globalAudioBitrateKbps || 192}
+                        onChange={e => patchWorkspace({ globalAudioBitrateKbps: Number(e.target.value) })}
+                      >
+                        <option value={128}>128 kbps</option>
+                        <option value={192}>192 kbps (Standard)</option>
+                        <option value={256}>256 kbps (High Quality)</option>
+                        <option value={384}>384 kbps (Studio Master)</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      Framerate (FPS)
+                      <select
+                        className={inputClass}
+                        value={workspace.globalFps || 25}
+                        onChange={e => patchWorkspace({ globalFps: Number(e.target.value) })}
+                      >
+                        <option value={25}>25 fps (PAL / DVB)</option>
+                        <option value={50}>50 fps (PAL 50p)</option>
+                        <option value={29.97}>29.97 fps (NTSC / ATSC)</option>
+                        <option value={59.94}>59.94 fps (NTSC 60p)</option>
+                        <option value={30}>30 fps</option>
+                        <option value={60}>60 fps</option>
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs font-semibold text-[#1B1024] dark:text-white">
+                      GOP Size (Frames)
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="10"
+                        max="300"
+                        value={workspace.globalGop || 50}
+                        onChange={e => patchWorkspace({ globalGop: Number(e.target.value) })}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+              <section className={`${cardClass} p-5`}>
+                <h2 className="text-sm font-bold text-[#1B1024] dark:text-white">Output network</h2>
+                <p className="mb-4 text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">The egress NIC is required and maps to FFmpeg&apos;s multicast local address.</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white sm:col-span-2">Name<input className={inputClass} value={workspace.name} onChange={event => patchWorkspace({ name: event.target.value })} /></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white sm:col-span-2">Egress NIC<select className={inputClass} value={workspace.outputInterface || selectedInterface?.interface || ''} onChange={event => {
+                    const selected = interfaces.find(item => item.interface === event.target.value);
+                    patchWorkspace({ outputInterface: selected?.interface || '', outputInterfaceAddress: selected?.address || '' });
+                  }}><option value="" disabled>Select an interface</option>{interfaces.map(item => <option key={item.interface} value={item.interface}>{item.logicalName || item.name || item.interface} — {item.address || 'DHCP'} ({item.state || 'Up'})</option>)}</select>{!interfaces.length && <span className="block text-[10px] font-normal text-rose-600">No NIC with an IP address was detected.</span>}</label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">Multicast / unicast IP<input className={inputClass} value={workspace.outputIp} onChange={event => patchWorkspace({ outputIp: event.target.value })} /></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">UDP port<input className={inputClass} type="number" value={workspace.outputPort} onChange={event => patchWorkspace({ outputPort: Number(event.target.value) })} /></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">Target mux bitrate (Mbps)<input className={inputClass} type="number" min="1" value={workspace.targetBitrateMbps} onChange={event => patchWorkspace({ targetBitrateMbps: Number(event.target.value) })} /></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">Packet size<select className={inputClass} value={workspace.packetSize} onChange={event => patchWorkspace({ packetSize: Number(event.target.value) })}><option value={1316}>1316 bytes (7 TS packets)</option><option value={188}>188 bytes</option></select></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">TTL<input className={inputClass} type="number" min="1" max="255" value={workspace.ttl} onChange={event => patchWorkspace({ ttl: Number(event.target.value) })} /></label>
+                </div>
+              </section>
+              <section className={`${cardClass} p-5`}>
+                <h2 className="text-sm font-bold text-[#1B1024] dark:text-white">DVB PSI/SI and supervision</h2>
+                <p className="mb-4 text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Transport identifiers are kept separate from input assignment.</p>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">TSID<input className={inputClass} type="number" value={workspace.tsid} onChange={event => patchWorkspace({ tsid: Number(event.target.value) })} /></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">ONID<input className={inputClass} type="number" value={workspace.onid} onChange={event => patchWorkspace({ onid: Number(event.target.value) })} /></label>
+                  <label className="space-y-1 text-xs font-bold text-[#1B1024] dark:text-white">NID<input className={inputClass} type="number" value={workspace.nid} onChange={event => patchWorkspace({ nid: Number(event.target.value) })} /></label>
+                </div>
+                <div className="mt-5 space-y-3 rounded-xl border border-[#E8DFF0] p-4 dark:border-[#371F59]">
+                  <label className="flex items-center justify-between gap-3 text-xs font-semibold text-[#1B1024] dark:text-white"><span><b className="block">Auto start</b><small className="font-normal text-[#6F6078] dark:text-[#B9A5CD]">Start only after the MUX entitlement validates.</small></span><input type="checkbox" checked={workspace.autoStart !== false} onChange={event => patchWorkspace({ autoStart: event.target.checked })} /></label>
+                  <label className="flex items-center justify-between gap-3 text-xs font-semibold text-[#1B1024] dark:text-white"><span><b className="block">Auto restart</b><small className="font-normal text-[#6F6078] dark:text-[#B9A5CD]">Recover after an unexpected process exit.</small></span><input type="checkbox" checked={workspace.autoRestart !== false} onChange={event => patchWorkspace({ autoRestart: event.target.checked })} /></label>
+                  <label className="flex items-center justify-between gap-3 text-xs font-semibold text-[#1B1024] dark:text-white"><span><b className="block">Null Packet Filter</b><small className="font-normal text-[#6F6078] dark:text-[#B9A5CD]">Strip 0x1FFF CBR null stuffing packets (VBR mode) or maintain strict broadcast CBR stuffing.</small></span><input type="checkbox" checked={Boolean(workspace.filterNullPackets)} onChange={event => patchWorkspace({ filterNullPackets: event.target.checked })} /></label>
+                </div>
+                <div className="mt-4 rounded-xl bg-[#120A1D] p-4 text-[11px] text-violet-200">
+                  <p className="font-bold text-white">Output preview</p>
+                  <p className="mt-1 font-mono">udp://{workspace.outputIp}:{workspace.outputPort}</p>
+                  <p className="mt-1">NIC: {selectedInterface ? `${selectedInterface.interface} (${selectedInterface.address})` : 'not selected'}</p>
+                  <p>Mode: <span className="font-bold uppercase text-amber-300">{workspace.outputMode || 'passthrough'}</span> · Target: {workspace.targetBitrateMbps} Mbps · {workspace.services.length} service(s)</p>
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className={`${cardClass} flex flex-wrap items-center justify-between gap-3 p-4`}>
+        <div>
+          <div className="flex items-center gap-2"><FiLayers className="text-violet-600" /><h1 className="text-base font-bold text-[#1B1024] dark:text-white">MPTS Multiplexer</h1></div>
+          <p className="mt-1 text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Build multi-program transport streams from available inputs and route them through a selected egress NIC.</p>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => void fetchAll()} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E8DFF0] px-3 text-xs font-bold text-[#6F6078] dark:border-[#371F59] dark:text-[#B9A5CD]"><FiRefreshCw className={loading ? 'animate-spin' : ''} /> Refresh</button>
+          <button type="button" onClick={createMux} className="inline-flex h-9 items-center gap-2 rounded-lg bg-violet-600 px-4 text-xs font-bold text-white"><FiPlus /> New MPTS output</button>
+        </div>
+      </div>
+
+      {loading && !muxes.length ? (
+        <div className={`${cardClass} p-12 text-center text-xs text-[#6F6078] dark:text-[#B9A5CD]`}><FiRefreshCw className="mx-auto mb-3 animate-spin text-2xl" />Loading MPTS configurations…</div>
+      ) : !muxes.length ? (
+        <div className={`${cardClass} p-12 text-center`}><FiInbox className="mx-auto mb-3 text-4xl text-violet-300" /><h2 className="text-sm font-bold text-[#1B1024] dark:text-white">No MPTS outputs configured</h2><p className="mt-1 text-xs text-[#6F6078] dark:text-[#B9A5CD]">Create an output, drag inputs into it, then choose the server NIC used for multicast egress.</p><button type="button" onClick={createMux} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-violet-600 px-4 text-xs font-bold text-white"><FiPlus /> Create output</button></div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {muxes.map(mux => {
+            const live = stats[mux.id];
+            const running = mux.status === 'Running' || live?.status === 'Running';
+            const capacity = live?.capacityPercent || 0;
+            return (
+              <article key={mux.id} className={`${cardClass} overflow-hidden flex flex-col justify-between`}>
+                <div>
+                  <div className="flex items-center justify-between gap-3 border-b border-[#E8DFF0] p-4 dark:border-[#311B4E]">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="truncate text-base font-black text-[#1B1024] dark:text-white">{mux.name}</h2>
+                        <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                          {mux.outputMode === 'transcode' ? '⚙️ Transcode' : mux.outputMode === 'hybrid' ? '🔀 Hybrid' : '⚡ Pass-Through'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD] mt-0.5">
+                        DVB Multiplexer with {mux.services.length} assigned input stream(s)
+                      </p>
+                    </div>
+
+                    {/* RED / GREEN SIGNAL INDICATOR */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {running ? (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-700 shadow-xs">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]"></span>
+                          </span>
+                          <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                            SIGNAL ACTIVE
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-300 dark:bg-rose-950/40 dark:border-rose-800 shadow-xs">
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.9)]"></span>
+                          <span className="text-[11px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                            SIGNAL DISABLED
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* BIG TEXT SIZE OUTPUT MPTS DESTINATION */}
+                  <div className="p-4 bg-[#0F0819] rounded-xl mx-4 mt-3 border border-violet-900/60 shadow-inner">
+                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-violet-300 mb-1">
+                      <span>MPTS UDP Broadcast Output</span>
+                      <span className="font-mono text-violet-400">NIC: {mux.outputInterface || 'Default Interface'}</span>
+                    </div>
+                    <div className="text-xl sm:text-2xl font-mono font-black text-emerald-400 tracking-tight select-all py-1">
+                      udp://{mux.outputIp}:{mux.outputPort}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2.5 mt-2 border-t border-violet-900/50 text-[11px]">
+                      <div>
+                        <span className="text-[#8E78A6] block text-[9px] uppercase font-bold">Multicast IP</span>
+                        <span className="font-mono font-bold text-white text-xs">{mux.outputIp}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8E78A6] block text-[9px] uppercase font-bold">UDP Port</span>
+                        <span className="font-mono font-bold text-white text-xs">{mux.outputPort}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8E78A6] block text-[9px] uppercase font-bold">Target Bitrate</span>
+                        <span className="font-mono font-bold text-white text-xs">{mux.targetBitrateMbps} Mbps</span>
+                      </div>
+                      <div>
+                        <span className="text-[#8E78A6] block text-[9px] uppercase font-bold">Null Filter</span>
+                        <span className={`font-bold text-xs ${mux.filterNullPackets ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {mux.filterNullPackets ? 'FILTERED (VBR)' : 'CBR STUFFING'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 p-4">
+                    <div>
+                      <span className="block text-[9px] font-bold uppercase text-[#8E78A6]">Inputs</span>
+                      <b className="text-lg text-[#1B1024] dark:text-white">{mux.services.length}</b>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-bold uppercase text-[#8E78A6]">Real Output</span>
+                      <b className="text-lg text-[#1B1024] dark:text-white">{running ? ((live?.outputKbps || 0) / 1000).toFixed(1) : '0.0'} <small className="text-[10px]">Mbps</small></b>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-bold uppercase text-[#8E78A6]">Uptime</span>
+                      <b className="font-mono text-sm text-[#1B1024] dark:text-white">{formatUptime(live?.uptimeSeconds || mux.uptimeSeconds)}</b>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:border-[#311B4E] dark:bg-[#211335]">
+                  <div className="flex items-center gap-2">
+                    {/* ENABLE / DISABLE BUTTON */}
+                    {running ? (
+                      <button
+                        type="button"
+                        onClick={() => void runAction(mux, 'stop')}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition-colors"
+                      >
+                        <FiSquare /> Disable MPTS
+                      </button>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleStartMux(mux.id, mux.name)}
-                        title="Start MPTS MUX"
-                        className="rounded-lg bg-emerald-600 p-2 text-white shadow-xs hover:bg-emerald-700 transition-colors"
+                        onClick={() => void runAction(mux, 'start')}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors"
                       >
-                        <FiPlay size={15} />
+                        <FiPlay /> Enable MPTS
                       </button>
                     )}
+
+                    {/* NULL PACKET FILTER OPTION */}
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer px-2.5 py-1 rounded-lg border border-[#E8DFF0] bg-white dark:bg-[#190E28] dark:border-[#371F59] hover:bg-[#F0EDF5]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(mux.filterNullPackets)}
+                        onChange={async (e) => {
+                          const updated = { ...mux, filterNullPackets: e.target.checked };
+                          try {
+                            await api(`/api/mux/${encodeURIComponent(mux.id)}`, {
+                              method: 'PUT',
+                              body: JSON.stringify(updated)
+                            });
+                            toast.success(e.target.checked ? 'Null Packet Filter Enabled (VBR mode)' : 'Null Packet Filter Disabled (CBR null stuffing)');
+                            await fetchAll();
+                          } catch (err: any) {
+                            toast.error(err?.message || 'Could not update filter');
+                          }
+                        }}
+                        className="rounded text-violet-600"
+                      />
+                      <span>Null Pkt Filter</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <button type="button" onClick={() => editMux(mux)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[11px] font-bold text-[#1B1024] dark:border-[#371F59] dark:bg-[#190E28] dark:text-white hover:bg-slate-50"><FiEdit2 /> Edit</button>
+                    <button type="button" onClick={() => void duplicateMux(mux)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[11px] font-bold text-[#6F6078] dark:border-[#371F59] dark:bg-[#190E28] dark:text-[#B9A5CD] hover:bg-slate-50"><FiCopy /> Duplicate</button>
+                    <button type="button" onClick={() => void deleteMux(mux)} className="rounded-lg border border-rose-200 p-2 text-rose-600 dark:border-rose-900 hover:bg-rose-50"><FiTrash2 /></button>
                   </div>
                 </div>
-
-                {/* 2 Columns: Input Summary & Output Summary */}
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-[#E8EDF5] dark:border-[#311B4E] text-xs">
-                  {/* Left Column: Input Programs */}
-                  <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#1E1233] p-3 border border-[#E8EDF5] dark:border-[#371F59] space-y-1.5">
-                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1">
-                      <FiInbox size={12} /> Inputs ({mux.services?.length || 0} Programs)
-                    </div>
-                    <div className="text-[11px] text-[#475569] dark:text-[#D8C6E8] truncate font-medium">
-                      {mux.services && mux.services.length > 0
-                        ? mux.services.map(s => s.serviceName).join(', ')
-                        : 'No services mapped'}
-                    </div>
-                    <div className="text-[10px] text-[#94A3B8] font-mono">
-                      TSID: #{mux.tsid || 1} | ONID: #{mux.onid || 1}
-                    </div>
-                  </div>
-
-                  {/* Right Column: Output Egress */}
-                  <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#1E1233] p-3 border border-[#E8EDF5] dark:border-[#371F59] space-y-1.5">
-                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                      <FiSend size={12} /> Output Egress Stream
-                    </div>
-                    <div className="font-mono font-bold text-xs text-[#0F172A] dark:text-white truncate">
-                      udp://{mux.outputIp}:{mux.outputPort}
-                    </div>
-                    <div className="text-[10px] text-[#94A3B8] font-mono">
-                      Target: {mux.targetBitrateMbps || 30} Mbps CBR
-                    </div>
-                  </div>
-                </div>
-
-                {/* Capacity Progress Bar */}
-                <div className="mt-3 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-[#64748B] dark:text-[#A78BFA]">
-                    <span>Bandwidth Allocation & Null Stuffing:</span>
-                    <span className={`font-mono font-bold ${isOverCapacity ? 'text-rose-600' : isWarning ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                      {stats ? `${(stats.totalInputKbps / 1000).toFixed(2)} / ${mux.targetBitrateMbps} Mbps` : `${mux.services?.length || 0} services configured`}
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E2E8F0] dark:bg-[#371F59]">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        isOverCapacity
-                          ? 'bg-rose-600'
-                          : isWarning
-                            ? 'bg-amber-500'
-                            : 'bg-emerald-500'
-                      }`}
-                      style={{ width: `${Math.min(100, Math.max(0, capacityPercent || 50))}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Bottom Action Footer */}
-                <div className="mt-4 pt-3 flex items-center justify-between border-t border-[#E8EDF5] dark:border-[#311B4E]">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(mux)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-[#E2E8F0] dark:border-[#371F59] bg-white dark:bg-[#1E1233] px-2.5 py-1 text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] hover:bg-[#F8FAFC] dark:hover:bg-[#2D184C] transition-colors"
-                    >
-                      <FiEdit2 size={12} /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openDuplicateModal(mux)}
-                      title="Duplicate MUX"
-                      className="inline-flex items-center gap-1 rounded-lg border border-[#E2E8F0] dark:border-[#371F59] bg-white dark:bg-[#1E1233] px-2.5 py-1 text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] hover:bg-[#F8FAFC] dark:hover:bg-[#2D184C] transition-colors"
-                    >
-                      <FiCopy size={12} /> Duplicate
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteMux(mux.id, mux.name)}
-                      className="rounded-lg p-1.5 text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                      title="Delete MUX"
-                    >
-                      <FiTrash2 size={13} />
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMuxId(selectedMuxId === mux.id ? null : mux.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-[11px] font-extrabold transition-colors ${
-                      selectedMuxId === mux.id
-                        ? 'bg-violet-600 text-white'
-                        : 'bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 hover:bg-violet-100'
-                    }`}
-                  >
-                    <FiEye size={13} />
-                    {selectedMuxId === mux.id ? 'Close Monitor' : '2-Column Monitor & Telemetry'}
-                  </button>
-                </div>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
 
-      {/* ── 2-COLUMN LIVE MPTS CONFIDENCE MONITOR & TELEMETRY SECTION ── */}
-      {selectedMux && (
-        <div className="rounded-3xl border border-violet-500/30 bg-white/95 dark:bg-[#190E28]/98 p-6 shadow-xl backdrop-blur-xl space-y-6 animate-scale-up">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#E8EDF5] dark:border-[#311B4E] pb-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-md">
-                <FiRadio size={20} />
-              </span>
-              <div>
-                <h3 className="text-lg font-black text-[#0F172A] dark:text-white flex items-center gap-2">
-                  Live MPTS Monitor: {selectedMux.name}
-                  <span className="rounded-full bg-violet-500/20 px-2.5 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">
-                    {selectedMux.outputIp}:{selectedMux.outputPort}
-                  </span>
-                </h3>
-                <p className="text-xs text-[#64748B] dark:text-[#A78BFA]">
-                  2-Column real-time input program streams vs egress output bandwidth and supervisor telemetry
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedMuxId(null)}
-                className="rounded-xl border border-[#E2E8F0] dark:border-[#371F59] px-3.5 py-1.5 text-xs font-bold text-[#64748B] dark:text-[#A78BFA] hover:bg-[#F8FAFC] dark:hover:bg-[#26143F]"
-              >
-                Close Monitor
-              </button>
-            </div>
-          </div>
-
-          {/* ── 2-COLUMN MONITOR GRID (INPUTS vs OUTPUTS) ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            {/* COLUMN 1: Input Program Services (7 cols) */}
-            <div className="lg:col-span-7 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
-                  <FiInbox size={14} /> Column 1: Input Program Services ({selectedMux.services?.length || 0})
-                </h4>
-                <span className="text-[10px] text-[#94A3B8]">Active Ingest Streams</span>
-              </div>
-
-              <div className="overflow-x-auto rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-[#F8FAFC] dark:bg-[#1E1233]">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-[#E8EDF5] dark:border-[#311B4E] bg-[#F1F5F9] dark:bg-[#281544] text-[10px] font-extrabold uppercase tracking-wider text-[#64748B] dark:text-[#C4B5FD]">
-                      <th className="py-2.5 px-3">Prog / SID</th>
-                      <th className="py-2.5 px-3">Service Name</th>
-                      <th className="py-2.5 px-3">PIDs</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3">Bitrate</th>
-                      <th className="py-2.5 px-3 text-right">Probe</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E8EDF5] dark:divide-[#311B4E] font-medium">
-                    {selectedMux.services && selectedMux.services.length > 0 ? (
-                      selectedMux.services.map((svc) => {
-                        const svcStats = activeStats?.inputs?.[svc.id];
-                        const isSvcOnline = selectedMux.status === 'Running';
-                        const bitrateKbps = svcStats ? svcStats.bitrateKbps : (svc.videoBitrateKbps || 4000);
-
-                        return (
-                          <tr key={svc.id} className="hover:bg-white/60 dark:hover:bg-[#25143E]/60 transition-colors">
-                            <td className="py-2.5 px-3 font-mono font-bold text-violet-700 dark:text-violet-300">
-                              #{svc.serviceId}
-                            </td>
-                            <td className="py-2.5 px-3 font-bold">
-                              <div>{svc.serviceName || `Service ${svc.serviceId}`}</div>
-                              <div className="text-[10px] font-normal text-[#94A3B8] truncate max-w-xs">{svc.inputUrl}</div>
-                            </td>
-                            <td className="py-2.5 px-3 font-mono text-[10px] text-[#475569] dark:text-[#D8C6E8]">
-                              V: {svc.videoPid} | A: {svc.audioStreams?.[0]?.audioPid || '0x102'}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                isSvcOnline
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-slate-500/10 text-slate-500'
-                              }`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${isSvcOnline ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                                {isSvcOnline ? 'ONLINE' : 'OFFLINE'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 font-mono font-bold text-[#0F172A] dark:text-white">
-                              {isSvcOnline ? `${(bitrateKbps / 1000).toFixed(2)} Mbps` : '0 Mbps'}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleProbeInput(svc.inputUrl)}
-                                className="rounded-lg bg-violet-600/10 dark:bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300 hover:bg-violet-600 hover:text-white transition-colors"
-                              >
-                                Test
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="py-6 text-center text-xs text-[#94A3B8]">
-                          No program services mapped
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* COLUMN 2: Output Egress & Supervisor Telemetry (5 cols) */}
-            <div className="lg:col-span-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                  <FiSend size={14} /> Column 2: Output Egress Stream
-                </h4>
-                <span className="font-mono text-xs font-bold text-violet-600 dark:text-violet-400">
-                  PID: {selectedMux.pid || '—'}
-                </span>
-              </div>
-
-              {/* Output Endpoint Box */}
-              <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-[#F8FAFC] dark:bg-[#1E1233] p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase text-[#94A3B8]">Egress Multicast Target</span>
-                    <div className="font-mono font-extrabold text-sm text-[#0F172A] dark:text-white">
-                      udp://{selectedMux.outputIp}:{selectedMux.outputPort}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`udp://@${selectedMux.outputIp}:${selectedMux.outputPort}?pkt_size=${selectedMux.packetSize || 1316}&ttl=${selectedMux.ttl || 16}`);
-                      toast.success('Egress UDP stream URL copied!');
-                    }}
-                    className="rounded-lg border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-2.5 py-1 text-[11px] font-bold text-violet-600 hover:bg-violet-50 dark:text-violet-300 transition-colors flex items-center gap-1"
-                  >
-                    <FiCopy size={11} /> Copy URL
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold pt-1">
-                  <div className="rounded-xl bg-white dark:bg-[#281544] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                    <div className="text-[10px] text-[#94A3B8] uppercase">Target Egress</div>
-                    <div className="mt-0.5 text-sm font-mono text-violet-700 dark:text-violet-300 font-extrabold">
-                      {selectedMux.targetBitrateMbps || 30} Mbps CBR
-                    </div>
-                  </div>
-                  <div className="rounded-xl bg-white dark:bg-[#281544] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                    <div className="text-[10px] text-[#94A3B8] uppercase">Uptime</div>
-                    <div className="mt-0.5 text-sm font-mono text-[#0F172A] dark:text-white">
-                      {activeStats ? `${Math.floor(activeStats.uptimeSeconds / 60)}m ${activeStats.uptimeSeconds % 60}s` : '0s'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Console stderr log output */}
-                <div className="space-y-1 pt-1">
-                  <span className="text-[10px] font-bold uppercase text-[#94A3B8] flex items-center gap-1">
-                    <FiTerminal size={11} className="text-emerald-500" /> Live Supervisor Log Output
-                  </span>
-                  <div className="rounded-xl bg-[#0D0714] p-3 font-mono text-[10px] text-emerald-400 overflow-y-auto max-h-32 scrollbar-thin space-y-1">
-                    {muxLogs.length > 0 ? (
-                      muxLogs.map((log, lIdx) => (
-                        <div key={lIdx} className="leading-relaxed whitespace-pre-wrap break-all">
-                          {log}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-[#64748B] italic">Awaiting telemetry logs...</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── SEPARATE SECTION: MPTS SETTINGS & PSI/SI TABLE ENGINE ── */}
-          <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#311B4E] bg-[#F8FAFC] dark:bg-[#1E1233] p-4.5 space-y-3">
-            <div className="flex items-center justify-between border-b border-[#E8EDF5] dark:border-[#311B4E] pb-2">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
-                <FiShield size={14} /> MPTS Settings & DVB PSI/SI Table Specifications
-              </h4>
-              <span className="text-[10px] font-mono text-[#94A3B8]">DVB / ISO-13818 Compliance</span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="rounded-xl bg-white dark:bg-[#281544] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                <span className="text-[10px] text-[#94A3B8] font-bold uppercase">Transport Stream ID (TSID)</span>
-                <p className="font-mono font-bold text-sm text-[#0F172A] dark:text-white">#{selectedMux.tsid || 1}</p>
-              </div>
-              <div className="rounded-xl bg-white dark:bg-[#281544] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                <span className="text-[10px] text-[#94A3B8] font-bold uppercase">Original Network ID (ONID)</span>
-                <p className="font-mono font-bold text-sm text-[#0F172A] dark:text-white">#{selectedMux.onid || 1}</p>
-              </div>
-              <div className="rounded-xl bg-white dark:bg-[#281544] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                <span className="text-[10px] text-[#94A3B8] font-bold uppercase">Network ID (NID)</span>
-                <p className="font-mono font-bold text-sm text-[#0F172A] dark:text-white">#{selectedMux.nid || 1}</p>
-              </div>
-              <div className="rounded-xl bg-white dark:bg-[#281544] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                <span className="text-[10px] text-[#94A3B8] font-bold uppercase">Packet Size & TTL</span>
-                <p className="font-mono font-bold text-sm text-[#0F172A] dark:text-white">{selectedMux.packetSize || 1316}B / TTL {selectedMux.ttl || 16}</p>
-              </div>
-            </div>
-
-            <div className="pt-1">
-              <span className="text-[10px] font-bold uppercase text-[#94A3B8]">Generated MPTS Command Pipeline:</span>
-              <div className="mt-1 rounded-xl bg-[#0D0714] p-3 font-mono text-[10px] text-violet-200 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-20 scrollbar-thin">
-                {selectedMux.generatedCommand || 'Pipeline string configured on runtime startup.'}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── CREATE / EDIT MUX MODAL: 2-COLUMN INPUTS/OUTPUTS + SEPARATE MPTS SETTINGS ── */}
-      {isEditorOpen && editingMux && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="relative w-full max-w-5xl rounded-3xl border border-[#E8EDF5] dark:border-[#371F59] bg-white dark:bg-[#180D26] shadow-2xl overflow-hidden animate-scale-up my-8">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#E8EDF5] dark:border-[#311B4E] px-6 py-4 bg-[#F8FAFC] dark:bg-[#1E1233]">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-md">
-                  <FiSliders size={20} />
-                </span>
-                <div>
-                  <h2 className="text-base font-black text-[#0F172A] dark:text-white">
-                    {muxList.some(m => m.id === editingMux.id) ? `Edit MUX: ${editingMux.name}` : 'Create New MPTS Multiplexer'}
-                  </h2>
-                  <p className="text-xs text-[#64748B] dark:text-[#A78BFA]">
-                    2-Column Input Services & Egress Output Architecture with Separate MPTS DVB Settings
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex rounded-xl border border-[#CBD5E1] dark:border-[#371F59] p-0.5 text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setEditorViewMode('studio')}
-                    className={`rounded-lg px-3 py-1 transition-colors ${editorViewMode === 'studio' ? 'bg-violet-600 text-white' : 'text-[#64748B] dark:text-[#A78BFA]'}`}
-                  >
-                    2-Column Studio
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditorViewMode('pipeline')}
-                    className={`rounded-lg px-3 py-1 transition-colors ${editorViewMode === 'pipeline' ? 'bg-violet-600 text-white' : 'text-[#64748B] dark:text-[#A78BFA]'}`}
-                  >
-                    Pipeline Preview
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => { setIsEditorOpen(false); setEditingMux(null); }}
-                  className="rounded-xl p-2 text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-white transition-colors"
-                >
-                  <FiX size={20} />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 max-h-[72vh] overflow-y-auto space-y-6">
-              {editorViewMode === 'studio' ? (
-                <>
-                  {/* Top Bar: MUX Display Name & Description */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-violet-50/60 dark:bg-violet-950/20 p-4 rounded-2xl border border-violet-500/20">
-                    <div>
-                      <label className="block text-xs font-bold text-[#334155] dark:text-[#E2D1F9] mb-1">
-                        MUX Display Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={editingMux.name}
-                        onChange={(e) => setEditingMux({ ...editingMux, name: e.target.value })}
-                        className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3.5 py-2 text-xs font-bold text-[#0F172A] dark:text-white focus:outline-hidden focus:ring-2 focus:ring-violet-500"
-                        placeholder="e.g. KASHTRIX-MPTS-01"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[#334155] dark:text-[#E2D1F9] mb-1">
-                        Description / Application
-                      </label>
-                      <input
-                        type="text"
-                        value={editingMux.description || ''}
-                        onChange={(e) => setEditingMux({ ...editingMux, description: e.target.value })}
-                        className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3.5 py-2 text-xs text-[#0F172A] dark:text-white focus:outline-hidden focus:ring-2 focus:ring-violet-500"
-                        placeholder="e.g. Broadcast DVB Transport Stream for QAM / IRD"
-                      />
-                    </div>
-                  </div>
-
-                  {/* ── 2 COLUMNS: INPUTS (LEFT) vs OUTPUTS (RIGHT) ── */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                    {/* LEFT COLUMN: INPUT PROGRAM SERVICES (7 cols) */}
-                    <div className="lg:col-span-7 space-y-4">
-                      {/* One-Click Auto-Discovery Browser */}
-                      <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
-                            <FiTv size={14} /> Available Channels & VOD Feeds
-                          </span>
-                          <button
-                            type="button"
-                            onClick={fetchSources}
-                            className="text-[11px] font-bold text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1"
-                          >
-                            <FiRefreshCw size={11} /> Refresh Sources
-                          </button>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex-1">
-                            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                            <input
-                              type="text"
-                              placeholder="Search channels or VOD streams..."
-                              value={sourceSearch}
-                              onChange={(e) => setSourceSearch(e.target.value)}
-                              className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] pl-9 pr-3 py-1.5 text-xs text-[#0F172A] dark:text-white"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleAddDiscoveredSources}
-                            disabled={selectedSourceIds.length === 0}
-                            className="rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-violet-700 disabled:opacity-50 transition-colors"
-                          >
-                            + Add ({selectedSourceIds.length})
-                          </button>
-                        </div>
-
-                        <div className="max-h-32 overflow-y-auto rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] divide-y divide-[#E8EDF5] dark:divide-[#311B4E]">
-                          {availableSources.filter(s => !sourceSearch || s.name.toLowerCase().includes(sourceSearch.toLowerCase())).map(s => {
-                            const isSelected = selectedSourceIds.includes(s.id);
-                            const isAlreadyAdded = editingMux.services.some(svc => svc.inputUrl === s.inputUrl);
-
-                            return (
-                              <div
-                                key={s.id}
-                                onClick={() => {
-                                  if (isAlreadyAdded) return;
-                                  setSelectedSourceIds(prev =>
-                                    isSelected ? prev.filter(x => x !== s.id) : [...prev, s.id]
-                                  );
-                                }}
-                                className={`flex items-center justify-between p-2 text-xs cursor-pointer transition-colors ${
-                                  isAlreadyAdded
-                                    ? 'opacity-40 bg-slate-100 dark:bg-slate-900 cursor-not-allowed'
-                                    : isSelected
-                                      ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-200'
-                                      : 'hover:bg-[#F8FAFC] dark:hover:bg-[#201235]'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected || isAlreadyAdded}
-                                    disabled={isAlreadyAdded}
-                                    onChange={() => {}}
-                                    className="rounded text-violet-600 pointer-events-none"
-                                  />
-                                  <div>
-                                    <div className="font-bold">{s.name}</div>
-                                    <div className="text-[10px] text-[#94A3B8] font-mono truncate max-w-xs">{s.inputUrl}</div>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 text-[10px] font-bold">
-                                  <span className="rounded bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 uppercase">
-                                    {s.sourceType}
-                                  </span>
-                                  {isAlreadyAdded && <span className="text-emerald-500 font-bold">In MUX</span>}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Custom Input Source Adder */}
-                      <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#371F59] bg-[#F8FAFC] dark:bg-[#1E1233] p-3.5 space-y-2">
-                        <span className="text-xs font-bold text-[#475569] dark:text-[#C4B5FD] flex items-center gap-1">
-                          <FiPlus size={13} /> Or Add Custom Input Stream (UDP / RTMP / SRT)
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                          <input
-                            type="text"
-                            placeholder="Service Name (e.g. ESPN HD)"
-                            value={customInputName}
-                            onChange={(e) => setCustomInputName(e.target.value)}
-                            className="sm:col-span-4 rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs text-[#0F172A] dark:text-white"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Input URL (e.g. udp://127.0.0.1:5002)"
-                            value={customInputUrl}
-                            onChange={(e) => setCustomInputUrl(e.target.value)}
-                            className="sm:col-span-6 rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono text-[#0F172A] dark:text-white"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleAddCustomSource}
-                            className="sm:col-span-2 rounded-xl bg-violet-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-violet-700"
-                          >
-                            + Add
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Configured Program Services List */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0F172A] dark:text-white flex items-center gap-1.5">
-                            <FiInbox size={14} /> Configured Services in MPTS ({editingMux.services.length})
-                          </h3>
-
-                          <button
-                            type="button"
-                            onClick={handleAutoAssignPids}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-xs font-bold text-violet-600 dark:text-violet-300 hover:bg-violet-500/20 transition-colors"
-                          >
-                            <FiZap size={13} /> Auto-Assign PIDs
-                          </button>
-                        </div>
-
-                        {editingMux.services.map((svc, idx) => (
-                          <div
-                            key={svc.id || idx}
-                            className="rounded-2xl border border-[#E8EDF5] dark:border-[#371F59] bg-[#F8FAFC] dark:bg-[#1E1233] p-3.5 space-y-3 shadow-2xs"
-                          >
-                            <div className="flex items-center justify-between gap-2 border-b border-[#E8EDF5] dark:border-[#311B4E] pb-2">
-                              <div className="flex items-center gap-2">
-                                <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-violet-600 text-white text-[11px] font-black">
-                                  {idx + 1}
-                                </span>
-                                <input
-                                  type="text"
-                                  value={svc.serviceName}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    list[idx].serviceName = e.target.value;
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="font-extrabold text-xs text-[#0F172A] dark:text-white bg-transparent border-b border-dashed border-slate-400 focus:border-violet-500 focus:outline-hidden"
-                                  placeholder="Service Name"
-                                />
-                                <span className="text-[10px] text-[#94A3B8] font-mono">
-                                  (SID: #{svc.serviceId})
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveService(idx, 'up')}
-                                  disabled={idx === 0}
-                                  title="Move Up"
-                                  className="rounded p-1 text-[#94A3B8] hover:text-[#0F172A] disabled:opacity-30"
-                                >
-                                  <FiArrowUp size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveService(idx, 'down')}
-                                  disabled={idx === editingMux.services.length - 1}
-                                  title="Move Down"
-                                  className="rounded p-1 text-[#94A3B8] hover:text-[#0F172A] disabled:opacity-30"
-                                >
-                                  <FiArrowDown size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleProbeInput(svc.inputUrl)}
-                                  title="Test Input Source"
-                                  className="rounded bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold text-violet-600 dark:text-violet-300"
-                                >
-                                  Test
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveService(svc.id)}
-                                  title="Remove Service"
-                                  className="rounded p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                                >
-                                  <FiTrash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* URL & Mode */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                              <div className="sm:col-span-2">
-                                <label className="block text-[10px] font-bold uppercase text-[#64748B] dark:text-[#A78BFA] mb-0.5">
-                                  Input Source URL
-                                </label>
-                                <input
-                                  type="text"
-                                  value={svc.inputUrl}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    list[idx].inputUrl = e.target.value;
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1 text-xs font-mono text-[#0F172A] dark:text-white"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] font-bold uppercase text-[#64748B] dark:text-[#A78BFA] mb-0.5">
-                                  Processing Mode
-                                </label>
-                                <select
-                                  value={svc.mode}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    list[idx].mode = e.target.value as MuxProcessingMode;
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-2 py-1 text-xs font-bold text-[#0F172A] dark:text-white"
-                                >
-                                  <option value="copy">Pass Through (-c copy)</option>
-                                  <option value="transcode">Transcode (Re-encode)</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* PIDs */}
-                            <div className="grid grid-cols-4 gap-2 text-[10px]">
-                              <div>
-                                <span className="text-[#94A3B8]">SID #</span>
-                                <input
-                                  type="number"
-                                  value={svc.serviceId}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    list[idx].serviceId = Number(e.target.value);
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="w-full rounded border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-1.5 py-0.5 text-xs font-mono"
-                                />
-                              </div>
-                              <div>
-                                <span className="text-[#94A3B8]">PMT PID</span>
-                                <input
-                                  type="text"
-                                  value={svc.pmtPid}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    list[idx].pmtPid = e.target.value;
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="w-full rounded border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-1.5 py-0.5 text-xs font-mono"
-                                />
-                              </div>
-                              <div>
-                                <span className="text-[#94A3B8]">Video PID</span>
-                                <input
-                                  type="text"
-                                  value={svc.videoPid}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    list[idx].videoPid = e.target.value;
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="w-full rounded border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-1.5 py-0.5 text-xs font-mono"
-                                />
-                              </div>
-                              <div>
-                                <span className="text-[#94A3B8]">Audio PID</span>
-                                <input
-                                  type="text"
-                                  value={svc.audioStreams?.[0]?.audioPid || '0x102'}
-                                  onChange={(e) => {
-                                    const list = [...editingMux.services];
-                                    if (!list[idx].audioStreams || list[idx].audioStreams.length === 0) {
-                                      list[idx].audioStreams = [{ streamIndex: 0, audioPid: e.target.value }];
-                                    } else {
-                                      list[idx].audioStreams[0].audioPid = e.target.value;
-                                    }
-                                    setEditingMux({ ...editingMux, services: list });
-                                  }}
-                                  className="w-full rounded border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-1.5 py-0.5 text-xs font-mono"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* RIGHT COLUMN: OUTPUT EGRESS & BANDWIDTH ALLOCATION (5 cols) */}
-                    <div className="lg:col-span-5 space-y-4">
-                      {/* Egress Network Parameters Card */}
-                      <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#371F59] bg-[#F8FAFC] dark:bg-[#1E1233] p-4 space-y-3.5 shadow-2xs">
-                        <h3 className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                          <FiSend size={14} /> Output Egress Destination
-                        </h3>
-
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                              Multicast / Unicast Output IP *
-                            </label>
-                            <input
-                              type="text"
-                              value={editingMux.outputIp}
-                              onChange={(e) => setEditingMux({ ...editingMux, outputIp: e.target.value })}
-                              className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono font-bold text-[#0F172A] dark:text-white"
-                              placeholder="e.g. 239.10.10.10"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                                UDP Port *
-                              </label>
-                              <input
-                                type="number"
-                                value={editingMux.outputPort}
-                                onChange={(e) => setEditingMux({ ...editingMux, outputPort: Number(e.target.value) })}
-                                className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono font-bold text-[#0F172A] dark:text-white"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                                Egress NIC Interface
-                              </label>
-                              <input
-                                type="text"
-                                value={editingMux.outputInterface || 'any'}
-                                onChange={(e) => setEditingMux({ ...editingMux, outputInterface: e.target.value })}
-                                className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono text-[#0F172A] dark:text-white"
-                                placeholder="any / eth0"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Egress Bitrate & Capacity Meter Card */}
-                      <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#371F59] bg-[#F8FAFC] dark:bg-[#1E1233] p-4 space-y-3 shadow-2xs">
-                        <h3 className="text-xs font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
-                          <FiActivity size={14} /> CBR Capacity & Null-Stuffing Allocation
-                        </h3>
-
-                        <div>
-                          <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                            Target MUX Constant Bitrate (Mbps) *
-                          </label>
-                          <input
-                            type="number"
-                            value={editingMux.targetBitrateMbps}
-                            onChange={(e) => setEditingMux({ ...editingMux, targetBitrateMbps: Number(e.target.value) })}
-                            className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono font-extrabold text-violet-700 dark:text-violet-300"
-                          />
-                        </div>
-
-                        <div className="space-y-1.5 pt-1">
-                          <div className="flex items-center justify-between text-[11px] font-semibold">
-                            <span className="text-[#64748B] dark:text-[#A78BFA]">Payload vs Target:</span>
-                            <span className={`font-mono font-bold ${capacityInfo.isOver ? 'text-rose-600' : capacityInfo.isWarning ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                              {capacityInfo.totalInputMbps} / {capacityInfo.targetMbps} Mbps ({capacityInfo.percent}%)
-                            </span>
-                          </div>
-
-                          <div className="h-2 w-full overflow-hidden rounded-full bg-[#CBD5E1] dark:bg-[#2D1A45]">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                capacityInfo.isOver
-                                  ? 'bg-rose-600'
-                                  : capacityInfo.isWarning
-                                    ? 'bg-amber-500'
-                                    : 'bg-emerald-500'
-                              }`}
-                              style={{ width: `${Math.min(100, Math.max(0, capacityInfo.percent))}%` }}
-                            />
-                          </div>
-
-                          {capacityInfo.isOver ? (
-                            <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                              <FiAlertTriangle size={12} /> Over-capacity: Input streams exceed target bandwidth.
-                            </p>
-                          ) : (
-                            <p className="text-[10px] text-[#94A3B8]">
-                              Remaining {(capacityInfo.targetMbps - capacityInfo.totalInputMbps).toFixed(2)} Mbps is filled with standard DVB Null Stuffing.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── SEPARATE SECTION: MPTS SETTINGS (DVB PSI/SI TRANSPORT PARAMETERS) ── */}
-                  <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#371F59] bg-[#F8FAFC] dark:bg-[#1E1233] p-4.5 space-y-4 shadow-2xs">
-                    <div className="flex items-center justify-between border-b border-[#E8EDF5] dark:border-[#311B4E] pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600/10 text-violet-600 dark:text-violet-300">
-                          <FiShield size={16} />
-                        </span>
-                        <div>
-                          <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#0F172A] dark:text-white">
-                            MPTS Settings (DVB PSI/SI Table & Stream Engine)
-                          </h4>
-                          <p className="text-[10px] text-[#64748B] dark:text-[#A78BFA]">
-                            Transport Stream IDs, Original Network Identifiers, Packetization & 24/7 Automation
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                      <div>
-                        <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                          TSID (Transport Stream ID)
-                        </label>
-                        <input
-                          type="number"
-                          value={editingMux.tsid}
-                          onChange={(e) => setEditingMux({ ...editingMux, tsid: Number(e.target.value) })}
-                          className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono text-[#0F172A] dark:text-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                          ONID (Original Network ID)
-                        </label>
-                        <input
-                          type="number"
-                          value={editingMux.onid}
-                          onChange={(e) => setEditingMux({ ...editingMux, onid: Number(e.target.value) })}
-                          className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono text-[#0F172A] dark:text-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                          NID (Network ID)
-                        </label>
-                        <input
-                          type="number"
-                          value={editingMux.nid}
-                          onChange={(e) => setEditingMux({ ...editingMux, nid: Number(e.target.value) })}
-                          className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono text-[#0F172A] dark:text-white"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                      <div>
-                        <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                          Packet Size (Bytes)
-                        </label>
-                        <select
-                          value={editingMux.packetSize}
-                          onChange={(e) => setEditingMux({ ...editingMux, packetSize: Number(e.target.value) })}
-                          className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-bold text-[#0F172A] dark:text-white"
-                        >
-                          <option value={1316}>1316 Bytes (7 TS Packets - DVB/Broadcast Standard)</option>
-                          <option value={188}>188 Bytes (Single TS Packet)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-[#475569] dark:text-[#C4B5FD] mb-1">
-                          Multicast TTL (Time To Live)
-                        </label>
-                        <input
-                          type="number"
-                          value={editingMux.ttl}
-                          onChange={(e) => setEditingMux({ ...editingMux, ttl: Number(e.target.value) })}
-                          className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#180D26] px-3 py-1.5 text-xs font-mono text-[#0F172A] dark:text-white"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-6 pt-2 border-t border-[#E8EDF5] dark:border-[#311B4E]">
-                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#334155] dark:text-[#E2D1F9]">
-                        <input
-                          type="checkbox"
-                          checked={editingMux.autoStart !== false}
-                          onChange={(e) => setEditingMux({ ...editingMux, autoStart: e.target.checked })}
-                          className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                        />
-                        Auto-Start MUX on System Boot
-                      </label>
-
-                      <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#334155] dark:text-[#E2D1F9]">
-                        <input
-                          type="checkbox"
-                          checked={editingMux.autoRestart !== false}
-                          onChange={(e) => setEditingMux({ ...editingMux, autoRestart: e.target.checked })}
-                          className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                        />
-                        Auto-Restart on Crash (24/7 Supervisor Resilience)
-                      </label>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* PIPELINE PREVIEW TAB */
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-[#E8EDF5] dark:border-[#371F59] bg-[#F8FAFC] dark:bg-[#1E1233] p-4 space-y-2">
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
-                      <FiTerminal size={14} /> Generated MPTS FFmpeg Pipeline Command
-                    </h3>
-                    <p className="text-[11px] text-[#64748B] dark:text-[#A78BFA]">
-                      This pipeline is dynamically compiled and managed by the MPTS supervisor process.
-                    </p>
-
-                    <div className="rounded-xl bg-[#0D0714] p-4 font-mono text-[11px] text-emerald-400 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">
-                      {`ffmpeg -hide_banner ${editingMux.services.map(s => `-thread_queue_size 2048 -i "${s.inputUrl}"`).join(' ')} ${editingMux.services.map((s, i) => `-map ${i}:v:0? -map ${i}:a:0? ${s.mode === 'copy' ? `-c:v:${i} copy -c:a:${i} copy` : `-c:v:${i} libx264 -b:v:${i} ${s.videoBitrateKbps || 3500}k -c:a:${i} aac -b:a:${i} 192k`}`).join(' ')} ${editingMux.services.map((s, i) => `-program title="${s.serviceName}":service_name="${s.serviceName}":service_provider="StreamOps":program_num=${s.serviceId}:pmt_pid=${s.pmtPid}:pcr_pid=${s.videoPid}:st=${i * 2}:st=${i * 2 + 1}`).join(' ')} -f mpegts -muxrate ${Math.round(editingMux.targetBitrateMbps * 1000000)} -ts_id ${editingMux.tsid} -ts_original_network_id ${editingMux.onid} -ts_network_id ${editingMux.nid} -pcr_period 20 -pat_period 0.1 -sdt_period 0.5 "udp://${editingMux.outputIp}:${editingMux.outputPort}?pkt_size=${editingMux.packetSize}&ttl=${editingMux.ttl}&buffer_size=10485760&bitrate=${Math.round(editingMux.targetBitrateMbps * 1000000)}"`}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between border-t border-[#E8EDF5] dark:border-[#311B4E] px-6 py-4 bg-[#F8FAFC] dark:bg-[#1E1233]">
-              <button
-                type="button"
-                onClick={() => { setIsEditorOpen(false); setEditingMux(null); }}
-                className="rounded-xl border border-[#CBD5E1] dark:border-[#371F59] px-4 py-2 text-xs font-bold text-[#64748B] dark:text-[#A78BFA] hover:bg-white dark:hover:bg-[#2A1747] transition-colors"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveMux}
-                disabled={saving}
-                className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-violet-700 disabled:opacity-50 transition-colors"
-              >
-                <FiCheck size={16} />
-                {saving ? 'Saving MPTS MUX...' : 'Save MPTS Configuration'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── PROBE / TEST INPUT SIGNAL MODAL ── */}
-      {isProbeOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-lg rounded-3xl border border-[#E8EDF5] dark:border-[#371F59] bg-white dark:bg-[#180D26] shadow-2xl p-6 space-y-4 animate-scale-up">
-            <div className="flex items-center justify-between border-b border-[#E8EDF5] dark:border-[#311B4E] pb-3">
-              <h3 className="text-sm font-extrabold text-[#0F172A] dark:text-white flex items-center gap-2">
-                <FiActivity className="text-violet-500" /> Live FFprobe Signal Inspector
-              </h3>
-              <button type="button" onClick={() => setIsProbeOpen(false)} className="text-[#94A3B8] hover:text-[#0F172A]">
-                <FiX size={18} />
-              </button>
-            </div>
-
-            <div className="text-xs font-mono text-[#64748B] dark:text-[#A78BFA] break-all">
-              Probing: <span className="text-violet-700 dark:text-violet-300 font-bold">{probingUrl}</span>
-            </div>
-
-            {!probeResult ? (
-              <div className="py-8 text-center space-y-2">
-                <FiRefreshCw className="animate-spin mx-auto text-violet-500" size={24} />
-                <p className="text-xs text-[#94A3B8]">Analyzing transport stream & PID tables...</p>
-              </div>
-            ) : probeResult.success ? (
-              <div className="space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#1E1233] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                    <span className="text-[#94A3B8]">Format / Container</span>
-                    <p className="font-bold font-mono">{probeResult.format?.toUpperCase()}</p>
-                  </div>
-                  <div className="rounded-xl bg-[#F8FAFC] dark:bg-[#1E1233] p-2.5 border border-[#E8EDF5] dark:border-[#371F59]">
-                    <span className="text-[#94A3B8]">Detected Bitrate</span>
-                    <p className="font-bold font-mono text-emerald-600 dark:text-emerald-400">{probeResult.bitrateKbps} Kbps</p>
-                  </div>
-                </div>
-
-                {probeResult.video && (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-1">
-                    <div className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">Video Stream Detected</div>
-                    <div className="font-mono text-[11px]">
-                      Codec: {probeResult.video.codec} | {probeResult.video.width}x{probeResult.video.height} @ {probeResult.video.fps} fps
-                    </div>
-                  </div>
-                )}
-
-                {probeResult.audioTracks && probeResult.audioTracks.length > 0 && (
-                  <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3 space-y-1">
-                    <div className="font-bold text-violet-600 dark:text-violet-300 text-xs">
-                      Audio Tracks ({probeResult.audioTracks.length})
-                    </div>
-                    {probeResult.audioTracks.map((a: any, idx: number) => (
-                      <div key={idx} className="font-mono text-[11px]">
-                        Track #{idx + 1}: {a.codec} ({a.channels}ch, {a.samplerate}Hz, {a.lang})
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-600 dark:text-rose-400 space-y-1">
-                <div className="font-bold">Probe Failed / No Signal</div>
-                <div className="font-mono text-[11px]">{probeResult.error}</div>
-              </div>
-            )}
-
-            <div className="pt-2 text-right">
-              <button
-                type="button"
-                onClick={() => setIsProbeOpen(false)}
-                className="rounded-xl bg-violet-600 px-4 py-1.5 text-xs font-bold text-white shadow-xs"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── DUPLICATE MODAL ── */}
-      {duplicateMuxId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-md rounded-3xl border border-[#E8EDF5] dark:border-[#371F59] bg-white dark:bg-[#180D26] shadow-2xl p-6 space-y-4 animate-scale-up">
-            <div className="flex items-center justify-between border-b border-[#E8EDF5] dark:border-[#311B4E] pb-3">
-              <h3 className="text-sm font-extrabold text-[#0F172A] dark:text-white flex items-center gap-2">
-                <FiCopy className="text-violet-500" /> Duplicate MPTS MUX
-              </h3>
-              <button type="button" onClick={() => setDuplicateMuxId(null)} className="text-[#94A3B8] hover:text-[#0F172A]">
-                <FiX size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-xs font-bold mb-1">New MUX Name</label>
-                <input
-                  type="text"
-                  value={dupName}
-                  onChange={(e) => setDupName(e.target.value)}
-                  className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#1E1233] px-3 py-2 text-xs font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold mb-1">Output IP</label>
-                  <input
-                    type="text"
-                    value={dupIp}
-                    onChange={(e) => setDupIp(e.target.value)}
-                    className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#1E1233] px-3 py-2 text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1">Output Port</label>
-                  <input
-                    type="number"
-                    value={dupPort}
-                    onChange={(e) => setDupPort(Number(e.target.value))}
-                    className="w-full rounded-xl border border-[#CBD5E1] dark:border-[#371F59] bg-white dark:bg-[#1E1233] px-3 py-2 text-xs font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDuplicateMuxId(null)}
-                className="rounded-xl border border-[#CBD5E1] dark:border-[#371F59] px-3.5 py-1.5 text-xs font-bold text-[#64748B]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDuplicateSubmit}
-                className="rounded-xl bg-violet-600 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-violet-700"
-              >
-                Create Duplicate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className={`${cardClass} grid gap-3 p-4 sm:grid-cols-3`}>
+        <div className="flex items-center gap-3"><div className="rounded-lg bg-violet-100 p-2 text-violet-700 dark:bg-violet-950"><FiActivity /></div><div><span className="block text-[10px] uppercase text-[#8E78A6]">Configured</span><b className="text-sm text-[#1B1024] dark:text-white">{muxes.length} outputs</b></div></div>
+        <div className="flex items-center gap-3"><div className="rounded-lg bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-950"><FiPlay /></div><div><span className="block text-[10px] uppercase text-[#8E78A6]">Running</span><b className="text-sm text-[#1B1024] dark:text-white">{muxes.filter(item => item.status === 'Running').length} outputs</b></div></div>
+        <div className="flex items-center gap-3"><div className="rounded-lg bg-blue-100 p-2 text-blue-700 dark:bg-blue-950"><FiWifi /></div><div><span className="block text-[10px] uppercase text-[#8E78A6]">Egress NICs</span><b className="text-sm text-[#1B1024] dark:text-white">{interfaces.length} selectable</b></div></div>
+      </div>
     </div>
   );
 };
+
+export default MuxView;

@@ -31,7 +31,10 @@ import {
   ShieldCheck,
   ShieldAlert,
   Key,
-  Lock
+  Lock,
+  Unlock,
+  Send,
+  Loader2
 } from 'lucide-react';
 import { AppSettings, IngestRecordingOptions, RecordingEncoderCapability, RecordingProfileSummary, TranscodingProfile, StorageStatusResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -246,14 +249,29 @@ export const IngestServerView: React.FC<Props> = ({
   const [srtModalOpen, setSrtModalOpen] = useState(false);
   const [srtStreamName, setSrtStreamName] = useState('srt-feed');
   const [srtPort, setSrtPort] = useState('8890');
+  const [srtLatency, setSrtLatency] = useState('200');
 
   const [relayModalOpen, setRelayModalOpen] = useState(false);
-  const [relayStreamPath, setRelayStreamPath] = useState('/live/main-feed');
+  const [relayStreamPath, setRelayStreamPath] = useState('/live/srt-feed');
   const [relayDestinationUrl, setRelayDestinationUrl] = useState('');
+  const [relayProfile, setRelayProfile] = useState('copy');
+  const [relayCustomBitrate, setRelayCustomBitrate] = useState('3000');
+  const [relayCustomResolution, setRelayCustomResolution] = useState('1920:1080');
   const [processes, setProcesses] = useState<any[]>([]);
+
+  const activeSrtProcesses = useMemo(() => {
+    return processes.filter((p: any) => p.type === 'srt-listener');
+  }, [processes]);
+
+  const effectiveHost = useMemo(() => {
+    if (typeof window === 'undefined') return '127.0.0.1';
+    const host = window.location.hostname;
+    return (!host || host === 'localhost' || host === '127.0.0.1') ? '127.0.0.1' : host;
+  }, []);
 
   // RTMP Ingest Security State (Live Server mode)
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [securitySettings, setSecuritySettings] = useState<any>(null);
   const [rtmpSecurityEnabled, setRtmpSecurityEnabled] = useState(false);
   const [rtmpKeysCount, setRtmpKeysCount] = useState(0);
 
@@ -273,6 +291,7 @@ export const IngestServerView: React.FC<Props> = ({
     try {
       const data = await apiCall('/api/live-server/security');
       if (data?.settings) {
+        setSecuritySettings(data.settings);
         setRtmpSecurityEnabled(Boolean(data.settings.enabled));
         setRtmpKeysCount((data.settings.keys || []).length);
       }
@@ -541,6 +560,105 @@ export const IngestServerView: React.FC<Props> = ({
     }
   };
 
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard!`, { icon: '📋' });
+  };
+
+  const getStreamUrls = (streamKey: string, streamData?: any) => {
+    const rawName = (streamData?.name || streamKey || '').replace(/^live\//, '');
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    const mediaPort = settings?.mediaPort || 8080;
+    const rtmpPort = settings?.rtmpPort || 1935;
+    
+    // Check if this is an SRT stream
+    const isSrt = streamData?.protocol === 'SRT' || rawName.includes('srt') || processes.some((p: any) => p.type === 'srt-listener' && (p.streamName === rawName || p.streamName === streamKey));
+    const srtProc = processes.find((p: any) => p.type === 'srt-listener' && (p.streamName === rawName || p.streamName === streamKey)) || processes.find((p: any) => p.type === 'srt-listener');
+    const srtPortNum = srtProc?.port || 8890;
+    const srtLatencyNum = srtProc?.latency || 200;
+
+    const srtObsUrl = `srt://${effectiveHost}:${srtPortNum}`;
+    const srtCallerUrl = `srt://${effectiveHost}:${srtPortNum}?mode=caller&latency=${srtLatencyNum}`;
+
+    // Find matching security key if any
+    const matchingKey = (securitySettings?.keys || []).find((k: any) => 
+      k.key === rawName ||
+      (Array.isArray(k.allowedStreams) && (k.allowedStreams.includes('*') || k.allowedStreams.includes(rawName)))
+    );
+
+    const playToken = matchingKey?.playbackToken || (matchingKey?.playbackSecurity === 'secure' ? matchingKey.key : '');
+    
+    const openHlsUrl = `http://${host}:${mediaPort}/live/${rawName}/index.m3u8`;
+    const secureHlsUrl = playToken 
+      ? `http://${host}:${mediaPort}/live/${rawName}/index.m3u8?token=${playToken}`
+      : `http://${host}:${mediaPort}/live/${rawName}/index.m3u8?token=viewer_token`;
+    
+    const openRtmpUrl = `rtmp://${host}:${rtmpPort}/live/${rawName}`;
+    const secureRtmpUrl = playToken
+      ? `rtmp://${host}:${rtmpPort}/live/${rawName}?token=${playToken}`
+      : `rtmp://${host}:${rtmpPort}/live/${rawName}?token=viewer_token`;
+
+    const ingestRtmpUrl = matchingKey?.key
+      ? `rtmp://${host}:${rtmpPort}/live/${rawName}?key=${matchingKey.key}`
+      : `rtmp://${host}:${rtmpPort}/live/${rawName}`;
+
+    const srtEgress = processes.find((p: any) => p.type === 'relay' && p.destinationUrl?.startsWith('srt://') && (p.streamPath?.includes(rawName) || p.destinationUrl?.includes(rawName)));
+    const srtEgressPort = srtEgress?.destinationUrl ? (srtEgress.destinationUrl.match(/:(\d+)/)?.[1] || '9998') : null;
+    const srtEgressVlcUrl = srtEgressPort ? `srt://${effectiveHost}:${srtEgressPort}?mode=caller` : `srt://${effectiveHost}:9998?mode=caller`;
+
+    return {
+      rawName,
+      isSrt,
+      srtPort: srtPortNum,
+      srtLatency: srtLatencyNum,
+      srtObsUrl,
+      srtCallerUrl,
+      srtEgress,
+      srtEgressPort,
+      srtEgressVlcUrl,
+      openHlsUrl,
+      secureHlsUrl,
+      openRtmpUrl,
+      secureRtmpUrl,
+      ingestRtmpUrl,
+      matchingKey,
+      hasSecureToken: Boolean(playToken)
+    };
+  };
+
+  const openAddSrtModal = () => {
+    const usedPorts = new Set<number>();
+    for (const p of processes) {
+      if (p.port) usedPorts.add(Number(p.port));
+      if (p.destinationUrl) {
+        const match = p.destinationUrl.match(/:(\d+)/);
+        if (match) usedPorts.add(Number(match[1]));
+      }
+    }
+    for (const p of activeSrtProcesses) {
+      if (p.port) usedPorts.add(Number(p.port));
+    }
+
+    let nextPort = 8890;
+    while (usedPorts.has(nextPort)) {
+      nextPort++;
+    }
+
+    const activeNames = new Set(processes.map((p: any) => p.streamName || '').filter(Boolean));
+    let nextName = 'srt-feed';
+    if (activeNames.has(nextName)) {
+      let count = 2;
+      while (activeNames.has(`srt-feed-${count}`)) {
+        count++;
+      }
+      nextName = `srt-feed-${count}`;
+    }
+
+    setSrtPort(String(nextPort));
+    setSrtStreamName(nextName);
+    setSrtModalOpen(true);
+  };
+
   const startSrtListener = async () => {
     if (licenseStatus === 'expired') {
       return toast.error('Cannot start SRT listener: License has expired. Please activate a valid license.');
@@ -554,11 +672,11 @@ export const IngestServerView: React.FC<Props> = ({
       const res = await fetch('/api/ingest/srt/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ port: Number(srtPort), streamName: srtStreamName }),
+        body: JSON.stringify({ port: Number(srtPort), streamName: srtStreamName, latency: Number(srtLatency) || 200 }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to start SRT listener');
-      toast.success(`SRT Listener active on port ${srtPort}`);
+      toast.success(`SRT Ingest Server active on port ${srtPort}`);
       setSrtModalOpen(false);
       fetchData();
     } catch (e: any) {
@@ -566,28 +684,85 @@ export const IngestServerView: React.FC<Props> = ({
     }
   };
 
-  const startRtmpRelay = async () => {
+  const startEgressPush = async () => {
     if (licenseStatus === 'expired') {
-      return toast.error('Cannot start RTMP relay: License has expired. Please activate a valid license.');
+      return toast.error('Cannot start push: License has expired. Please activate a valid license.');
     }
     if (licenseStatus && licenseStatus !== 'activated') {
-      return toast.error('RTMP relay is disabled in Trial / Unlicensed Mode. Please activate a full license.');
+      return toast.error('Push / Re-transcode is disabled in Trial / Unlicensed Mode. Please activate a full license.');
     }
-    if (!relayStreamPath || !relayDestinationUrl) return toast.error('Stream path and destination URL required');
+    if (!relayStreamPath || !relayDestinationUrl) return toast.error('Source stream path and destination URL are required');
     try {
       const token = localStorage.getItem('kte-auth-token');
       const res = await fetch('/api/ingest/relay/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ streamPath: relayStreamPath, destinationUrl: relayDestinationUrl }),
+        body: JSON.stringify({
+          streamPath: relayStreamPath,
+          destinationUrl: relayDestinationUrl,
+          profile: relayProfile,
+          customBitrate: relayCustomBitrate,
+          customResolution: relayCustomResolution,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to start RTMP relay');
-      toast.success('RTMP relay established');
+      if (!res.ok) throw new Error(data.error || 'Failed to start egress push');
+      toast.success('Push / Re-transcoding output started!');
       setRelayModalOpen(false);
       fetchData();
     } catch (e: any) {
       toast.error(e.message);
+    }
+  };
+
+  const [startingPlayoutFor, setStartingPlayoutFor] = useState<string | null>(null);
+
+  const handleStartAutoSrtPlayout = async (rawName: string) => {
+    if (licenseStatus === 'expired') {
+      return toast.error('Cannot start playout: License has expired. Please activate a valid license.');
+    }
+    if (licenseStatus && licenseStatus !== 'activated') {
+      return toast.error('Playout is disabled in Trial / Unlicensed Mode. Please activate a full license.');
+    }
+    try {
+      setStartingPlayoutFor(rawName);
+      // Find all used ports across active processes
+      const usedPorts = new Set<number>();
+      for (const p of processes) {
+        if (p.port) usedPorts.add(Number(p.port));
+        if (p.destinationUrl) {
+          const match = p.destinationUrl.match(/:(\d+)/);
+          if (match) usedPorts.add(Number(match[1]));
+        }
+      }
+
+      // Auto-assign first free port starting from 9998
+      let autoPort = 9998;
+      while (usedPorts.has(autoPort)) {
+        autoPort++;
+      }
+
+      const token = localStorage.getItem('kte-auth-token');
+      const res = await fetch('/api/ingest/relay/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          streamPath: `/live/${rawName}`,
+          destinationUrl: `srt://0.0.0.0:${autoPort}?mode=listener`,
+          profile: 'copy',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start SRT Playout');
+
+      const vlcUrl = `srt://${effectiveHost}:${autoPort}?mode=caller`;
+      copyToClipboard(vlcUrl, 'VLC SRT Playout URL');
+      toast.success(`🎬 SRT Playout active on port ${autoPort}! VLC URL copied.`);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e.message || 'Error starting SRT Playout');
+    } finally {
+      setStartingPlayoutFor(null);
     }
   };
 
@@ -1163,17 +1338,21 @@ export const IngestServerView: React.FC<Props> = ({
 
           <button
             type="button"
-            onClick={() => setSrtModalOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2F1A4B]"
+            onClick={openAddSrtModal}
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white dark:hover:bg-[#2F1A4B] cursor-pointer"
           >
             <Activity size={13} className="text-[#16A36A] dark:text-[#34D399]" /> Add SRT Listener
           </button>
           <button
             type="button"
-            onClick={() => setRelayModalOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#0F172A] dark:border-[#334155] dark:text-white dark:hover:bg-[#334155]"
+            onClick={() => {
+              const defaultStream = activeStreamKeys[0] ? `/live/${activeStreamKeys[0].replace(/^live\//, '')}` : '/live/srt-feed';
+              setRelayStreamPath(defaultStream);
+              setRelayModalOpen(true);
+            }}
+            className="flex h-8 items-center gap-1 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] px-3 text-[11px] font-semibold text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#0F172A] dark:border-[#334155] dark:text-white dark:hover:bg-[#334155] cursor-pointer"
           >
-            <ArrowUpRight size={13} className="text-[#6D32D9] dark:text-[#A78BFA]" /> Add RTMP Relay
+            <Send size={13} className="text-[#6D32D9] dark:text-[#A78BFA]" /> Push / Re-Transcode
           </button>
           <button
             type="button"
@@ -1215,6 +1394,173 @@ export const IngestServerView: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* Dual Ingest Servers Architecture: RTMP Server & SRT Server */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* RTMP Server Card */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <h3 className="font-bold text-sm text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                  <Zap size={15} className="text-violet-600 dark:text-violet-400" />
+                  RTMP Ingest Server
+                </h3>
+              </div>
+              <span className="rounded-full bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300 px-2 py-0.5 text-[10px] font-extrabold uppercase">
+                Port {settings.rtmpPort || 1935} • Zero-Encode
+              </span>
+            </div>
+
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD] mb-2.5">
+              Receives live FLV/RTMP streams from OBS, vMix, and encoders with direct zero-CPU passthrough to HLS/RTMP viewers.
+            </p>
+
+            <div className="bg-[#F8F7FA] dark:bg-[#120820] border border-[#E8DFF0] dark:border-[#371F59] rounded-lg p-2.5 flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <span className="block text-[9px] uppercase font-bold text-[#8E78A6]">Sender Ingest URL</span>
+                <span className="font-mono text-xs font-bold text-violet-700 dark:text-emerald-300 truncate block select-all">
+                  {rtmpEndpointUrl}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(rtmpEndpointUrl, 'RTMP Ingest URL')}
+                className="shrink-0 inline-flex items-center gap-1 rounded-md bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1 text-[10px] font-bold transition-colors cursor-pointer"
+              >
+                <Copy size={11} /> Copy
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-[#E8DFF0] dark:border-[#311B4E] flex items-center justify-between text-[11px]">
+            <div className="flex items-center gap-1.5 text-[#6F6078] dark:text-[#B9A5CD]">
+              {rtmpSecurityEnabled ? <Lock size={12} className="text-emerald-500" /> : <Unlock size={12} className="text-amber-500" />}
+              <span>{rtmpSecurityEnabled ? `Protected (${rtmpKeysCount} key${rtmpKeysCount !== 1 ? 's' : ''})` : 'Open Ingest'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSecurityModalOpen(true)}
+              className="font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400 cursor-pointer"
+            >
+              Configure Keys &rarr;
+            </button>
+          </div>
+        </div>
+
+        {/* SRT Server Card */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#190E28] dark:border-[#311B4E] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className={`flex h-2.5 w-2.5 rounded-full ${activeSrtProcesses.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                <h3 className="font-bold text-sm text-[#1B1024] dark:text-white flex items-center gap-1.5">
+                  <Radio size={15} className="text-purple-600 dark:text-purple-400" />
+                  SRT Ingest Server
+                </h3>
+              </div>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                activeSrtProcesses.length > 0
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {activeSrtProcesses.length > 0 ? `Port ${activeSrtProcesses[0].port || 8890} • Listening` : 'Ready to Start'}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD] mb-2.5">
+              Zero-encode receiver: Ingests incoming SRT streams from field cameras or hardware encoders and demuxes directly to HLS live preview without re-encoding.
+            </p>
+
+            {activeSrtProcesses.length > 0 ? (
+              <div className="space-y-2">
+                <div className="bg-[#F8F7FA] dark:bg-[#120820] border border-emerald-300 dark:border-emerald-900 rounded-lg p-2.5 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="block text-[9px] uppercase font-bold text-emerald-700 dark:text-emerald-400">SRT Caller Ingest Address (Encoder Feed)</span>
+                      <span className="text-[9px] font-extrabold px-1 rounded bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200 uppercase">Input Feed</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-emerald-800 dark:text-emerald-300 truncate block select-all mt-0.5">
+                      {`srt://${effectiveHost}:${activeSrtProcesses[0].port || 8890}`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(`srt://${effectiveHost}:${activeSrtProcesses[0].port || 8890}`, 'SRT Ingest Address')}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[10px] font-bold transition-colors cursor-pointer"
+                  >
+                    <Copy size={11} /> Copy Address
+                  </button>
+                </div>
+
+                <div className="bg-purple-50/70 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/60 rounded-lg p-2.5 text-[10px] text-purple-900 dark:text-purple-300 space-y-1">
+                  <div><strong>Encoder Setup:</strong> Protocol: <code>SRT (Caller mode)</code> &bull; Server: <code>srt://{effectiveHost}:{activeSrtProcesses[0].port || 8890}</code> &bull; Latency: <code>200ms</code></div>
+                  <div className="text-[9.5px] text-[#6F6078] dark:text-[#B9A5CD] border-t border-purple-200/60 dark:border-purple-800/40 pt-1 mt-1">
+                    💡 <strong>VLC &amp; Media Players:</strong> Open <strong>Media &rarr; Open Network Stream</strong> with the <strong>HLS URL</strong> (<code>http://{effectiveHost}:{settings?.mediaPort || 8080}/live/{activeSrtProcesses[0].streamName || 'srt-feed'}/index.m3u8</code>). To stream raw SRT packets to VLC, start an <strong>SRT Playout</strong> transmitter on a separate port (e.g. <code>srt://{effectiveHost}:9998</code>).
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-[#F8F7FA] dark:bg-[#120820] border border-[#E8DFF0] dark:border-[#371F59] rounded-lg p-2.5 flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[9px] uppercase font-bold text-[#8E78A6]">Default SRT Listener</span>
+                  <span className="font-mono text-xs text-[#6F6078] dark:text-[#B9A5CD] truncate block">
+                    Port {srtPort || 8890} • Target: /live/{srtStreamName}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={openAddSrtModal}
+                  className="shrink-0 inline-flex items-center gap-1 rounded-md bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 text-[11px] font-bold transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Play size={12} /> Start SRT Server
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 pt-2.5 border-t border-[#E8DFF0] dark:border-[#311B4E] flex items-center justify-between text-[11px]">
+            {activeSrtProcesses.length > 0 ? (
+              <>
+                <span className="text-emerald-700 dark:text-emerald-300 font-semibold flex items-center gap-1">
+                  <Activity size={12} className="text-emerald-500 animate-pulse" />
+                  Playing directly to: /live/{activeSrtProcesses[0].streamName || 'srt-feed'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openAddSrtModal}
+                    className="font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400 cursor-pointer"
+                  >
+                    + Add Port
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => stopProcess(activeSrtProcesses[0].id)}
+                    className="font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 cursor-pointer"
+                  >
+                    Stop Server
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-[#6F6078] dark:text-[#B9A5CD]">
+                  Direct pass-through (0% CPU load)
+                </span>
+                <button
+                  type="button"
+                  onClick={openAddSrtModal}
+                  className="font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400 cursor-pointer"
+                >
+                  Launch SRT Server &rarr;
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Active Ingest Streams Table */}
       <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#1E293B] dark:border-[#334155]">
         <div className="flex flex-col gap-2 border-b border-[#E8DFF0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#334155]">
@@ -1223,19 +1569,24 @@ export const IngestServerView: React.FC<Props> = ({
             <p className="text-[11px] text-[#6F6078] dark:text-[#94A3B8]">Currently publishing RTMP and SRT live streams</p>
           </div>
 
-          <CodeField value={rtmpEndpointUrl} label="" className="max-w-xs" />
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-800 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Dual RTMP &amp; SRT Ingest Receiver
+            </span>
+          </div>
         </div>
 
         {activeStreamKeys.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px]">
               <thead>
-                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase tracking-wider text-[#6F6078] dark:bg-[#0F172A] dark:border-[#334155] dark:text-[#94A3B8]">
-                  <th className="px-4 py-3">Stream Name</th>
+                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-bold uppercase tracking-wider text-[#6F6078] dark:bg-[#0F172A] dark:border-[#334155] dark:text-[#94A3B8]">
+                  <th className="px-4 py-3">Stream Identity &amp; Auth</th>
                   <th className="px-4 py-3">Protocol</th>
-                  <th className="px-4 py-3">Resolution / FPS</th>
-                  <th className="px-4 py-3">Bitrate</th>
-                  <th className="px-4 py-3">Audio</th>
+                  <th className="px-4 py-3">Video Incoming</th>
+                  <th className="px-4 py-3">Audio Stream</th>
+                  <th className="px-4 py-3">Playback URLs (Open &amp; Secure)</th>
                   <th className="px-4 py-3">Recording</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -1246,27 +1597,171 @@ export const IngestServerView: React.FC<Props> = ({
                   const bitrateKbps = Number(stream.bitrate || stream.incoming_kbps || stream.incomingBitrate || stream.publisher?.video?.bitrate || 0);
                   const recItem = stream.recording || recordings.find((r: any) => r.is_active && (`${r.app}/${r.stream}` === key || r.stream === stream.name || (r.file_name && r.file_name.includes(stream.name))));
                   const recStartTime = recItem?.start_time || recItem?.created_at;
+                  const urls = getStreamUrls(key, stream);
 
                   return (
                     <tr key={key} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#334155]/50">
                       <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">
                         <div className="flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-[#16A36A] animate-pulse" />
-                          <span>{stream.name || key}</span>
+                          <span className="h-2.5 w-2.5 rounded-full bg-[#16A36A] animate-pulse shrink-0" />
+                          <div className="min-w-0">
+                            <div className="font-bold text-[13px] text-[#1B1024] dark:text-white truncate">
+                              {urls.rawName}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-mono text-[#6F6078] dark:text-[#B9A5CD]">
+                              {urls.matchingKey ? (
+                                <span className="inline-flex items-center gap-1 rounded bg-purple-100 px-1.5 py-0.2 text-[9px] font-bold text-purple-800 dark:bg-purple-950 dark:text-purple-200">
+                                  <Lock size={9} /> {urls.matchingKey.name || 'Protected Key'}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.2 text-[9px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                  Open Ingest
+                                </span>
+                              )}
+                              {stream.ip && <span>• IP: {stream.ip}</span>}
+                            </div>
+                          </div>
                         </div>
                       </td>
+
                       <td className="px-4 py-3">
-                        <ProtocolBadge protocol={stream.protocol || 'RTMP'} />
+                        {(() => {
+                          const isSrt = activeSrtProcesses.some((p: any) => p.streamName === stream.name || p.streamName === urls.rawName || String(stream.name || '').includes('srt') || String(urls.rawName || '').includes('srt'));
+                          return <ProtocolBadge protocol={isSrt ? 'SRT' : (stream.protocol || 'RTMP')} />;
+                        })()}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#94A3B8]">
-                        {stream.resolution || '1920x1080'} @ {stream.fps || 30}fps
+
+                      <td className="px-4 py-3 font-mono text-[11px] text-[#1B1024] dark:text-white">
+                        <div className="flex items-center gap-1.5 font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
+                          <span className={`h-1.5 w-1.5 rounded-full ${bitrateKbps > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                          <span>{formatBitrate(bitrateKbps)}</span>
+                        </div>
+                        <div className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] mt-0.5 space-y-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="font-bold uppercase text-purple-700 dark:text-purple-300">
+                              {stream.videoCodec || stream.publisher?.video?.codec || 'H.264'}
+                            </span>
+                            {(stream.videoProfile || stream.publisher?.video?.profile) && (
+                              <span className="text-[9px] text-[#8E78A6]">({stream.videoProfile || stream.publisher?.video?.profile})</span>
+                            )}
+                          </div>
+                          <div>
+                            {stream.resolution || (stream.width && stream.height ? `${stream.width}x${stream.height}` : '1920x1080')} @ {stream.fps || 30} fps
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 font-mono font-semibold text-[#7C3AED] dark:text-[#34D399]">
-                        {formatBitrate(bitrateKbps)}
+
+                      <td className="px-4 py-3 font-mono text-[11px] text-[#1B1024] dark:text-white">
+                        <div className="font-bold text-slate-800 dark:text-slate-200">
+                          <span className="uppercase text-violet-700 dark:text-violet-300">
+                            {stream.audioCodec || stream.publisher?.audio?.codec || 'AAC'}
+                          </span>
+                          <span className="opacity-80"> ({stream.audioBitrate || stream.publisher?.audio?.bitrate || 128} kbps)</span>
+                        </div>
+                        <div className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD] mt-0.5 space-y-0.5">
+                          <div>
+                            {stream.audioSamplerate || stream.sampleRate || 48000} Hz &bull; {stream.audioChannels || 2}ch
+                          </div>
+                          <div className="text-[9px] text-[#8E78A6]">
+                            {Number(stream.audioChannels || 2) === 1 ? 'Mono' : 'Stereo'}
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-[#6F6078] dark:text-[#B9A5CD]">
-                        {stream.audioCodec || 'AAC'} ({stream.audioBitrate || 128}k)
+
+                      {/* Playback & Ingest URLs Quick Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-1.5 max-w-xs">
+                          {urls.isSrt ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(urls.openHlsUrl, 'Open HLS URL')}
+                                className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300 cursor-pointer"
+                                title={urls.openHlsUrl}
+                              >
+                                <Tv size={10} /> 🔓 HLS Preview
+                              </button>
+
+                              {urls.srtEgress ? (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(urls.srtEgressVlcUrl, 'VLC SRT Playout URL')}
+                                  className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-100 dark:bg-amber-950/60 dark:border-amber-700 dark:text-amber-300 cursor-pointer"
+                                  title={`Live SRT Playout for VLC: Open Network Stream -> ${urls.srtEgressVlcUrl}`}
+                                >
+                                  <Play size={10} className="text-amber-600" /> 🎬 VLC SRT :{urls.srtEgressPort}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={startingPlayoutFor === urls.rawName}
+                                  onClick={() => handleStartAutoSrtPlayout(urls.rawName)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50/70 px-2 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 cursor-pointer disabled:opacity-50"
+                                  title="1-Click Auto-Start SRT Playout on next free port and copy VLC address"
+                                >
+                                  {startingPlayoutFor === urls.rawName ? (
+                                    <>
+                                      <Loader2 size={10} className="animate-spin text-amber-600" /> Starting...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play size={10} /> 🎬 SRT Playout (VLC)
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(urls.openHlsUrl, 'Open HLS URL')}
+                                className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300 cursor-pointer"
+                                title={urls.openHlsUrl}
+                              >
+                                <Tv size={10} /> 🔓 HLS
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(urls.secureHlsUrl, 'Secure Tokenized HLS URL')}
+                                className="inline-flex items-center gap-1 rounded-md border border-purple-300 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-800 hover:bg-purple-100 dark:bg-purple-950/60 dark:border-purple-800 dark:text-purple-300 cursor-pointer"
+                                title={urls.secureHlsUrl}
+                              >
+                                <Lock size={10} /> 🔒 HLS Token
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(urls.openRtmpUrl, 'RTMP Playback URL')}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 cursor-pointer"
+                                title={urls.openRtmpUrl}
+                              >
+                                <Radio size={10} /> RTMP
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(urls.openRtmpUrl, 'VLC Network Stream URL')}
+                                className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-100 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-300 cursor-pointer"
+                                title={`Play in VLC: Open Network Stream -> ${urls.openRtmpUrl}`}
+                              >
+                                <Play size={10} /> 🎬 VLC
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(urls.ingestRtmpUrl, 'RTMP Ingest URL')}
+                                className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-800 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300 cursor-pointer"
+                                title={urls.ingestRtmpUrl}
+                              >
+                                <Zap size={10} /> Ingest
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
+
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-0.5">
                           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
@@ -1282,22 +1777,35 @@ export const IngestServerView: React.FC<Props> = ({
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right space-x-1">
+
+                      <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => openInspector(key, stream)}
-                          className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#351147] hover:bg-[#F4EEFF]"
+                          className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2.5 py-1 text-[11px] font-bold text-[#351147] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] cursor-pointer"
                         >
                           <Activity size={12} /> Monitor
                         </button>
 
                         <button
                           type="button"
+                          onClick={() => {
+                            setRelayStreamPath(`/live/${urls.rawName}`);
+                            setRelayModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:border-purple-800 dark:text-purple-300 px-2.5 py-1 text-[11px] font-bold cursor-pointer"
+                          title="Push / Re-transcode to UDP / SRT / RTMP / RTSP"
+                        >
+                          <Send size={12} /> Push / Transcode
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleToggleRecord(stream.app || 'live', stream.name || key)}
-                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold ${
+                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold cursor-pointer ${
                             isRec
-                              ? 'border border-[#FECACA] bg-[#FEF2F2] text-[#DC3545]'
-                              : 'border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF]'
+                              ? 'border border-[#FECACA] bg-[#FEF2F2] text-[#DC3545] dark:bg-rose-950 dark:border-rose-800'
+                              : 'border border-[#E8DFF0] bg-white text-[#1B1024] hover:bg-[#F4EEFF] dark:bg-[#211335] dark:border-[#371F59] dark:text-white'
                           }`}
                         >
                           {isRec ? <Square size={12} /> : <Radio size={12} />}
@@ -1323,93 +1831,409 @@ export const IngestServerView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Active Processes Table */}
-      {processes.length > 0 && (
-        <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden">
-          <div className="border-b border-[#E8DFF0] px-4 py-2.5 bg-[#F8F7FA]">
-            <span className="font-display text-[13px] font-bold text-[#1B1024]">
-              Active Background Ingest Processes ({processes.length})
-            </span>
-          </div>
-          <table className="w-full text-left text-[12px]">
-            <thead>
-              <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-semibold uppercase text-[#6F6078]">
-                <th className="px-4 py-2">ID</th>
-                <th className="px-4 py-2">Type</th>
-                <th className="px-4 py-2">URL / Target</th>
-                <th className="px-4 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E8DFF0]">
-              {processes.map(proc => (
-                <tr key={proc.id}>
-                  <td className="px-4 py-2 font-mono font-bold text-[#4A1B7A]">{proc.id}</td>
-                  <td className="px-4 py-2 uppercase font-semibold text-[#6F6078]">{proc.type}</td>
-                  <td className="px-4 py-2 font-mono text-[#1B1024]">{proc.url || proc.streamPath}</td>
-                  <td className="px-4 py-2 text-right">
-                    <button
-                      onClick={() => stopProcess(proc.id)}
-                      className="rounded border border-[#FECACA] bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold text-[#DC3545]"
-                    >
-                      Terminate
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Active Background Ingest Processes Table */}
+      {(() => {
+        const activeListeners = processes.filter(p => p.type === 'srt-listener' || p.type === 'srt' || (p.url?.startsWith('srt://') && p.url?.includes('mode=listener')));
+        if (activeListeners.length === 0) return null;
+        return (
+          <div className="rounded-xl border border-[#E8DFF0] bg-white shadow-xs overflow-hidden dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-2.5 bg-[#F8F7FA] dark:bg-[#120820] dark:border-[#311B4E]">
+              <div className="flex items-center gap-2">
+                <Radio size={14} className="text-purple-600 dark:text-purple-400" />
+                <span className="font-display text-[13px] font-bold text-[#1B1024] dark:text-white">
+                  Active Ingest Servers &amp; Listeners ({activeListeners.length})
+                </span>
+              </div>
+              <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">Zero-re-encoding SRT ingest &amp; playout listeners</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[12px]">
+                <thead>
+                  <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-bold uppercase tracking-wider text-[#6F6078] dark:bg-[#120820] dark:border-[#311B4E] dark:text-[#94A3B8]">
+                    <th className="px-4 py-2.5">Protocol &amp; Port</th>
+                    <th className="px-4 py-2.5">Field Sender Address</th>
+                    <th className="px-4 py-2.5">Local Live Target</th>
+                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
+                  {activeListeners.map(proc => {
+                  const isSrt = proc.type === 'srt-listener';
+                  const obsDirectUrl = isSrt ? `srt://${effectiveHost}:${proc.port || 8890}` : '';
+                  const srtSenderUrl = isSrt
+                    ? `srt://${effectiveHost}:${proc.port || 8890}?mode=caller&latency=${proc.latency || 200}`
+                    : '';
+                  const targetStreamKey = isSrt ? (proc.streamName || 'srt-feed') : (proc.streamPath || '');
+                  const hasSignal = Boolean(
+                    localStreams[targetStreamKey] ||
+                    localStreams[`live/${targetStreamKey}`] ||
+                    localStreams[targetStreamKey.replace(/^\//, '')]
+                  );
 
-      {/* SRT Modal */}
+                  const isSrtPlayout = !isSrt && proc.url?.startsWith('srt://') && proc.url?.includes('mode=listener');
+                  const playoutPort = isSrtPlayout ? (proc.url.match(/:(\d+)/)?.[1] || '9998') : null;
+                  const vlcUrl = playoutPort ? `srt://${effectiveHost}:${playoutPort}` : '';
+                  const fullVlcUrl = playoutPort ? `srt://${effectiveHost}:${playoutPort}?mode=caller` : '';
+
+                  return (
+                    <tr key={proc.id} className="transition-colors hover:bg-[#F4EEFF]/40 dark:hover:bg-[#25153A]/40">
+                      <td className="px-4 py-3 font-semibold text-[#1B1024] dark:text-white">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${hasSignal ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                          <div>
+                            <div className="font-bold text-[12px] text-[#1B1024] dark:text-white flex items-center gap-1.5 flex-wrap">
+                              {isSrt ? (
+                                <span className="rounded bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.2 text-[10px] font-extrabold">
+                                  SRT Server :{proc.port || 8890}
+                                </span>
+                              ) : isSrtPlayout ? (
+                                <span className="rounded bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 px-1.5 py-0.2 text-[10px] font-extrabold flex items-center gap-1">
+                                  <Play size={10} />
+                                  SRT Playout :{playoutPort}
+                                </span>
+                              ) : (
+                                <>
+                                  <span className="rounded bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300 px-1.5 py-0.2 text-[10px] font-extrabold flex items-center gap-1">
+                                    <Send size={10} />
+                                    {proc.url?.startsWith('udp://') ? 'UDP Egress' : proc.url?.startsWith('srt://') ? 'SRT Push' : proc.url?.startsWith('rtsp') ? 'RTSP Feed' : 'RTMP Push'}
+                                  </span>
+                                  <span className="rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 px-1 py-0.2 text-[9px] font-semibold">
+                                    {proc.profile === 'nvenc_1080p' ? 'NVENC 1080p' : proc.profile === 'nvenc_720p' ? 'NVENC 720p' : proc.profile === 'software_1080p' ? 'x264 1080p' : proc.profile === 'software_720p' ? 'x264 720p' : proc.profile === 'software_576p_dvb' ? 'DVB CBR' : 'Direct Pass-Through'}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <div className="text-[10px] font-mono text-[#8E78A6] mt-0.5">{proc.id}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {isSrt ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-extrabold uppercase px-1 rounded bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300">INGEST</span>
+                              <code className="font-mono text-[11px] font-bold text-purple-700 dark:text-purple-300 select-all truncate max-w-[220px]">
+                                {obsDirectUrl}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(obsDirectUrl, 'SRT Ingest Address')}
+                                className="shrink-0 rounded p-1 text-[#8E78A6] hover:bg-purple-100 dark:hover:bg-purple-950 hover:text-purple-700 transition-colors"
+                                title="Copy Ingest Address"
+                              >
+                                <Copy size={11} />
+                              </button>
+                            </div>
+                            <div className="text-[10px] text-[#8E78A6] flex items-center gap-1">
+                              <span>Full:</span>
+                              <code className="font-mono text-[10px] truncate max-w-[210px] select-all">{srtSenderUrl}</code>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(srtSenderUrl, 'Full Caller SRT URL')}
+                                className="shrink-0 text-[#8E78A6] hover:text-purple-700 p-0.5"
+                                title="Copy Full Parameters Address"
+                              >
+                                <Copy size={10} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : isSrtPlayout ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-extrabold uppercase px-1 rounded bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200">VLC PLAY</span>
+                              <code className="font-mono text-[11px] font-bold text-amber-800 dark:text-amber-300 select-all truncate max-w-[220px]">
+                                {vlcUrl}
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(fullVlcUrl, 'VLC Network Stream URL')}
+                                className="shrink-0 rounded p-1 text-[#8E78A6] hover:bg-amber-100 dark:hover:bg-amber-950 hover:text-amber-700 transition-colors cursor-pointer"
+                                title={`Copy for VLC Player: ${fullVlcUrl}`}
+                              >
+                                <Copy size={11} />
+                              </button>
+                            </div>
+                            <div className="text-[10px] text-[#8E78A6] flex items-center gap-1">
+                              <span>Server Bind:</span>
+                              <code className="font-mono text-[10px] truncate max-w-[210px] select-all">{proc.url}</code>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <code className="font-mono text-[11px] text-[#1B1024] dark:text-white truncate max-w-[280px] select-all">
+                              {proc.url}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(proc.url, 'Target URL')}
+                              className="shrink-0 text-[#8E78A6] hover:text-purple-700 p-0.5 cursor-pointer"
+                              title="Copy Target URL"
+                            >
+                              <Copy size={11} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 font-mono text-[11px] font-bold text-[#4A1B7A] dark:text-[#C4B5FD]">
+                        {isSrt ? `/live/${targetStreamKey}` : `From: ${proc.streamPath}`}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {hasSignal ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Transmitting Live
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                            Ready / Listening
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cleanName = (targetStreamKey || '').replace(/^\/?(live\/)?/, '') || (isSrt ? (proc.streamName || 'srt-feed') : 'feed');
+                            const matchedKey = `live/${cleanName}`;
+                            const streamObj = localStreams[matchedKey] || localStreams[cleanName] || { name: cleanName, protocol: isSrt ? 'SRT' : 'RTMP' };
+                            openInspector(matchedKey, streamObj);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
+                          title="Watch incoming stream preview"
+                        >
+                          <Play size={11} /> Preview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => stopProcess(proc.id)}
+                          className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300 px-2 py-1 text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          Terminate
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* SRT Ingest Server Modal */}
       <DetailDrawer
         open={srtModalOpen}
         onClose={() => setSrtModalOpen(false)}
-        title="Add SRT Listener Input"
-        subtitle="Listen on a local UDP port for incoming SRT streams"
-        width="max-w-[420px]"
+        title="Launch SRT Ingest Server"
+        subtitle="Listen on a local UDP port for incoming SRT streams with direct zero-CPU passthrough"
+        width="max-w-[440px]"
         footer={
           <div className="flex justify-end gap-2">
-            <button onClick={() => setSrtModalOpen(false)} className="h-8 rounded-md border px-3 text-[12px] font-semibold text-[#6F6078]">Cancel</button>
-            <button onClick={startSrtListener} className="h-8 rounded-md bg-[#351147] px-4 text-[12px] font-semibold text-white">Start Listener</button>
+            <button onClick={() => setSrtModalOpen(false)} className="h-8 rounded-md border px-3 text-[12px] font-semibold text-[#6F6078] hover:bg-slate-50 dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#211335]">Cancel</button>
+            <button onClick={startSrtListener} className="h-8 rounded-md bg-purple-600 hover:bg-purple-700 px-4 text-[12px] font-bold text-white transition-colors">Start SRT Server</button>
           </div>
         }
       >
         <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Target Stream Name</label>
-            <input className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 text-[12px]" value={srtStreamName} onChange={e => setSrtStreamName(e.target.value)} />
+          <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 p-2.5 text-[11px] text-emerald-900 dark:text-emerald-200">
+            <strong>Zero CPU Overhead:</strong> Incoming SRT stream packets are received and passed through directly without re-encoding, immediately playable via HLS, RTMP, and recording.
           </div>
+
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">SRT Listener Port</label>
-            <input type="number" className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 text-[12px]" value={srtPort} onChange={e => setSrtPort(e.target.value)} />
+            <label className="mb-1 block text-[11px] font-semibold text-[#1B1024] dark:text-white">Target Live Stream Name</label>
+            <input
+              className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+              value={srtStreamName}
+              onChange={e => setSrtStreamName(e.target.value)}
+              placeholder="srt-feed"
+            />
+            <span className="text-[10px] text-[#8E78A6] mt-0.5 block">Will be published locally as /live/{srtStreamName || 'stream'}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-[#1B1024] dark:text-white">SRT Listener Port</label>
+              <input
+                type="number"
+                className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                value={srtPort}
+                onChange={e => setSrtPort(e.target.value)}
+                placeholder="8890"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-[#1B1024] dark:text-white">Latency (ms)</label>
+              <input
+                type="number"
+                className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                value={srtLatency}
+                onChange={e => setSrtLatency(e.target.value)}
+                placeholder="200"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-[#F8F7FA] dark:bg-[#120820] border border-[#E8DFF0] dark:border-[#371F59] p-2.5">
+            <span className="block text-[10px] uppercase font-bold text-[#8E78A6] mb-1">Field Sender Target URL Preview</span>
+            <code className="block font-mono text-[11px] text-purple-700 dark:text-purple-300 break-all select-all">
+              {`srt://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:${srtPort || 8890}?mode=caller&latency=${srtLatency || 200}`}
+            </code>
           </div>
         </div>
       </DetailDrawer>
 
-      {/* Relay Modal */}
+      {/* Push / Re-Transcoder Modal */}
       <DetailDrawer
         open={relayModalOpen}
         onClose={() => setRelayModalOpen(false)}
-        title="Add RTMP Relay Output"
-        subtitle="Forward an active ingest stream to a remote RTMP destination"
-        width="max-w-[440px]"
+        title="Live Stream Egress & Re-Transcoder"
+        subtitle="Push & re-encode incoming SRT or RTMP feeds to UDP Multicast, SRT Caller, RTMP, or RTSP"
+        width="max-w-[480px]"
         footer={
           <div className="flex justify-end gap-2">
-            <button onClick={() => setRelayModalOpen(false)} className="h-8 rounded-md border px-3 text-[12px] font-semibold text-[#6F6078]">Cancel</button>
-            <button onClick={startRtmpRelay} className="h-8 rounded-md bg-[#351147] px-4 text-[12px] font-semibold text-white">Start Relay</button>
+            <button onClick={() => setRelayModalOpen(false)} className="h-8 rounded-md border px-3 text-[12px] font-semibold text-[#6F6078] hover:bg-slate-50 dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#211335]">Cancel</button>
+            <button onClick={startEgressPush} className="h-8 rounded-md bg-purple-600 hover:bg-purple-700 px-4 text-[12px] font-bold text-white transition-colors cursor-pointer">Start Push / Transcode</button>
           </div>
         }
       >
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Source Ingest Stream Path</label>
-            <input className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px]" value={relayStreamPath} onChange={e => setRelayStreamPath(e.target.value)} placeholder="/live/main-feed" />
+        <div className="space-y-3.5">
+          <div className="rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 p-2.5 text-[11px] text-purple-900 dark:text-purple-200">
+            <strong>Universal Stream Egress:</strong> Take any incoming stream (e.g. from SRT Server or RTMP Ingest) and re-stream it to UDP Multicast (for IPTV / DVB modulators), remote SRT listeners, RTMP CDNs, or RTSP servers with optional GPU/CPU re-encoding.
           </div>
+
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-[#6F6078]">Destination RTMP URL</label>
-            <input className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px]" value={relayDestinationUrl} onChange={e => setRelayDestinationUrl(e.target.value)} placeholder="rtmp://remote-server/live/streamkey" />
+            <label className="mb-1 block text-[11px] font-semibold text-[#1B1024] dark:text-white">Source Stream Path</label>
+            <div className="flex gap-2">
+              <input
+                className="h-9 flex-1 rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                value={relayStreamPath}
+                onChange={e => setRelayStreamPath(e.target.value)}
+                placeholder="/live/srt-feed"
+              />
+              {activeStreamKeys.length > 0 && (
+                <select
+                  className="h-9 rounded-md border border-[#E8DFF0] px-2 text-[11px] font-semibold bg-white dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                  onChange={e => {
+                    if (e.target.value) setRelayStreamPath(`/live/${e.target.value.replace(/^live\//, '')}`);
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Active Streams...</option>
+                  {activeStreamKeys.map(k => {
+                    const clean = k.replace(/^live\//, '');
+                    return <option key={k} value={clean}>{clean}</option>;
+                  })}
+                </select>
+              )}
+            </div>
+            <span className="text-[10px] text-[#8E78A6] mt-0.5 block">Format: /live/&lt;stream_name&gt; (e.g. /live/srt-feed)</span>
           </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-[#1B1024] dark:text-white">Destination Target URL</label>
+              <span className="text-[10px] text-[#8E78A6]">Presets:</span>
+            </div>
+
+            {/* Quick URL Presets */}
+            <div className="grid grid-cols-5 gap-1 mb-1.5">
+              <button
+                type="button"
+                onClick={() => setRelayDestinationUrl('udp://239.1.1.1:5000?pkt_size=1316')}
+                className="rounded border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 px-1 py-1 text-[9.5px] font-bold text-center hover:bg-emerald-100"
+                title="UDP Multicast for IPTV & DVB Modulators"
+              >
+                📡 UDP
+              </button>
+              <button
+                type="button"
+                onClick={() => setRelayDestinationUrl('srt://0.0.0.0:9998?mode=listener')}
+                className="rounded border border-amber-200 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 text-amber-800 dark:text-amber-300 px-1 py-1 text-[9.5px] font-bold text-center hover:bg-amber-100"
+                title="SRT Egress Listener: Open srt://127.0.0.1:9998 in VLC"
+              >
+                🎬 SRT (VLC)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRelayDestinationUrl('srt://127.0.0.1:9000?mode=caller&latency=200')}
+                className="rounded border border-purple-200 bg-purple-50 dark:bg-purple-950/40 dark:border-purple-800 text-purple-800 dark:text-purple-300 px-1 py-1 text-[9.5px] font-bold text-center hover:bg-purple-100"
+                title="Push to remote SRT Receiver"
+              >
+                🟣 SRT Push
+              </button>
+              <button
+                type="button"
+                onClick={() => setRelayDestinationUrl('rtmp://remote-server/live/streamkey')}
+                className="rounded border border-violet-200 bg-violet-50 dark:bg-violet-950/40 dark:border-violet-800 text-violet-800 dark:text-violet-300 px-1 py-1 text-[9.5px] font-bold text-center hover:bg-violet-100"
+                title="Push to RTMP Server / CDN"
+              >
+                ⚡ RTMP
+              </button>
+              <button
+                type="button"
+                onClick={() => setRelayDestinationUrl('rtsp://127.0.0.1:8554/live')}
+                className="rounded border border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 text-slate-800 dark:text-slate-300 px-1 py-1 text-[9.5px] font-bold text-center hover:bg-slate-100"
+                title="RTSP Server Output"
+              >
+                🌐 RTSP
+              </button>
+            </div>
+
+            <input
+              className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 font-mono text-[12px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+              value={relayDestinationUrl}
+              onChange={e => setRelayDestinationUrl(e.target.value)}
+              placeholder="udp://239.1.1.1:5000?pkt_size=1316"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-[#1B1024] dark:text-white">Transcoding & Processing Mode</label>
+            <select
+              className="h-9 w-full rounded-md border border-[#E8DFF0] px-3 text-[12px] font-medium bg-white text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+              value={relayProfile}
+              onChange={e => setRelayProfile(e.target.value)}
+            >
+              <option value="copy">⚡ Direct Pass-Through (Zero CPU Copy / Ultra Fast)</option>
+              <option value="nvenc_1080p">🟢 NVIDIA NVENC Hardware 1080p (4.5 Mbps H.264)</option>
+              <option value="nvenc_720p">🔵 NVIDIA NVENC Hardware 720p (2.5 Mbps H.264)</option>
+              <option value="software_1080p">🟣 Software x264 1080p High Quality (4.0 Mbps)</option>
+              <option value="software_720p">🟡 Software x264 720p Stable (2.2 Mbps)</option>
+              <option value="software_576p_dvb">📡 DVB / Cable CBR MPTS (2.0 Mbps + MP2 Audio)</option>
+              <option value="custom">⚙️ Custom Bitrate & Resolution...</option>
+            </select>
+          </div>
+
+          {relayProfile === 'custom' && (
+            <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5">
+              <div>
+                <label className="block text-[10px] font-bold text-[#6F6078] dark:text-[#B9A5CD] mb-1">Video Bitrate (Kbps)</label>
+                <input
+                  type="number"
+                  className="h-8 w-full rounded border border-[#E8DFF0] px-2 font-mono text-[11px] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                  value={relayCustomBitrate}
+                  onChange={e => setRelayCustomBitrate(e.target.value)}
+                  placeholder="3000"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#6F6078] dark:text-[#B9A5CD] mb-1">Resolution (W:H)</label>
+                <input
+                  className="h-8 w-full rounded border border-[#E8DFF0] px-2 font-mono text-[11px] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                  value={relayCustomResolution}
+                  onChange={e => setRelayCustomResolution(e.target.value)}
+                  placeholder="1920:1080"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </DetailDrawer>
 
@@ -1417,46 +2241,71 @@ export const IngestServerView: React.FC<Props> = ({
       {(() => {
         const liveInspected = localStreams[selectedStreamKey] || inspectedStream;
         const inspectorBitrate = Number(liveInspected?.bitrate || liveInspected?.incoming_kbps || liveInspected?.incomingBitrate || liveInspected?.publisher?.video?.bitrate || 0);
+        const urls = getStreamUrls(selectedStreamKey, liveInspected);
 
         return (
           <DetailDrawer
             open={inspectorOpen}
             onClose={() => setInspectorOpen(false)}
-            title={`Stream Inspector — ${selectedStreamKey}`}
-            subtitle="Real-time live video player, telemetry and output parameters"
-            width="max-w-[560px]"
+            title={`Stream Inspector — ${urls.rawName}`}
+            subtitle="Real-time live video player, incoming feed telemetry, and playback URLs"
+            width="max-w-[620px]"
           >
             <div className="space-y-4">
               <MediaPreview
-                url={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
-                title={selectedStreamKey}
+                url={urls.openHlsUrl}
+                title={urls.rawName}
                 maxHeight={320}
-                isRecording={Boolean(activeRecordingKeys[selectedStreamKey] || recordingStatuses[selectedStreamKey] || localStreams[selectedStreamKey]?.isRecording)}
+                isRecording={Boolean(activeRecordingKeys[selectedStreamKey] || recordingStatuses[selectedStreamKey] || liveInspected?.isRecording)}
               />
 
-              <div className="grid grid-cols-2 gap-2 text-[12px]">
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Resolution</span>
-                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.resolution || '1920x1080'}</p>
-                </div>
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#0F172A] dark:border-[#334155]">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#94A3B8]">Bitrate</span>
-                  <p className="font-mono font-bold text-[#7C3AED] dark:text-[#34D399]">{formatBitrate(inspectorBitrate)}</p>
-                </div>
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">FPS</span>
-                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.fps || 30}</p>
-                </div>
-                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
-                  <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Audio Codec</span>
-                  <p className="font-mono font-bold text-[#1B1024] dark:text-white">{liveInspected?.audioCodec || 'AAC'}</p>
+              {/* Feed Telemetry Grid */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD] block">
+                  📡 Incoming Stream Diagnostics
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[12px]">
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                    <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Resolution &amp; FPS</span>
+                    <p className="font-mono font-bold text-[#1B1024] dark:text-white">
+                      {liveInspected?.resolution || (liveInspected?.width && liveInspected?.height ? `${liveInspected.width}x${liveInspected.height}` : '1920x1080')} @ {liveInspected?.fps || 30}fps
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                    <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Bitrate</span>
+                    <p className="font-mono font-bold text-[#7C3AED] dark:text-[#34D399]">{formatBitrate(inspectorBitrate)}</p>
+                  </div>
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                    <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Video Codec &amp; Profile</span>
+                    <p className="font-mono font-bold text-[#1B1024] dark:text-white">
+                      {liveInspected?.videoCodec || liveInspected?.publisher?.video?.codec || 'H.264'}
+                      {(liveInspected?.videoProfile || liveInspected?.publisher?.video?.profile) && (
+                        <span className="text-[10px] text-[#8E78A6] font-normal"> ({liveInspected?.videoProfile || liveInspected?.publisher?.video?.profile})</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                    <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Audio Codec &amp; Bitrate</span>
+                    <p className="font-mono font-bold text-[#1B1024] dark:text-white">
+                      {liveInspected?.audioCodec || liveInspected?.publisher?.audio?.codec || 'AAC'}
+                      <span className="text-[10px] text-[#8E78A6] font-normal"> ({liveInspected?.audioBitrate || liveInspected?.publisher?.audio?.bitrate || 128} kbps)</span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                    <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Sampling Rate &amp; Channels</span>
+                    <p className="font-mono font-bold text-[#1B1024] dark:text-white">
+                      {liveInspected?.audioSamplerate || liveInspected?.sampleRate || 48000} Hz
+                      <span className="text-[10px] text-[#8E78A6] font-normal"> ({liveInspected?.audioChannels || 2}ch {Number(liveInspected?.audioChannels || 2) === 1 ? 'Mono' : 'Stereo'})</span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2.5 dark:bg-[#211335] dark:border-[#371F59]">
+                    <span className="text-[10px] font-semibold uppercase text-[#6F6078] dark:text-[#B9A5CD]">Source Protocol &amp; IP</span>
+                    <p className="font-mono font-bold text-[#1B1024] dark:text-white truncate">
+                      <span className="uppercase text-purple-700 dark:text-purple-300">{liveInspected?.protocol || 'RTMP'}</span> &bull; {liveInspected?.ip || '127.0.0.1'}
+                    </p>
+                  </div>
                 </div>
               </div>
-
-              <CodeField
-                value={`${typeof window !== 'undefined' ? window.location.origin : ''}/live/${selectedStreamKey.split('/')[1] || selectedStreamKey}/index.m3u8`}
-                label="HLS Output Playback URL"
-              />
             </div>
           </DetailDrawer>
         );

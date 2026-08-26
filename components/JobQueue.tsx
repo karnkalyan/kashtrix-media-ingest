@@ -340,27 +340,38 @@ export const ChannelDashboard: React.FC<Props> = ({
                         </td>
                         <td className="px-4 py-3 font-mono text-[11px] max-w-[280px]">
                           <div className="flex flex-col gap-1">
-                            {destinationsList.map((d, i) => (
-                              <div key={d.id || i} className="flex items-center gap-1.5 truncate">
-                                <span className="rounded bg-[#F4EEFF] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#4A1B7A] dark:bg-[#311754] dark:text-[#C4B5FD] shrink-0">
-                                  {d.protocol}
-                                </span>
-                                <span className="truncate text-[#6D32D9] dark:text-[#A78BFA] font-semibold" title={d.url}>
-                                  {d.url}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(d.url);
-                                    toast.success(`${(d.protocol || 'Stream').toUpperCase()} URL copied!`);
-                                  }}
-                                  className="text-[#6F6078] hover:text-[#6D32D9] dark:text-[#B9A5CD] dark:hover:text-white shrink-0"
-                                  title="Copy URL"
-                                >
-                                  <Copy size={11} />
-                                </button>
-                              </div>
-                            ))}
+                            {destinationsList.map((d, i) => {
+                              const isSrtListener = d.url?.startsWith('srt://') && (d.url.includes('0.0.0.0') || d.url.includes('mode=listener'));
+                              const portMatch = d.url?.match(/:(\d+)/);
+                              const srtPort = portMatch ? portMatch[1] : '9998';
+                              const clientHost = typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1';
+                              const vlcUrl = `srt://${clientHost}:${srtPort}?mode=caller`;
+                              const displayUrl = isSrtListener ? vlcUrl : d.url;
+                              const copyUrl = isSrtListener ? vlcUrl : (d.playbackUrl || d.url);
+                              const protocolLabel = isSrtListener ? 'SRT (VLC)' : d.protocol;
+
+                              return (
+                                <div key={d.id || i} className="flex items-center gap-1.5 truncate">
+                                  <span className="rounded bg-[#F4EEFF] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#4A1B7A] dark:bg-[#311754] dark:text-[#C4B5FD] shrink-0">
+                                    {protocolLabel}
+                                  </span>
+                                  <span className="truncate text-[#6D32D9] dark:text-[#A78BFA] font-semibold" title={isSrtListener ? `VLC Playback URL: ${vlcUrl}` : d.url}>
+                                    {displayUrl}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(copyUrl);
+                                      toast.success(isSrtListener ? 'VLC SRT Playout URL copied!' : `${(d.protocol || 'Stream').toUpperCase()} URL copied!`);
+                                    }}
+                                    className="text-[#6F6078] hover:text-[#6D32D9] dark:text-[#B9A5CD] dark:hover:text-white shrink-0 cursor-pointer"
+                                    title={isSrtListener ? `Copy for VLC: ${vlcUrl}` : "Copy URL"}
+                                  >
+                                    <Copy size={11} />
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-[#6F6078] dark:text-[#B9A5CD]">

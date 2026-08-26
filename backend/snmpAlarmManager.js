@@ -1,56 +1,40 @@
 const dgram = require('dgram');
+const ALARM_SECTION = 'snmp-alarms';
 
 /**
  * Initializes DB tables for SNMP and Alarm settings.
  */
-const initSnmpAlarmStorage = (db) => {
-    try {
-        if (db && typeof db.exec === 'function') {
-            db.exec(`
-                CREATE TABLE IF NOT EXISTS system_alarms_config (
-                    key TEXT PRIMARY KEY,
-                    data TEXT NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-            `);
-        }
-    } catch (e) {
-        console.warn('[SnmpAlarmManager] DB Init warn:', e.message);
+const initSnmpAlarmStorage = async (db) => {
+    if (!db?.prisma?.systemConfiguration) {
+        console.warn('[SnmpAlarmManager] Prisma SystemConfiguration model is unavailable – alarm persistence will use defaults');
+        return;
     }
 };
 
-const getStoredConfig = (db, key, defaultValue) => {
+const getStoredConfig = async (db, key, defaultValue) => {
     try {
-        if (db && db.prisma && db.prisma.kvStore) {
-            const mem = db.data && db.data.kv ? db.data.kv.find(r => r.key === key) : null;
-            if (mem && mem.value) return JSON.parse(mem.value);
-        }
-        const row = db.prepare('SELECT data FROM system_alarms_config WHERE key = ?').get(key);
-        if (row && row.data) return JSON.parse(row.data);
-    } catch (e) {}
+        const row = await db.prisma.systemConfiguration.findUnique({ where: { key } });
+        if (row?.value) return JSON.parse(row.value);
+    } catch (e) {
+        console.warn(`[SnmpAlarmManager] Could not read ${key}:`, e.message);
+    }
     return defaultValue;
 };
 
-const setStoredConfig = (db, key, value) => {
-    try {
-        if (db && db.setKv) {
-            db.setKv(key, value);
-        }
-        db.prepare(`
-            INSERT INTO system_alarms_config (key, data, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(key) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP
-        `).run(key, JSON.stringify(value));
-    } catch (e) {
-        try { if (db && db.setKv) db.setKv(key, value); } catch (_) {}
-    }
+const setStoredConfig = async (db, key, value) => {
+    const serialized = JSON.stringify(value);
+    await db.prisma.systemConfiguration.upsert({
+        where: { key },
+        update: { section: ALARM_SECTION, value: serialized },
+        create: { key, section: ALARM_SECTION, value: serialized }
+    });
 };
 
 /**
  * Get SNMP & Alarms configuration.
  */
-const getSnmpAlarmSettings = (db) => {
-    const snmp = getStoredConfig(db, 'snmp_config', {
+const getSnmpAlarmSettings = async (db) => {
+    const snmp = await getStoredConfig(db, 'snmp_config', {
         readCommunity: 'public',
         writeCommunity: 'private',
         enableTraps: true,
@@ -65,7 +49,7 @@ const getSnmpAlarmSettings = (db) => {
         { id: 'alarm_mux_overcapacity', name: 'MPTS MUX Overcapacity', severity: 'Critical', snmpTrap: true, emailAlert: false, enabled: true }
     ];
 
-    const alarms = getStoredConfig(db, 'alarm_rules', defaultAlarms);
+    const alarms = await getStoredConfig(db, 'alarm_rules', defaultAlarms);
 
     return { snmp, alarms };
 };
@@ -73,7 +57,7 @@ const getSnmpAlarmSettings = (db) => {
 /**
  * Save SNMP & Alarms configuration.
  */
-const saveSnmpAlarmSettings = (db, payload = {}) => {
+const saveSnmpAlarmSettings = async (db, payload = {}) => {
     if (payload.snmp) {
         const snmp = {
             readCommunity: (payload.snmp.readCommunity || 'public').trim(),
@@ -81,22 +65,22 @@ const saveSnmpAlarmSettings = (db, payload = {}) => {
             enableTraps: !!payload.snmp.enableTraps,
             trapReceivers: Array.isArray(payload.snmp.trapReceivers) ? payload.snmp.trapReceivers : ['', '', '']
         };
-        setStoredConfig(db, 'snmp_config', snmp);
+        await setStoredConfig(db, 'snmp_config', snmp);
     }
 
     if (Array.isArray(payload.alarms)) {
-        setStoredConfig(db, 'alarm_rules', payload.alarms);
+        await setStoredConfig(db, 'alarm_rules', payload.alarms);
     }
 
-    return getSnmpAlarmSettings(db);
+    return await getSnmpAlarmSettings(db);
 };
 
 /**
  * Send an SNMP Trap UDP packet if traps are enabled.
  */
-const emitSnmpTrap = (db, alarmEvent) => {
+const emitSnmpTrap = async (db, alarmEvent) => {
     try {
-        const { snmp } = getSnmpAlarmSettings(db);
+        const { snmp } = await getSnmpAlarmSettings(db);
         if (!snmp.enableTraps) return;
 
         const receivers = (snmp.trapReceivers || []).filter(r => r && r.trim());

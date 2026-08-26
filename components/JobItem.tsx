@@ -5,7 +5,7 @@ import { explainCommand } from '../services/geminiService';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import StatusBadge from './ui/StatusBadge';
-import { FiPlay, FiSquare, FiTrash2, FiChevronDown, FiTerminal, FiZap, FiCopy, FiExternalLink } from 'react-icons/fi';
+import { FiPlay, FiSquare, FiTrash2, FiChevronDown, FiTerminal, FiZap, FiCopy, FiExternalLink, FiRadio } from 'react-icons/fi';
 
 interface Props {
   channel: Channel;

@@ -45,6 +45,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
     enabled: false,
     authMode: 'flexible',
     singlePublisherPerKey: true,
+    playbackSecurityEnabled: false,
     keys: [],
     accounts: []
   });
@@ -64,6 +65,8 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
     key: '',
     allowedStreams: '*',
     singlePublisherOnly: true,
+    playbackSecurity: 'inherit' as 'open' | 'secure' | 'inherit',
+    playbackToken: '',
     expiresAt: '',
     enabled: true
   });
@@ -76,6 +79,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
     password: '',
     allowedStreams: '*',
     singlePublisherOnly: true,
+    playbackSecurity: 'inherit' as 'open' | 'secure' | 'inherit',
     enabled: true
   });
 
@@ -106,11 +110,12 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
     }
   }, [open, fetchSecuritySettings]);
 
-  // Toggle master security enabled/disabled
+  // Toggle master ingest security enabled/disabled (Open Mode vs Secure Mode)
   const handleToggleSecurity = async (newEnabled: boolean) => {
+    const updated = { ...settings, enabled: newEnabled };
+    setSettings(updated); // Optimistic UI update
     try {
       setSaving(true);
-      const updated = { ...settings, enabled: newEnabled };
       const res = await api('/api/live-server/security', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -118,10 +123,34 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
       });
       if (res && res.settings) {
         setSettings(res.settings);
-        toast.success(newEnabled ? 'RTMP Ingest Security ENABLED (Secure Mode)' : 'RTMP Ingest Security DISABLED (Unsecure / Open Mode)');
+        toast.success(newEnabled ? 'Ingest Security ENABLED (Secure Mode Active)' : 'Ingest Security DISABLED (Unsecure / Open Mode Active)');
       }
     } catch (err: any) {
+      setSettings(settings); // Revert on failure
       toast.error(err.message || 'Failed to update security mode');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Toggle master playback security enabled/disabled
+  const handleTogglePlaybackSecurity = async (newPlaybackEnabled: boolean) => {
+    const updated = { ...settings, playbackSecurityEnabled: newPlaybackEnabled };
+    setSettings(updated); // Optimistic UI update
+    try {
+      setSaving(true);
+      const res = await api('/api/live-server/security', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      if (res && res.settings) {
+        setSettings(res.settings);
+        toast.success(newPlaybackEnabled ? 'Global Playback Protection ENABLED (Tokens Required)' : 'Global Playback UNSECURED (Open Playback Active)');
+      }
+    } catch (err: any) {
+      setSettings(settings);
+      toast.error(err.message || 'Failed to update playback security mode');
     } finally {
       setSaving(false);
     }
@@ -129,9 +158,10 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
 
   // Toggle single-key concurrency lock
   const handleToggleSinglePublisher = async (newVal: boolean) => {
+    const updated = { ...settings, singlePublisherPerKey: newVal };
+    setSettings(updated);
     try {
       setSaving(true);
-      const updated = { ...settings, singlePublisherPerKey: newVal };
       const res = await api('/api/live-server/security', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -139,9 +169,10 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
       });
       if (res && res.settings) {
         setSettings(res.settings);
-        toast.success(newVal ? 'Single-Key concurrency enforcement enabled' : 'Multi-publisher key reuse allowed');
+        toast.success(newVal ? 'Single-Key concurrency lock enabled' : 'Multi-publisher key reuse allowed');
       }
     } catch (err: any) {
+      setSettings(settings);
       toast.error(err.message || 'Failed to update policy');
     } finally {
       setSaving(false);
@@ -154,25 +185,43 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
       const res = await api('/api/live-server/security/keys/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: 'sk_live_' })
+        body: JSON.stringify({ prefix: 'kas_live_' })
       });
       if (res && res.key) {
         setKeyForm(prev => ({ ...prev, key: res.key }));
       }
     } catch (_) {
-      const fallback = `sk_live_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+      const fallback = `kas_live_${crypto.randomUUID().replace(/-/g, '')}`;
       setKeyForm(prev => ({ ...prev, key: fallback }));
+    }
+  };
+
+  // Generate random separate playback token string
+  const handleGenerateRandomPlaybackToken = async () => {
+    try {
+      const res = await api('/api/live-server/security/keys/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: 'kas_play_' })
+      });
+      if (res && res.key) {
+        setKeyForm(prev => ({ ...prev, playbackToken: res.key }));
+      }
+    } catch (_) {
+      const fallback = `kas_play_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+      setKeyForm(prev => ({ ...prev, playbackToken: fallback }));
     }
   };
 
   // Open New Key Modal
   const openNewKeyModal = async () => {
-    let newKey = `sk_live_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    let newKey = `kas_live_${crypto.randomUUID().replace(/-/g, '')}`;
+    let newPlayToken = `kas_play_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
     try {
       const res = await api('/api/live-server/security/keys/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: 'sk_live_' })
+        body: JSON.stringify({ prefix: 'kas_live_' })
       });
       if (res && res.key) newKey = res.key;
     } catch (_) {}
@@ -183,10 +232,45 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
       key: newKey,
       allowedStreams: '*',
       singlePublisherOnly: true,
+      playbackSecurity: 'inherit',
+      playbackToken: newPlayToken,
       expiresAt: '',
       enabled: true
     });
     setKeyModalOpen(true);
+  };
+
+  // Open Edit Key Modal
+  const openEditKeyModal = (keyItem: RtmpStreamKey) => {
+    setKeyForm({
+      id: keyItem.id,
+      name: keyItem.name,
+      key: keyItem.key,
+      allowedStreams: Array.isArray(keyItem.allowedStreams) ? keyItem.allowedStreams.join(', ') : '*',
+      singlePublisherOnly: keyItem.singlePublisherOnly !== false,
+      playbackSecurity: keyItem.playbackSecurity || 'inherit',
+      playbackToken: keyItem.playbackToken || `kas_play_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
+      expiresAt: keyItem.expiresAt ? new Date(keyItem.expiresAt).toISOString().slice(0, 16) : '',
+      enabled: keyItem.enabled !== false
+    });
+    setKeyModalOpen(true);
+  };
+
+  // Toggle Stream Key Playback Security Mode (1-Click Switch: inherit -> open -> secure -> inherit)
+  const handleCycleKeyPlaybackSecurity = async (keyItem: RtmpStreamKey) => {
+    const current = keyItem.playbackSecurity || 'inherit';
+    const nextMode = current === 'inherit' ? 'open' : current === 'open' ? 'secure' : 'inherit';
+    try {
+      await api(`/api/live-server/security/keys/${keyItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playbackSecurity: nextMode })
+      });
+      toast.success(`Stream "${keyItem.name}" playback mode set to: ${nextMode.toUpperCase()}`);
+      fetchSecuritySettings();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update playback security mode');
+    }
   };
 
   // Save Stream Key
@@ -207,6 +291,8 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
         key: keyForm.key.trim(),
         allowedStreams: allowed.length > 0 ? allowed : ['*'],
         singlePublisherOnly: keyForm.singlePublisherOnly,
+        playbackSecurity: keyForm.playbackSecurity,
+        playbackToken: keyForm.playbackToken.trim(),
         expiresAt: keyForm.expiresAt ? new Date(keyForm.expiresAt).toISOString() : null,
         enabled: keyForm.enabled
       };
@@ -337,7 +423,13 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
   const genStreamKeyOBS = activeKeyForGen ? `${genStreamName}?key=${activeKeyForGen.key}` : genStreamName;
   const genFullUrlKey = `${genServerUrl}/${genStreamKeyOBS}`;
   const genFfmpegCmd = `ffmpeg -re -i "input.mp4" -c copy -f flv "${genFullUrlKey}"`;
-  const genHlsUrl = `http://${customHost}:8100/live/${genStreamName}/index.m3u8`;
+  
+  const genOpenHlsUrl = `http://${customHost}:${settings.httpPort || 8100}/live/${genStreamName}/index.m3u8`;
+  const genOpenRtmpUrl = `rtmp://${customHost}:${rtmpPort}/live/${genStreamName}`;
+
+  const genPlayToken = activeKeyForGen?.playbackToken || 'viewer_token';
+  const genSecureHlsUrl = `http://${customHost}:${settings.httpPort || 8100}/live/${genStreamName}/index.m3u8?token=${genPlayToken}`;
+  const genSecureRtmpUrl = `rtmp://${customHost}:${rtmpPort}/live/${genStreamName}?token=${genPlayToken}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-fadeIn">
@@ -386,110 +478,148 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
             <button
               type="button"
               onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E8DFF0] bg-white text-[#6F6078] hover:bg-rose-50 hover:text-rose-600 dark:bg-[#25173B] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-rose-950/60"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6F6078] hover:bg-rose-50 hover:text-rose-600 dark:text-[#B9A5CD] dark:hover:bg-rose-950/60"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
           </div>
         </div>
 
-        {/* Master Toggle Banner */}
-        <div className="border-b border-[#E8DFF0] bg-[#F8F7FA] p-4 dark:border-[#371F59] dark:bg-[#211335]">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  id="master-security-toggle"
-                  checked={settings.enabled}
-                  onChange={(e) => handleToggleSecurity(e.target.checked)}
-                  disabled={saving}
-                  className="sr-only peer"
-                />
-                <div className="w-12 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 dark:bg-slate-700"></div>
-              </div>
-              <div>
-                <label htmlFor="master-security-toggle" className="cursor-pointer text-[13px] font-bold text-[#1B1024] dark:text-white">
-                  {settings.enabled ? 'Secure Ingest Mode Active' : 'Unsecure / Open Mode Active'}
-                </label>
-                <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                  {settings.enabled
-                    ? 'Only authorized stream keys or publisher accounts can publish RTMP streams. Unauthorized streams are dropped immediately.'
-                    : 'Any encoder can publish to this server without a key or password.'}
+        {/* Modal Body with Navigation Tabs */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Master Controls Header */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {/* 1. Master RTMP Ingest Authentication Mode Toggle */}
+            <div className={`flex items-center justify-between rounded-xl border p-3.5 transition-all ${
+              settings.enabled
+                ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/60 dark:bg-emerald-950/20'
+                : 'border-amber-200 bg-amber-50/50 dark:border-amber-900/60 dark:bg-amber-950/20'
+            }`}>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 font-bold text-[12px] text-[#1B1024] dark:text-white">
+                  <Lock size={13} className={settings.enabled ? 'text-emerald-600' : 'text-amber-600'} />
+                  Publish Ingest Security
+                </div>
+                <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                  {settings.enabled ? 'Key or Login required to stream' : 'Open / Unsecured (Anyone can stream)'}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => handleToggleSecurity(!settings.enabled)}
+                disabled={saving}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  settings.enabled ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  settings.enabled ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
             </div>
 
-            {/* Single Key = Single Stream Concurrency Toggle ("single key only work single") */}
-            <div className="flex items-center gap-2.5 rounded-xl border border-violet-200 bg-violet-50/70 px-3.5 py-2 dark:bg-violet-950/40 dark:border-violet-900/60">
-              <input
-                type="checkbox"
-                id="single-key-enforce"
-                checked={settings.singlePublisherPerKey}
-                onChange={(e) => handleToggleSinglePublisher(e.target.checked)}
+            {/* 2. Master Playback Security Toggle */}
+            <div className={`flex items-center justify-between rounded-xl border p-3.5 transition-all ${
+              settings.playbackSecurityEnabled
+                ? 'border-purple-200 bg-purple-50/50 dark:border-purple-900/60 dark:bg-purple-950/20'
+                : 'border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/20'
+            }`}>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 font-bold text-[12px] text-[#1B1024] dark:text-white">
+                  <Radio size={13} className={settings.playbackSecurityEnabled ? 'text-purple-600' : 'text-slate-500'} />
+                  Playback Protection
+                </div>
+                <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                  {settings.playbackSecurityEnabled ? 'Token required to watch' : 'Public HLS / RTMP play'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleTogglePlaybackSecurity(!settings.playbackSecurityEnabled)}
                 disabled={saving}
-                className="h-4 w-4 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
-              />
-              <label htmlFor="single-key-enforce" className="cursor-pointer text-[11px] font-semibold text-violet-900 dark:text-violet-200">
-                <strong>Single-Key Lock (1 Key = 1 Active Stream)</strong>
-                <span className="block text-[10px] text-violet-700 dark:text-violet-300 font-normal">
-                  Rejects duplicate publishers using the same key simultaneously
-                </span>
-              </label>
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  settings.playbackSecurityEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  settings.playbackSecurityEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* 3. Concurrency Lock Policy */}
+            <div className="flex items-center justify-between rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3.5 dark:border-[#371F59] dark:bg-[#211335]">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 font-bold text-[12px] text-[#1B1024] dark:text-white">
+                  <Key size={13} className="text-violet-600" />
+                  Single-Session Lock
+                </div>
+                <p className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                  {settings.singlePublisherPerKey ? 'Strict 1 encoder per key' : 'Allow multiple encoders per key'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggleSinglePublisher(!settings.singlePublisherPerKey)}
+                disabled={saving}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  settings.singlePublisherPerKey ? 'bg-violet-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  settings.singlePublisherPerKey ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 border-b border-[#E8DFF0] bg-white px-6 pt-3 dark:border-[#371F59] dark:bg-[#1A1028]">
-          <button
-            type="button"
-            onClick={() => setActiveTab('keys')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-2 text-[12px] font-bold transition-all ${
-              activeTab === 'keys'
-                ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
-                : 'border-transparent text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
-            }`}
-          >
-            <Key size={14} /> Stream Keys ({settings.keys.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('accounts')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-2 text-[12px] font-bold transition-all ${
-              activeTab === 'accounts'
-                ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
-                : 'border-transparent text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
-            }`}
-          >
-            <Users size={14} /> Publisher Accounts ({settings.accounts.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('generator')}
-            className={`flex items-center gap-2 border-b-2 px-4 py-2 text-[12px] font-bold transition-all ${
-              activeTab === 'generator'
-                ? 'border-violet-600 text-violet-700 dark:border-violet-400 dark:text-violet-300'
-                : 'border-transparent text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
-            }`}
-          >
-            <Zap size={14} /> OBS &amp; Encoder Setup Generator
-          </button>
-        </div>
+          {/* Sub-Navigation Tabs */}
+          <div className="flex items-center gap-2 border-b border-[#E8DFF0] pb-2 dark:border-[#371F59]">
+            <button
+              type="button"
+              onClick={() => setActiveTab('keys')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                activeTab === 'keys'
+                  ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+                  : 'text-[#6F6078] hover:bg-slate-100 dark:text-[#B9A5CD] dark:hover:bg-slate-800'
+              }`}
+            >
+              <Key size={14} /> Stream Keys ({settings.keys.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('accounts')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                activeTab === 'accounts'
+                  ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+                  : 'text-[#6F6078] hover:bg-slate-100 dark:text-[#B9A5CD] dark:hover:bg-slate-800'
+              }`}
+            >
+              <Users size={14} /> Publisher Accounts ({settings.accounts.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('generator')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                activeTab === 'generator'
+                  ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+                  : 'text-[#6F6078] hover:bg-slate-100 dark:text-[#B9A5CD] dark:hover:bg-slate-800'
+              }`}
+            >
+              <Zap size={14} /> OBS Setup &amp; Playback URLs
+            </button>
+          </div>
 
-        {/* Tab Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 max-h-[60vh]">
-          
           {/* TAB 1: STREAM KEYS */}
           {activeTab === 'keys' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-display text-[14px] font-bold text-[#1B1024] dark:text-white">
-                    Authorized Stream Keys
+                    Authorized Ingest Stream Keys
                   </h3>
                   <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                    Publishers pass keys via URL parameter (e.g. <code className="font-mono text-violet-700 bg-violet-50 px-1 py-0.5 rounded text-[10px] dark:bg-violet-950 dark:text-violet-300">rtmp://host:1935/live/feed?key=YOUR_KEY</code>)
+                    Publishers connect with: <code className="font-mono text-violet-700 bg-violet-50 px-1 py-0.5 rounded text-[10px] dark:bg-violet-950 dark:text-violet-300">rtmp://host:1935/live/streamName?key=kas_live_...</code>
                   </p>
                 </div>
                 <button
@@ -504,16 +634,16 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
               {settings.keys.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#E8DFF0] bg-[#F8F7FA] p-8 text-center dark:border-[#371F59] dark:bg-[#211335]/50">
                   <Key size={32} className="mx-auto text-[#6F6078] dark:text-[#B9A5CD]" />
-                  <p className="mt-2 text-[13px] font-bold text-[#1B1024] dark:text-white">No stream keys generated</p>
+                  <p className="mt-2 text-[13px] font-bold text-[#1B1024] dark:text-white">No stream keys generated yet</p>
                   <p className="mt-1 text-[11px] text-[#6F6078] dark:text-[#B9A5CD] max-w-md mx-auto">
-                    Generate secure stream keys for your OBS studios, OB vans, or mobile encoders to control who can broadcast.
+                    Generate secure stream keys for your broadcast studios, OBS clients, and RTMP encoders.
                   </p>
                   <button
                     type="button"
                     onClick={openNewKeyModal}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-1.5 text-[12px] font-bold text-white hover:bg-violet-700"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-violet-700"
                   >
-                    <Plus size={13} /> Generate First Key
+                    <Plus size={14} /> Generate First Key
                   </button>
                 </div>
               ) : (
@@ -521,10 +651,11 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                   <table className="w-full text-left text-[12px]">
                     <thead>
                       <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[10px] font-bold uppercase tracking-wider text-[#6F6078] dark:bg-[#25173B] dark:border-[#371F59] dark:text-[#B9A5CD]">
-                        <th className="px-4 py-3">Label / Name</th>
-                        <th className="px-4 py-3">Secret Key</th>
-                        <th className="px-4 py-3">Target Stream</th>
-                        <th className="px-4 py-3">Concurrency</th>
+                        <th className="px-4 py-3">Key Label</th>
+                        <th className="px-4 py-3">Publish Key</th>
+                        <th className="px-4 py-3">Allowed Streams</th>
+                        <th className="px-4 py-3">Playback Security</th>
+                        <th className="px-4 py-3">Single Session</th>
                         <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3 text-right">Actions</th>
                       </tr>
@@ -532,61 +663,66 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                     <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#371F59]">
                       {settings.keys.map((k) => {
                         const isRevealed = !!revealedKeys[k.id];
-                        const isLive = activeLocks.keys.some(l => l.keyId === k.id || l.keyPrefix?.startsWith(k.key.slice(0, 8)));
+                        const playMode = k.playbackSecurity || 'inherit';
 
                         return (
                           <tr key={k.id} className="transition-colors hover:bg-[#F4EEFF]/40 dark:hover:bg-[#281640]/40">
                             <td className="px-4 py-3 font-bold text-[#1B1024] dark:text-white">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[13px]">{k.name}</span>
-                                {isLive && (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-extrabold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 animate-pulse">
-                                    ● LIVE PUBLISHING
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
-                                Created {new Date(k.createdAt || Date.now()).toLocaleDateString()}
-                              </span>
+                              {k.name}
                             </td>
                             <td className="px-4 py-3 font-mono text-[11px]">
                               <div className="flex items-center gap-1.5">
-                                <span className="rounded bg-[#F8F7FA] px-2 py-1 border border-[#E8DFF0] text-violet-700 dark:bg-[#2A1745] dark:border-[#422268] dark:text-violet-300 max-w-[180px] truncate">
-                                  {isRevealed ? k.key : `${k.key.slice(0, 8)}••••••••••••`}
+                                <span className="text-violet-700 dark:text-violet-300">
+                                  {isRevealed ? k.key : `${k.key.slice(0, 10)}••••••••`}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setRevealedKeys(prev => ({ ...prev, [k.id]: !prev[k.id] }))}
                                   className="p-1 text-[#6F6078] hover:text-violet-600 dark:text-[#B9A5CD] dark:hover:text-violet-300"
-                                  title={isRevealed ? 'Hide secret key' : 'Show secret key'}
                                 >
                                   {isRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => copyToClipboard(k.key, 'Stream key')}
-                                  className="p-1 text-[#6F6078] hover:text-violet-600 dark:text-[#B9A5CD] dark:hover:text-violet-300"
-                                  title="Copy key string"
-                                >
-                                  <Copy size={13} />
                                 </button>
                               </div>
                             </td>
                             <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800 dark:text-slate-200">
-                                {k.allowedStreams?.join(', ') || '* (Any)'}
-                              </span>
+                              {k.allowedStreams?.join(', ') || '*'}
                             </td>
                             <td className="px-4 py-3">
-                              {k.singlePublisherOnly !== false ? (
-                                <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800 dark:bg-violet-950 dark:text-violet-300">
-                                  1 Session Max
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                  Multi-Use
-                                </span>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleCycleKeyPlaybackSecurity(k)}
+                                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold border transition-colors cursor-pointer ${
+                                  playMode === 'secure'
+                                    ? 'bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950 dark:text-purple-200 dark:border-purple-800'
+                                    : playMode === 'open'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                    : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                                }`}
+                                title="Click to cycle: Open Playback ↔ Secure Token Playback ↔ Inherit Global"
+                              >
+                                {playMode === 'secure' ? (
+                                  <>
+                                    <Lock size={10} /> Secure ({k.playbackToken ? 'Token' : 'Key'})
+                                  </>
+                                ) : playMode === 'open' ? (
+                                  <>
+                                    <Unlock size={10} /> Open Playback
+                                  </>
+                                ) : (
+                                  <>
+                                    <Radio size={10} /> Inherit ({settings.playbackSecurityEnabled ? 'Secure' : 'Open'})
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                k.singlePublisherOnly !== false
+                                  ? 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300'
+                                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                              }`}>
+                                {k.singlePublisherOnly !== false ? 'Enforced' : 'Multi'}
+                              </span>
                             </td>
                             <td className="px-4 py-3">
                               <button
@@ -604,20 +740,15 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                             <td className="px-4 py-3 text-right space-x-1">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setSelectedKeyId(k.id);
-                                  setActiveTab('generator');
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2 py-1 text-[11px] font-bold text-violet-700 hover:bg-[#F4EEFF] dark:bg-[#25173B] dark:border-[#371F59] dark:text-violet-300"
-                                title="Get OBS setup codes"
+                                onClick={() => openEditKeyModal(k)}
+                                className="inline-flex items-center gap-1 rounded-md border border-[#E8DFF0] bg-white px-2 py-1 text-[11px] font-bold text-[#6F6078] hover:bg-slate-50 dark:bg-[#25173B] dark:border-[#371F59] dark:text-[#B9A5CD]"
                               >
-                                <Zap size={11} /> Setup
+                                Edit
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteKey(k.id, k.name)}
                                 className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-rose-50 hover:text-rose-600 dark:bg-[#25173B] dark:border-[#371F59] dark:text-[#B9A5CD]"
-                                title="Delete stream key"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -641,7 +772,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                     Publisher Credentials (User &amp; Password)
                   </h3>
                   <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                    For hardware encoders or software connecting with basic credentials (e.g. <code className="font-mono text-violet-700 bg-violet-50 px-1 py-0.5 rounded text-[10px] dark:bg-violet-950 dark:text-violet-300">rtmp://user:pass@host:1935/live/feed</code>)
+                    For encoders connecting with basic credentials (e.g. <code className="font-mono text-violet-700 bg-violet-50 px-1 py-0.5 rounded text-[10px] dark:bg-violet-950 dark:text-violet-300">rtmp://user:pass@host:1935/live/feed</code>)
                   </p>
                 </div>
                 <button
@@ -653,6 +784,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                       password: '',
                       allowedStreams: '*',
                       singlePublisherOnly: true,
+                      playbackSecurity: 'inherit',
                       enabled: true
                     });
                     setAccountModalOpen(true);
@@ -690,7 +822,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                             {a.username}
                           </td>
                           <td className="px-4 py-3 font-mono text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
-                            {a.allowedStreams?.join(', ') || '* (Any)'}
+                            {a.allowedStreams?.join(', ') || '*'}
                           </td>
                           <td className="px-4 py-3">
                             <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800 dark:bg-violet-950 dark:text-violet-300">
@@ -711,7 +843,6 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                               type="button"
                               onClick={() => handleDeleteAccount(a.id, a.username)}
                               className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-rose-50 hover:text-rose-600 dark:bg-[#25173B] dark:border-[#371F59] dark:text-[#B9A5CD]"
-                              title="Delete account"
                             >
                               <Trash2 size={13} />
                             </button>
@@ -730,10 +861,10 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
             <div className="space-y-4">
               <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-4 dark:bg-violet-950/40 dark:border-violet-900/60">
                 <div className="flex items-center gap-2 text-violet-900 dark:text-violet-200 font-bold text-[13px]">
-                  <Zap size={16} /> Instant Encoder Configuration Helper
+                  <Zap size={16} /> Instant Encoder Configuration &amp; Playback Helper
                 </div>
                 <p className="mt-1 text-[11px] text-violet-800 dark:text-violet-300">
-                  Select a stream key and configure your encoder (OBS Studio, vMix, Wirecast, or FFmpeg) with pre-authenticated URLs.
+                  Select a stream key to configure your encoder (OBS Studio, vMix, Wirecast) and preview both Unsecured and Protected HLS/RTMP Playback URLs.
                 </p>
               </div>
 
@@ -749,9 +880,8 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                     className="mt-1 h-9 w-full rounded-lg border border-[#E8DFF0] bg-white px-2.5 text-[12px] font-semibold text-[#1B1024] dark:bg-[#25173B] dark:border-[#371F59] dark:text-white"
                   >
                     {settings.keys.map(k => (
-                      <option key={k.id} value={k.id}>{k.name} ({k.key.slice(0, 10)}...)</option>
+                      <option key={k.id} value={k.id}>{k.name} ({k.key.slice(0, 8)}...)</option>
                     ))}
-                    {settings.keys.length === 0 && <option value="">No keys generated</option>}
                   </select>
                 </div>
 
@@ -763,7 +893,6 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                     type="text"
                     value={genStreamName}
                     onChange={(e) => setGenStreamName(e.target.value.trim().replace(/[^a-zA-Z0-9_-]/g, ''))}
-                    placeholder="live_feed"
                     className="mt-1 h-9 w-full rounded-lg border border-[#E8DFF0] bg-white px-2.5 font-mono text-[12px] text-[#1B1024] dark:bg-[#25173B] dark:border-[#371F59] dark:text-white"
                   />
                 </div>
@@ -776,19 +905,18 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                     type="text"
                     value={customHost}
                     onChange={(e) => setCustomHost(e.target.value.trim())}
-                    placeholder="localhost"
                     className="mt-1 h-9 w-full rounded-lg border border-[#E8DFF0] bg-white px-2.5 font-mono text-[12px] text-[#1B1024] dark:bg-[#25173B] dark:border-[#371F59] dark:text-white"
                   />
                 </div>
               </div>
 
               {/* Ready Setup Strings */}
-              <div className="space-y-3 pt-2">
-                {/* 1. OBS Studio */}
+              <div className="space-y-4 pt-2">
+                {/* 1. OBS Studio Ingest */}
                 <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3.5 space-y-2 dark:border-[#371F59] dark:bg-[#25173B]">
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] font-extrabold text-[#1B1024] dark:text-white flex items-center gap-1.5">
-                      🎥 OBS Studio / Streamlabs Setup:
+                      🎥 OBS Studio / Streamlabs Ingest:
                     </span>
                     <span className="text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">Settings &gt; Stream &gt; Custom</span>
                   </div>
@@ -798,9 +926,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                       <label className="text-[10px] font-bold text-[#6F6078] dark:text-[#B9A5CD] uppercase">Server</label>
                       <div className="flex items-center justify-between rounded-lg border border-[#E8DFF0] bg-white px-2.5 py-1.5 font-mono text-[11px] text-[#1B1024] dark:bg-[#1A1028] dark:border-[#371F59] dark:text-white">
                         <span className="truncate">{genServerUrl}</span>
-                        <button type="button" onClick={() => copyToClipboard(genServerUrl, 'Server URL')} className="ml-2 text-violet-600 hover:text-violet-800">
-                          <Copy size={12} />
-                        </button>
+                        <button type="button" onClick={() => copyToClipboard(genServerUrl, 'Server URL')} className="ml-2 text-violet-600 hover:text-violet-800"><Copy size={12} /></button>
                       </div>
                     </div>
 
@@ -808,44 +934,19 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                       <label className="text-[10px] font-bold text-[#6F6078] dark:text-[#B9A5CD] uppercase">Stream Key</label>
                       <div className="flex items-center justify-between rounded-lg border border-[#E8DFF0] bg-white px-2.5 py-1.5 font-mono text-[11px] text-violet-700 dark:bg-[#1A1028] dark:border-[#371F59] dark:text-violet-300">
                         <span className="truncate">{genStreamKeyOBS}</span>
-                        <button type="button" onClick={() => copyToClipboard(genStreamKeyOBS, 'Stream Key')} className="ml-2 text-violet-600 hover:text-violet-800">
-                          <Copy size={12} />
-                        </button>
+                        <button type="button" onClick={() => copyToClipboard(genStreamKeyOBS, 'Stream Key')} className="ml-2 text-violet-600 hover:text-violet-800"><Copy size={12} /></button>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. Full URL (vMix, Wirecast, Teradek) */}
-                <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3.5 space-y-1.5 dark:border-[#371F59] dark:bg-[#25173B]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] font-extrabold text-[#1B1024] dark:text-white flex items-center gap-1.5">
-                      📡 Full RTMP Destination URL (vMix / Wirecast / Teradek / Haivision):
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(genFullUrlKey, 'Full RTMP URL')}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700"
-                    >
-                      <Copy size={12} /> Copy Full URL
-                    </button>
-                  </div>
-                  <div className="rounded-lg border border-[#E8DFF0] bg-white p-2 font-mono text-[11px] text-[#1B1024] break-all dark:bg-[#1A1028] dark:border-[#371F59] dark:text-white">
-                    {genFullUrlKey}
-                  </div>
-                </div>
-
-                {/* 3. FFmpeg Command */}
+                {/* 2. FFmpeg Command */}
                 <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3.5 space-y-1.5 dark:border-[#371F59] dark:bg-[#25173B]">
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] font-extrabold text-[#1B1024] dark:text-white flex items-center gap-1.5">
                       <Terminal size={13} /> FFmpeg Ingest Command:
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(genFfmpegCmd, 'FFmpeg command')}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700"
-                    >
+                    <button type="button" onClick={() => copyToClipboard(genFfmpegCmd, 'FFmpeg command')} className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700">
                       <Copy size={12} /> Copy Command
                     </button>
                   </div>
@@ -854,22 +955,60 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                   </div>
                 </div>
 
-                {/* 4. Live HLS Playback URL */}
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 space-y-1.5 dark:border-emerald-900/60 dark:bg-emerald-950/30">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
-                      📺 Live HLS Playback / Multi-Viewer URL:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(genHlsUrl, 'HLS URL')}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 dark:text-emerald-300"
-                    >
-                      <Copy size={12} /> Copy HLS URL
-                    </button>
+                {/* 4. BOTH UNSECURE AND SECURE PLAYBACK URLS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  {/* Open / Unsecure Playback */}
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 space-y-2 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] font-extrabold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                        <Unlock size={14} className="text-emerald-600" /> 🔓 Open / Public Playback URLs:
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                        <span>HLS URL (Web / VLC / Player):</span>
+                        <button type="button" onClick={() => copyToClipboard(genOpenHlsUrl, 'Open HLS URL')} className="hover:underline flex items-center gap-1"><Copy size={10} /> Copy</button>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-white p-2 font-mono text-[10px] text-emerald-900 break-all dark:bg-[#1A1028] dark:border-emerald-800 dark:text-emerald-200">
+                        {genOpenHlsUrl}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] font-bold text-emerald-800 dark:text-emerald-300 pt-1">
+                        <span>RTMP Playback URL:</span>
+                        <button type="button" onClick={() => copyToClipboard(genOpenRtmpUrl, 'Open RTMP URL')} className="hover:underline flex items-center gap-1"><Copy size={10} /> Copy</button>
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-white p-2 font-mono text-[10px] text-emerald-900 break-all dark:bg-[#1A1028] dark:border-emerald-800 dark:text-emerald-200">
+                        {genOpenRtmpUrl}
+                      </div>
+                    </div>
                   </div>
-                  <div className="rounded-lg border border-emerald-200 bg-white p-2 font-mono text-[11px] text-emerald-900 break-all dark:bg-[#1A1028] dark:border-emerald-800 dark:text-emerald-200">
-                    {genHlsUrl}
+
+                  {/* Secure / Tokenized Playback */}
+                  <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-3.5 space-y-2 dark:border-purple-900/60 dark:bg-purple-950/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] font-extrabold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                        <Lock size={14} className="text-purple-600" /> 🔒 Protected Token Playback URLs:
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-purple-800 dark:text-purple-300">
+                        <span>HLS Tokenized URL:</span>
+                        <button type="button" onClick={() => copyToClipboard(genSecureHlsUrl, 'Secure HLS URL')} className="hover:underline flex items-center gap-1"><Copy size={10} /> Copy</button>
+                      </div>
+                      <div className="rounded-lg border border-purple-200 bg-white p-2 font-mono text-[10px] text-purple-900 break-all dark:bg-[#1A1028] dark:border-purple-800 dark:text-purple-200">
+                        {genSecureHlsUrl}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] font-bold text-purple-800 dark:text-purple-300 pt-1">
+                        <span>RTMP Tokenized URL:</span>
+                        <button type="button" onClick={() => copyToClipboard(genSecureRtmpUrl, 'Secure RTMP URL')} className="hover:underline flex items-center gap-1"><Copy size={10} /> Copy</button>
+                      </div>
+                      <div className="rounded-lg border border-purple-200 bg-white p-2 font-mono text-[10px] text-purple-900 break-all dark:bg-[#1A1028] dark:border-purple-800 dark:text-purple-200">
+                        {genSecureRtmpUrl}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -892,10 +1031,10 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
         </div>
       </div>
 
-      {/* CREATE STREAM KEY SUB-MODAL */}
+      {/* CREATE / EDIT STREAM KEY SUB-MODAL */}
       {keyModalOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-[#E8DFF0] bg-white p-6 shadow-2xl dark:border-[#371F59] dark:bg-[#1E1130] space-y-4 animate-scaleIn">
+          <div className="w-full max-w-xl rounded-2xl border border-[#E8DFF0] bg-white p-6 shadow-2xl dark:border-[#371F59] dark:bg-[#1E1130] space-y-4 animate-scaleIn max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#371F59]">
               <h3 className="font-display text-[16px] font-bold text-[#1B1024] dark:text-white flex items-center gap-2">
                 <Key size={18} className="text-violet-600" />
@@ -906,7 +1045,7 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
               </button>
             </div>
 
-            <form onSubmit={handleSaveKey} className="space-y-3.5">
+            <form onSubmit={handleSaveKey} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-bold text-[#1B1024] dark:text-white">
                   Key Label / Studio Name: <span className="text-rose-500">*</span>
@@ -921,10 +1060,11 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                 />
               </div>
 
+              {/* 1. Publishing Ingest Secret Key */}
               <div>
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-bold text-[#1B1024] dark:text-white">
-                    Secret Stream Key String: <span className="text-rose-500">*</span>
+                    Secret Stream Key String (Publishing / Ingest): <span className="text-rose-500">*</span>
                   </label>
                   <button
                     type="button"
@@ -941,6 +1081,9 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                   required
                   className="mt-1 h-9 w-full rounded-lg border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-violet-700 dark:bg-[#25173B] dark:border-[#371F59] dark:text-violet-300"
                 />
+                <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">
+                  OBS Studio, vMix, and RTMP encoders push live video using this key.
+                </p>
               </div>
 
               <div>
@@ -956,7 +1099,52 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                 />
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
+              {/* 2. Playback Security & Separate Token */}
+              <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-3 dark:border-purple-900/60 dark:bg-purple-950/20">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#1B1024] dark:text-white">
+                    Playback Security (Watching HLS / RTMP stream):
+                  </label>
+                  <select
+                    value={keyForm.playbackSecurity}
+                    onChange={(e) => setKeyForm({ ...keyForm, playbackSecurity: e.target.value as any })}
+                    className="mt-1 h-9 w-full rounded-lg border border-[#E8DFF0] bg-white px-2.5 text-[12px] text-[#1B1024] dark:bg-[#25173B] dark:border-[#371F59] dark:text-white"
+                  >
+                    <option value="inherit">🌐 Inherit Global ({settings.playbackSecurityEnabled ? 'Protected' : 'Open'})</option>
+                    <option value="open">🔓 Always Open (Public Playback)</option>
+                    <option value="secure">🔒 Protected (Token or Key Required to Play)</option>
+                  </select>
+                </div>
+
+                {keyForm.playbackSecurity === 'secure' && (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-bold text-purple-950 dark:text-purple-200">
+                        Secret Playback Token (Separate from Stream Key):
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGenerateRandomPlaybackToken}
+                        className="text-[10px] font-bold text-purple-700 hover:text-purple-800 flex items-center gap-1 dark:text-purple-300"
+                      >
+                        <RefreshCw size={11} /> Generate Random Token
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={keyForm.playbackToken}
+                      onChange={(e) => setKeyForm({ ...keyForm, playbackToken: e.target.value.trim() })}
+                      placeholder="e.g. kas_play_viewer_token"
+                      className="mt-1 h-9 w-full rounded-lg border border-purple-300 bg-white px-3 font-mono text-[12px] text-purple-700 dark:bg-[#25173B] dark:border-[#371F59] dark:text-purple-300"
+                    />
+                    <p className="mt-1 text-[10px] text-purple-800 dark:text-purple-300">
+                      ✨ Distinct Viewer Token: Viewers play HLS/RTMP using this token without exposing your publisher's secret ingest key.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   id="single-publisher-checkbox"
@@ -969,7 +1157,29 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E8DFF0] dark:border-[#371F59]">
+              {/* 3. Live URL Preview Card */}
+              <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2 dark:border-[#371F59] dark:bg-[#211335]">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#6F6078] dark:text-[#B9A5CD] block">
+                  Live URLs Generated For This Key:
+                </span>
+                
+                <div className="space-y-1 text-[10px] font-mono">
+                  <div className="p-1.5 rounded bg-white dark:bg-[#1A1028] border border-[#E8DFF0] dark:border-[#371F59] truncate">
+                    <span className="text-violet-700 dark:text-violet-300 font-bold">📡 Ingest: </span>
+                    <span>rtmp://{customHost || 'localhost'}:{rtmpPort}/live?key={keyForm.key}</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-white dark:bg-[#1A1028] border border-[#E8DFF0] dark:border-[#371F59] truncate">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">🔓 Open HLS: </span>
+                    <span>http://{customHost || 'localhost'}:{settings.httpPort || 8100}/live/{keyForm.allowedStreams?.split(',')[0]?.trim() !== '*' ? keyForm.allowedStreams?.split(',')[0]?.trim() : 'live_stream'}/index.m3u8</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-white dark:bg-[#1A1028] border border-[#E8DFF0] dark:border-[#371F59] truncate">
+                    <span className="text-purple-700 dark:text-purple-400 font-bold">🔒 Secure HLS: </span>
+                    <span>http://{customHost || 'localhost'}:{settings.httpPort || 8100}/live/{keyForm.allowedStreams?.split(',')[0]?.trim() !== '*' ? keyForm.allowedStreams?.split(',')[0]?.trim() : 'live_stream'}/index.m3u8?token={keyForm.playbackToken || 'token'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E8DFF0] dark:border-[#371F59]">
                 <button
                   type="button"
                   onClick={() => setKeyModalOpen(false)}

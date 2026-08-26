@@ -2,6 +2,91 @@ import { TranscodingProfile, VideoCodec, AudioCodec, Protocol } from './types';
 
 export const DEFAULT_PROFILES: TranscodingProfile[] = [
   {
+    id: 'dvb-h264-1080i50-cbr',
+    name: 'DVB-T2/C: H.264 1080i50 CBR (MP2 48kHz)',
+    videoCodec: VideoCodec.H264,
+    audioCodec: AudioCodec.MP2,
+    resolution: '1920x1080',
+    videoQualityMode: 'cbr',
+    rateControl: 'cbr',
+    videoBitrate: 6000,
+    minrate: 6000,
+    maxrate: 6000,
+    bufsize: 12000,
+    audioBitrate: 192,
+    sampleRate: 48000,
+    audioChannels: 2,
+    preset: 'medium',
+    framerate: 50,
+    fpsMode: 'cfr',
+    gopSize: 50,
+    bFrames: 2,
+    cabac: true,
+    avcProfile: 'high',
+    avcLevel: '4.1',
+    interlaced: true,
+    scaleInterpolation: 'bicubic',
+    aspectRatio: '16:9',
+    pixelFormat: 'yuv420p',
+    videoEnabled: true,
+    audioEnabled: true,
+    accelerate: false,
+  },
+  {
+    id: 'dvb-hevc-1080p50-cbr',
+    name: 'DVB-T2/IPTV: H.265/HEVC 1080p50 CBR',
+    videoCodec: VideoCodec.H265,
+    audioCodec: AudioCodec.AAC,
+    resolution: '1920x1080',
+    videoQualityMode: 'cbr',
+    rateControl: 'cbr',
+    videoBitrate: 4500,
+    minrate: 4500,
+    maxrate: 4500,
+    bufsize: 9000,
+    audioBitrate: 192,
+    sampleRate: 48000,
+    audioChannels: 2,
+    preset: 'medium',
+    tune: 'hq',
+    framerate: 50,
+    fpsMode: 'cfr',
+    gopSize: 50,
+    bFrames: 2,
+    aspectRatio: '16:9',
+    pixelFormat: 'yuv420p',
+    videoEnabled: true,
+    audioEnabled: true,
+    accelerate: false,
+  },
+  {
+    id: 'dvb-mpeg2-pal-cbr',
+    name: 'DVB Legacy: MPEG-2 576i PAL CBR (MP2 48kHz)',
+    videoCodec: VideoCodec.MPEG2,
+    audioCodec: AudioCodec.MP2,
+    resolution: '720x576',
+    videoQualityMode: 'cbr',
+    rateControl: 'cbr',
+    videoBitrate: 4000,
+    minrate: 4000,
+    maxrate: 4000,
+    bufsize: 8000,
+    audioBitrate: 192,
+    sampleRate: 48000,
+    audioChannels: 2,
+    preset: 'medium',
+    framerate: 25,
+    fpsMode: 'cfr',
+    gopSize: 12,
+    bFrames: 2,
+    interlaced: true,
+    aspectRatio: '16:9',
+    pixelFormat: 'yuv420p',
+    videoEnabled: true,
+    audioEnabled: true,
+    accelerate: false,
+  },
+  {
     id: 'low-cpu-720p',
     name: 'Low CPU 720p (UDP Stable)',
     videoCodec: VideoCodec.H264,
@@ -15,7 +100,6 @@ export const DEFAULT_PROFILES: TranscodingProfile[] = [
     framerate: 25,
     pixelFormat: 'yuv420p',
   },
-  // ADDED: Profile for HTTP-TS based on your working command
   {
     id: 'live-http-ts-1',
     name: 'HTTP-TS: 720p Low Latency',
@@ -37,6 +121,7 @@ export const DEFAULT_PROFILES: TranscodingProfile[] = [
     id: 'default-h264-1080p',
     name: 'H.264 1080p (Software)',
     videoCodec: VideoCodec.H264,
+    accelerate: false,
     audioCodec: AudioCodec.AAC,
     resolution: '1920x1080',
     videoQualityMode: 'bitrate',
@@ -121,6 +206,7 @@ export const DEFAULT_PROFILES: TranscodingProfile[] = [
     id: 'uhd-h265-4k',
     name: 'UHD HEVC 4K (Software)',
     videoCodec: VideoCodec.H265,
+    accelerate: false,
     audioCodec: AudioCodec.AAC,
     resolution: '3840x2160',
     videoQualityMode: 'bitrate',
@@ -153,40 +239,51 @@ export const DEFAULT_PROFILES: TranscodingProfile[] = [
 ];
 
 export const VIDEO_CODEC_OPTIONS = [
-  { value: 'header-software', label: '--- Software (CPU) ---', disabled: true },
-  { value: VideoCodec.H264, label: 'H.264 (libx264)' },
-  { value: VideoCodec.H265, label: 'HEVC (libx265)' },
-  { value: VideoCodec.VP9, label: 'VP9 (libvpx-vp9)' },
+  { value: 'header-software', label: '--- Software / CPU ---', disabled: true },
+  { value: VideoCodec.H264, label: 'H.264 / AVC (libx264)' },
+  { value: VideoCodec.H265, label: 'H.265 / HEVC (libx265)' },
+  { value: VideoCodec.MPEG2, label: 'MPEG-2 Video (DVB Broadcast Standard)' },
   { value: VideoCodec.AV1, label: 'AV1 (libaom-av1)' },
-  { value: 'header-nvidia', label: '--- NVIDIA (NVENC) ---', disabled: true },
+  { value: VideoCodec.VP9, label: 'VP9 (libvpx-vp9)' },
+  { value: 'header-nvidia', label: '--- NVIDIA (NVENC Acceleration) ---', disabled: true },
   { value: VideoCodec.H264_NVENC, label: 'H.264 (h264_nvenc)' },
-  { value: VideoCodec.HEVC_NVENC, label: 'HEVC (hevc_nvenc)' },
-  { value: 'header-amd', label: '--- AMD (AMF) ---', disabled: true },
+  { value: VideoCodec.HEVC_NVENC, label: 'H.265 / HEVC (hevc_nvenc)' },
+  { value: 'header-intel', label: '--- Intel (QuickSync / QSV) ---', disabled: true },
+  { value: VideoCodec.H264_QSV, label: 'H.264 (h264_qsv)' },
+  { value: VideoCodec.HEVC_QSV, label: 'H.265 / HEVC (hevc_qsv)' },
+  { value: VideoCodec.MPEG2_QSV, label: 'MPEG-2 (mpeg2_qsv)' },
+  { value: 'header-amd', label: '--- AMD (AMF Hardware) ---', disabled: true },
   { value: VideoCodec.H264_AMF, label: 'H.264 (h264_amf)' },
-  { value: VideoCodec.HEVC_AMF, label: 'HEVC (hevc_amf)' },
+  { value: VideoCodec.HEVC_AMF, label: 'H.265 / HEVC (hevc_amf)' },
   { value: 'header-apple', label: '--- Apple (VideoToolbox) ---', disabled: true },
   { value: VideoCodec.H264_VIDEOTOOLBOX, label: 'H.264 (h264_videotoolbox)' },
-  { value: VideoCodec.HEVC_VIDEOTOOLBOX, label: 'HEVC (hevc_videotoolbox)' },
-  { value: 'header-other', label: '--- Other ---', disabled: true },
-  { value: VideoCodec.Copy, label: 'Copy (Passthrough)' },
+  { value: VideoCodec.HEVC_VIDEOTOOLBOX, label: 'H.265 / HEVC (hevc_videotoolbox)' },
+  { value: 'header-other', label: '--- Passthrough ---', disabled: true },
+  { value: VideoCodec.Copy, label: 'Copy / Passthrough (No Re-encoding)' },
 ];
 
 export const AUDIO_CODEC_OPTIONS = [
-  { value: AudioCodec.AAC, label: 'AAC' },
-  { value: AudioCodec.Opus, label: 'Opus' },
-  { value: AudioCodec.MP3, label: 'MP3' },
-  { value: AudioCodec.Copy, label: 'Copy (Passthrough)' },
+  { value: AudioCodec.AAC, label: 'AAC (Advanced Audio Coding)' },
+  { value: AudioCodec.MP2, label: 'MP2 (MPEG-1 Audio Layer II - DVB Broadcast Standard)' },
+  { value: AudioCodec.AC3, label: 'AC-3 (Dolby Digital)' },
+  { value: AudioCodec.EAC3, label: 'E-AC-3 (Dolby Digital Plus)' },
+  { value: AudioCodec.MP3, label: 'MP3 (MPEG-1 Audio Layer III)' },
+  { value: AudioCodec.Opus, label: 'Opus (High-Fidelity Low-Latency)' },
+  { value: AudioCodec.PCM_S16LE, label: 'PCM 16-bit Uncompressed' },
+  { value: AudioCodec.PCM_S24LE, label: 'PCM 24-bit Broadcast Master' },
+  { value: AudioCodec.Copy, label: 'Copy / Passthrough (No Re-encoding)' },
 ];
 
 export const RESOLUTION_OPTIONS = [
-  { value: 'source', label: 'Source / Original (Auto)' },
-  { value: '3840x2160', label: '4K UHD (3840x2160)' },
-  { value: '2560x1440', label: '2K QHD (2560x1440)' },
-  { value: '1920x1080', label: 'Full HD 1080p (1920x1080)' },
-  { value: '1280x720', label: 'HD 720p (1280x720)' },
-  { value: '720x576', label: 'PAL 576i/p (720x576)' },
-  { value: '720x480', label: 'NTSC 480i/p (720x480)' },
-  { value: '854x480', label: 'SD 480p (854x480)' },
+  { value: 'source', label: 'Same as Input (Source / Auto)' },
+  { value: '3840x2160', label: '3840x2160 (4K UHD)' },
+  { value: '2560x1440', label: '2560x1440 (2K QHD)' },
+  { value: '1920x1080', label: '1920x1080 (Full HD 1080p)' },
+  { value: '1280x720', label: '1280x720 (HD 720p)' },
+  { value: '720x576', label: '720x576 (PAL 576i / DVB Standard)' },
+  { value: '720x480', label: '720x480 (NTSC 480i / DVB Standard)' },
+  { value: '854x480', label: '854x480 (SD 480p)' },
+  { value: '640x360', label: '640x360 (Low Bandwidth)' },
 ];
 
 export const LIVE_PROTOCOL_OPTIONS = [
@@ -194,7 +291,8 @@ export const LIVE_PROTOCOL_OPTIONS = [
   { value: Protocol.DASH, label: 'DASH (Dynamic Adaptive Streaming)' },
   { value: Protocol.RTMP, label: 'RTMP (Real-Time Messaging Protocol)' },
   { value: Protocol.SRT, label: 'SRT (Secure Reliable Transport)' },
-  { value: Protocol.UDP, label: 'UDP (User Datagram Protocol)' },
+  { value: Protocol.UDP, label: 'UDP (Standard Raw MPEG-TS over UDP Multicast/Unicast)' },
+  { value: Protocol.UDP_DVB, label: 'UDP-DVB (DVB Standard MPEG-TS with Full SI Tables / ETSI EN 300 468)' },
   { value: Protocol.HTTP_TS, label: 'HTTP-TS (MPEG-TS over HTTP)' },
   { value: Protocol.DECKLINK, label: 'DeckLink Card Output' },
   { value: Protocol.RECORDING, label: 'Recording File' },
@@ -204,7 +302,7 @@ export const LIVE_PROTOCOL_OPTIONS = [
 ];
 
 export const FRAMERATE_OPTIONS = [
-  { value: '0', label: 'Source / Pass-through (Auto)' },
+  { value: '0', label: 'Original / Same as Input' },
   { value: '50', label: '50 fps (Broadcast PAL/HD Standard)' },
   { value: '59.94', label: '59.94 fps (Broadcast NTSC/HD Standard)' },
   { value: '60', label: '60 fps' },
@@ -216,26 +314,109 @@ export const FRAMERATE_OPTIONS = [
 ];
 
 export const SAMPLE_RATE_OPTIONS = [
+  { value: '48000', label: '48 kHz (DVB Broadcast Standard)' },
   { value: '44100', label: '44.1 kHz' },
-  { value: '48000', label: '48 kHz' },
+  { value: '32000', label: '32 kHz (DVB Radio)' },
+  { value: '96000', label: '96 kHz (Studio Master)' },
 ];
 
 export const PRESET_OPTIONS = [
-  { value: 'ultrafast', label: 'Ultrafast' },
+  { value: 'medium', label: 'Normal Quality* (Medium)' },
+  { value: 'ultrafast', label: 'Ultrafast (Lowest Latency)' },
   { value: 'superfast', label: 'Superfast' },
-  { value: 'veryfast', label: 'Veryfast' },
+  { value: 'veryfast', label: 'Very Fast' },
   { value: 'faster', label: 'Faster' },
   { value: 'fast', label: 'Fast' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'slow', label: 'Slow' },
+  { value: 'slow', label: 'Slow (Higher Quality)' },
   { value: 'slower', label: 'Slower' },
-  { value: 'veryslow', label: 'Veryslow' },
+  { value: 'veryslow', label: 'Very Slow (Maximum Compression)' },
+];
+
+export const TUNE_OPTIONS = [
+  { value: '', label: 'None' },
+  { value: 'hq', label: 'High Quality' },
+  { value: 'll', label: 'Low Latency' },
+  { value: 'zerolatency', label: 'Zero Latency (Ultra Real-Time)' },
+  { value: 'film', label: 'Film (Live Action Content)' },
+  { value: 'animation', label: 'Animation' },
+  { value: 'grain', label: 'Grain (Preserve Film Grain)' },
+  { value: 'stillimage', label: 'Still Image' },
+  { value: 'fastdecode', label: 'Fast Decode' },
+];
+
+export const INTERPOLATION_OPTIONS = [
+  { value: 'default', label: 'Default' },
+  { value: 'bicubic', label: 'Bicubic (Standard)' },
+  { value: 'bilinear', label: 'Bilinear (Fast)' },
+  { value: 'lanczos', label: 'Lanczos (Sharp & High Quality)' },
+  { value: 'spline', label: 'Spline' },
+];
+
+export const ASPECT_RATIO_OPTIONS = [
+  { value: 'original', label: 'Original' },
+  { value: '16:9', label: '16:9 (Widescreen HD)' },
+  { value: '4:3', label: '4:3 (Standard Broadcast SD)' },
+  { value: '21:9', label: '21:9 (Cinematic)' },
+  { value: '1:1', label: '1:1 (Square)' },
+];
+
+export const FPS_MODE_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'cfr', label: 'CFR (Constant Frame Rate / Broadcast Standard)' },
+  { value: 'vfr', label: 'VFR (Variable Frame Rate)' },
+  { value: 'passthrough', label: 'Passthrough' },
+];
+
+export const AUDIO_CHANNELS_OPTIONS = [
+  { value: 'all', label: 'All (Passthrough)' },
+  { value: '2', label: 'Stereo (2.0 - FL, FR)' },
+  { value: '1', label: 'Mono (1.0 - FC)' },
+  { value: '6', label: '5.1 Surround (FL, FR, FC, LFE, BL, BR)' },
+  { value: '4', label: '4.0 Surround' },
+];
+
+export const AUDIO_TRACK_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'first', label: 'First' },
+  { value: '0', label: 'Track 1 (Index 0)' },
+  { value: '1', label: 'Track 2 (Index 1)' },
+  { value: '2', label: 'Track 3 (Index 2)' },
+  { value: '3', label: 'Track 4 (Index 3)' },
+];
+
+export const VIDEO_TRACK_OPTIONS = [
+  { value: 'first', label: 'First' },
+  { value: 'all', label: 'All' },
+  { value: '0', label: 'Video 1 (Index 0)' },
+  { value: '1', label: 'Video 2 (Index 1)' },
+];
+
+export const SUBTITLE_OVERLAY_OPTIONS = [
+  { value: 'off', label: 'Off' },
+  { value: 'dvb_sub', label: 'DVB Subtitles (DVB-SUB Passthrough)' },
+  { value: 'burnin', label: 'Burn-in Hardsub' },
+  { value: 'teletext', label: 'DVB Teletext Passthrough' },
+];
+
+export const AUDIO_BITRATE_OPTIONS = [
+  { value: '64', label: '64 kbps (Speech/Radio)' },
+  { value: '96', label: '96 kbps' },
+  { value: '128', label: '128 kbps (Standard)' },
+  { value: '160', label: '160 kbps' },
+  { value: '192', label: '192 kbps* (DVB Broadcast Standard)' },
+  { value: '224', label: '224 kbps' },
+  { value: '256', label: '256 kbps (High Fidelity)' },
+  { value: '320', label: '320 kbps' },
+  { value: '384', label: '384 kbps (Dolby 5.1 Standard)' },
 ];
 
 export const PIXEL_FORMAT_OPTIONS = [
-  { value: 'yuv420p', label: 'yuv420p' },
-  { value: 'yuv422p', label: 'yuv422p' },
-  { value: 'yuv444p', label: 'yuv444p' },
+  { value: 'default', label: 'Default' },
+  { value: 'yuv420p', label: 'yuv420p (Standard 8-bit 4:2:0)' },
+  { value: 'yuv422p', label: 'yuv422p (Broadcast 8-bit 4:2:2)' },
+  { value: 'yuv420p10le', label: 'yuv420p10le (HDR 10-bit 4:2:0)' },
+  { value: 'yuv422p10le', label: 'yuv422p10le (Master 10-bit 4:2:2)' },
+  { value: 'yuv444p', label: 'yuv444p (Full RGB 4:4:4)' },
 ];
 
 export const DEFAULT_DECKLINK_FORMATS: {

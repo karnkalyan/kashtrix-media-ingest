@@ -11,12 +11,16 @@ export enum VideoCodec {
   // Software Codecs
   H264 = 'libx264',
   H265 = 'libx265',
+  MPEG2 = 'mpeg2video',
   VP9 = 'libvpx-vp9',
   AV1 = 'libaom-av1',
   
   // Hardware Codecs
   H264_NVENC = 'h264_nvenc',
   HEVC_NVENC = 'hevc_nvenc',
+  H264_QSV = 'h264_qsv',
+  HEVC_QSV = 'hevc_qsv',
+  MPEG2_QSV = 'mpeg2_qsv',
   H264_AMF = 'h264_amf',
   HEVC_AMF = 'hevc_amf',
   H264_VIDEOTOOLBOX = 'h264_videotoolbox',
@@ -28,8 +32,13 @@ export enum VideoCodec {
 
 export enum AudioCodec {
   AAC = 'aac',
+  MP2 = 'mp2',
+  AC3 = 'ac3',
+  EAC3 = 'eac3',
   Opus = 'libopus',
   MP3 = 'libmp3lame',
+  PCM_S16LE = 'pcm_s16le',
+  PCM_S24LE = 'pcm_s24le',
   Copy = 'copy',
 }
 
@@ -39,6 +48,7 @@ export enum Protocol {
   RTMP = 'rtmp',
   SRT = 'srt',
   UDP = 'udp',
+  UDP_DVB = 'udp-dvb',
   HTTP_TS = 'http-ts',
   RTSP = 'rtsp',
   FILE = 'file',
@@ -65,16 +75,21 @@ export interface TranscodingProfile {
   isAudioOnly?: boolean;
 
   // Video Settings
-  videoCodec: VideoCodec;
+  videoEnabled?: boolean;
+  videoCodec: VideoCodec | string;
+  videoTrack?: string;
   resolution: string;
   videoQualityMode: VideoQualityMode;
   videoBitrate?: number; // in kbps
   crf?: number; // Constant Rate Factor (0-51)
   framerate?: number; // e.g., 24, 25, 30, 50, 59.94, 60
+  fpsMode?: 'auto' | 'cfr' | 'vfr' | 'passthrough';
+  scaleInterpolation?: 'default' | 'bicubic' | 'bilinear' | 'lanczos' | 'spline' | 'fast_bilinear';
+  aspectRatio?: 'original' | '16:9' | '4:3' | '21:9' | '1:1' | string;
   
-  // MPEG-4 AVC (H.264) Advanced Parameters
-  avcProfile?: 'baseline' | 'main' | 'high' | 'high10' | 'high422' | 'high444';
-  avcLevel?: '3.0' | '3.1' | '3.2' | '4.0' | '4.1' | '4.2' | '5.0' | '5.1' | '5.2';
+  // MPEG-4 AVC (H.264) / HEVC Advanced Parameters
+  avcProfile?: 'baseline' | 'main' | 'high' | 'high10' | 'high422' | 'high444' | 'main10' | string;
+  avcLevel?: 'auto' | '3.0' | '3.1' | '3.2' | '4.0' | '4.1' | '4.2' | '5.0' | '5.1' | '5.2' | '6.0' | '6.1' | '6.2' | string;
   rateControl?: 'cbr' | 'vbr' | 'cqp' | 'crf';
   bFrames?: number; // 0-16 B-frames
   cabac?: boolean;  // Context-adaptive binary arithmetic coding
@@ -83,17 +98,31 @@ export interface TranscodingProfile {
   bufsize?: number; // in kbps (VBV buffer)
   gopSize?: number; // Keyframe interval
   interlaced?: boolean; // Interlaced output mode
+  accelerate?: boolean; // Hardware acceleration toggle
+  
+  // Subtitle Overlay
+  subtitleOverlay?: 'off' | 'dvb_sub' | 'burnin' | 'teletext';
+  subtitlePosition?: string;
+  subtitleTrack?: string;
   
   // Audio Settings
-  audioCodec: AudioCodec;
+  audioEnabled?: boolean;
+  audioCodec: AudioCodec | string;
+  audioTrack?: string;
   audioBitrate?: number; // in kbps
   sampleRate?: number; // e.g., 44100, 48000
-  audioChannels?: number; // 1, 2, 6
+  audioChannels?: number | string; // 1, 2, 6, 'all'
+  audioUpmix?: string;
+  audioSync?: 'default' | 'async' | number | string;
+  volumeGainPercent?: number; // e.g. 0 (-100% to +100%)
+  volumeGainDb?: number; // in dB
 
   // Advanced Settings
   preset?: string; // e.g., ultrafast, fast, medium, slow, p1-p7
   pixelFormat?: string; // e.g., yuv420p, yuv422p, uyvy422
-  tune?: string;
+  tune?: string; // e.g., zerolatency, film, animation, hq, ll
+  advancedVideoFlags?: string;
+  advancedAudioFlags?: string;
 }
 
 export interface StorageLocation {
@@ -270,6 +299,13 @@ export interface ChannelDestination {
   dvbLocalAddr?: string;          // Multicast interface IP / localaddr
   dvbBufferSize?: number;         // UDP buffer size in bytes (e.g. 65535, 1048576)
   dvbCbrMuxing?: boolean;         // Enable CBR Constant Bitrate DVB Muxing
+
+  // SRT Protocol Parameters (All 3 Modes)
+  srtMode?: 'caller' | 'listener' | 'rendezvous';
+  srtLatency?: number;            // Latency in ms (default 200)
+  srtPassphrase?: string;         // AES Passphrase
+  srtPbKeyLen?: number;           // Key length in bytes: 16 (AES-128), 24 (AES-192), 32 (AES-256)
+  srtStreamId?: string;           // SRT Stream ID
 }
 
 export type Destination = ChannelDestination;
@@ -429,6 +465,7 @@ export interface ConversionJob {
 
 export interface PhysicalInterface {
   interface: string;            // e.g. 'eth0', 'Ethernet 1'
+  name?: string;                // Display name
   macAddress: string;           // e.g. '00:25:90:fd:ef:e0'
   igmp: 'V2' | 'V3';            // IGMP version
   negotiatedSpeed: string;      // e.g. '1000Mb/s Full', '10Gb/s Full'
@@ -440,6 +477,9 @@ export interface PhysicalInterface {
   logicalName: string;          // Logical Interface alias (e.g. 'eth0', 'MGMT')
   linkSpeed: 'auto' | '100' | '1000' | '10000'; // Speed configuration
   isOnline?: boolean;
+  type?: string;
+  mtu?: number;
+  duplex?: string;
 }
 
 export interface NicBondingItem {
@@ -479,15 +519,27 @@ export interface DnsConfiguration {
 }
 
 export interface StatmuxConfiguration {
+  mode?: 'single' | 'range' | 'cidr' | 'list';
   multicastAddress: string;     // e.g. '239.100.1.1'
+  multicastRangeStart?: string; // e.g. '239.100.1.1'
+  multicastRangeEnd?: string;   // e.g. '239.100.1.50'
+  multicastCidr?: string;       // e.g. '239.100.1.0/24'
+  multicastIpList?: string;     // e.g. '239.100.1.1, 239.100.1.2, 239.100.2.1-239.100.2.20'
   port: number;                 // e.g. 1234
-  interface0: string;           // e.g. 'eth0'
-  interface1: string;           // e.g. 'eth1'
+  portRangeEnd?: number;        // e.g. 1250
+  ttl?: number;                 // Multicast TTL (1-255)
+  enableKernelMulticastForwarding?: boolean;
+  autoConfigureMulticastRoutes?: boolean;
+  enableRedundancy?: boolean;   // Enable redundant secondary delivery NIC
+  interface0: string;           // e.g. 'eth0' (Primary Delivery NIC)
+  interface1: string;           // e.g. 'eth1' (Secondary Redundant NIC)
   activateIgmpV3: boolean;      // Activate IGMPv3 Source Filtering
   interface0Source1: string;    // e.g. '0.0.0.0'
   interface0Source2: string;    // e.g. '0.0.0.0'
   interface1Source1: string;    // e.g. '0.0.0.0'
   interface1Source2: string;    // e.g. '0.0.0.0'
+  installed?: boolean;
+  serviceStatus?: 'running' | 'stopped' | 'not_installed';
 }
 
 export interface SnmpConfiguration {
@@ -529,8 +581,8 @@ export interface SystemHardwareExtended {
   ramUsedBytes?: number;
   ramUsedFmt?: string;
   temperatures?: {
-    cpu1: number | string;
-    cpu2: number | string;
+    cpu1?: number | string;
+    cpu2?: number | string;
     ambient?: number | string;
     sdiFpga?: number | string;
   };
@@ -576,6 +628,13 @@ export interface SystemHardwareExtended {
     ramUsage: string;
     pingMs: number;
   }[];
+  telemetryAvailability?: {
+    cpuTemperature?: boolean;
+    fans?: boolean;
+    powerSupplies?: boolean;
+    ntp?: boolean;
+    decklink?: boolean;
+  };
 }
 
 export interface SystemUpdateInfo {
@@ -654,8 +713,11 @@ export interface MuxServiceInput {
   gop?: number; // e.g. 50
   encoder?: 'auto' | 'nvidia' | 'intel' | 'amd' | 'cpu';
   preset?: string;
+  rateControl?: 'cbr' | 'vbr';
   audioCodec?: 'aac' | 'mp2' | 'ac3' | 'copy';
   audioBitrateKbps?: number;
+  audioSampleRate?: number;
+  audioChannels?: number;
   
   // Order priority
   orderIndex?: number;
@@ -670,6 +732,7 @@ export interface MuxConfig {
   
   // Output Network Configuration
   outputInterface?: string; // e.g. 'eth0', 'eth1', 'any'
+  outputInterfaceAddress?: string; // current IPv4 address used as FFmpeg localaddr
   outputIp: string; // e.g. '239.10.10.10'
   outputPort: number; // e.g. 5000
   packetSize: number; // 1316 or 188
@@ -686,9 +749,22 @@ export interface MuxConfig {
   // Services in this MPTS MUX
   services: MuxServiceInput[];
   
+  // Output Processing & Transcoding Mode
+  outputMode?: 'passthrough' | 'transcode' | 'hybrid';
+  globalVideoCodec?: 'h264' | 'hevc' | 'copy';
+  globalAudioCodec?: 'aac' | 'mp2' | 'ac3' | 'copy';
+  globalResolution?: string; // 'source' | '1920x1080' | '1280x720' | '720x576'
+  globalVideoBitrateKbps?: number;
+  globalAudioBitrateKbps?: number;
+  globalEncoder?: 'auto' | 'nvidia' | 'intel' | 'amd' | 'cpu';
+  globalFps?: number;
+  globalGop?: number;
+  globalPreset?: string;
+  
   // Automation & Reliability
   autoStart?: boolean;
   autoRestart?: boolean;
+  filterNullPackets?: boolean; // Null Packet Filter (strip 0x1FFF CBR null stuffing)
   
   // Runtime State
   pid?: number;
@@ -758,6 +834,8 @@ export interface RtmpStreamKey {
   key: string;
   allowedStreams?: string[];
   singlePublisherOnly?: boolean;
+  playbackSecurity?: 'open' | 'secure' | 'inherit';
+  playbackToken?: string;
   expiresAt?: string | null;
   enabled?: boolean;
   createdAt?: string;
@@ -770,6 +848,7 @@ export interface RtmpPublisherAccount {
   password?: string;
   allowedStreams?: string[];
   singlePublisherOnly?: boolean;
+  playbackSecurity?: 'open' | 'secure' | 'inherit';
   enabled?: boolean;
   createdAt?: string;
   lastUsedAt?: string | null;
@@ -779,6 +858,7 @@ export interface RtmpSecuritySettings {
   enabled: boolean;
   authMode: 'flexible' | 'key_only' | 'credentials_only';
   singlePublisherPerKey: boolean;
+  playbackSecurityEnabled?: boolean;
   keys: RtmpStreamKey[];
   accounts: RtmpPublisherAccount[];
 }
@@ -801,6 +881,4 @@ export interface RtmpSecurityResponse {
     accounts: RtmpActiveLock[];
   };
 }
-
-
 

@@ -2,19 +2,24 @@ const MODULES = Object.freeze({
   CHANNELS: 'CHANNELS',
   LIVE_SERVER: 'LIVE_SERVER',
   INGEST_SERVER: 'INGEST_SERVER',
+  TRANSCODE: 'TRANSCODE',
   STREAMOPS: 'STREAMOPS',
   VOD_PLAYOUT: 'VOD_PLAYOUT',
   RECORDING_DEVICES: 'RECORDING_DEVICES',
   TRANSCODE_QUEUE_ITEMS: 'TRANSCODE_QUEUE_ITEMS',
-  MUX: 'MUX',
   MPTS_MUX: 'MPTS_MUX',
 });
 
-const canonicalModule = value => String(value || '')
-  .trim()
-  .toUpperCase()
-  .replace(/[^A-Z0-9]+/g, '_')
-  .replace(/^_+|_+$/g, '');
+const canonicalModule = value => {
+  const norm = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (norm === 'MUX') return 'MPTS_MUX';
+  if (norm === 'TRANSCODER' || norm === 'TRANSCODING') return 'TRANSCODE';
+  return norm;
+};
 
 const normalizeModules = modules => [...new Set(
   (Array.isArray(modules) ? modules : []).map(canonicalModule).filter(Boolean)
@@ -39,10 +44,10 @@ const toUiFeatures = modules => {
   if (normalized.includes(MODULES.CHANNELS)) features.push('channels');
   if (normalized.includes(MODULES.LIVE_SERVER)) features.push('live-server');
   if (normalized.includes(MODULES.INGEST_SERVER)) features.push('ingest-server');
+  if (normalized.includes(MODULES.TRANSCODE) || normalized.includes(MODULES.TRANSCODE_QUEUE_ITEMS)) features.push('transcode');
   if (normalized.includes(MODULES.STREAMOPS)) features.push('streamops');
   if (normalized.includes(MODULES.VOD_PLAYOUT)) features.push('vod-playout');
-  if (normalized.includes(MODULES.TRANSCODE_QUEUE_ITEMS)) features.push('transcode');
-  if (normalized.includes(MODULES.MUX) || normalized.includes(MODULES.MPTS_MUX) || normalized.includes(MODULES.STREAMOPS)) features.push('mux');
+  if (normalized.includes(MODULES.MPTS_MUX) || normalized.includes(MODULES.STREAMOPS)) features.push('mux');
   return features;
 };
 

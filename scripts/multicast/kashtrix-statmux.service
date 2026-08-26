@@ -1,0 +1,15 @@
+[Unit]
+Description=Kashtrix Broadcast Statmux & Multicast Engine
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/sbin/ip route add 224.0.0.0/4 dev eth0 metric 10 || true
+ExecStart=/usr/bin/node C:\Users\karnk\Downloads\secure-license-manager-v2\kashtrix-streamops/backend/server.js
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

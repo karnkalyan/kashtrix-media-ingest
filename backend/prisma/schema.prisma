@@ -131,12 +131,12 @@ model AuditLog {
 }
 
 model TranscodeChannel {
-  id                  String   @id
-  name                String
-  data                String   @db.Text
-  status              String   @default("Stopped")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id        String   @id
+  name      String
+  data      String   @db.Text
+  status    String   @default("Stopped")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model TranscodeProfile {
@@ -145,6 +145,36 @@ model TranscodeProfile {
   data      String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model RecordingPreset {
+  id                String   @id
+  name              String
+  sourceType        String   @default("device")
+  videoDevice       String?  @db.Text
+  audioDevice       String?  @db.Text
+  selectedStreamKey String?  @db.Text
+  configJson        String   @db.LongText
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model MuxConfiguration {
+  id        String   @id
+  name      String
+  data      String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SystemConfiguration {
+  key       String   @id
+  section   String
+  value     String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([section])
 }
 
 model KvStore {
@@ -167,23 +197,23 @@ model StreamSession {
 }
 
 model StreamRecording {
-  id        Int       @id @default(autoincrement())
-  app       String
-  stream    String
-  filePath  String    @db.Text
-  fileName  String
-  startTime DateTime  @default(now())
-  endTime   DateTime?
-  size      BigInt    @default(0)
-  duration  Float     @default(0)
-  format       String  @default("mp4")
-  videoBitrate Int     @default(0)
-  audioBitrate Int     @default(0)
-  encoder      String  @default("copy")
+  id           Int       @id @default(autoincrement())
+  app          String
+  stream       String
+  filePath     String    @db.Text
+  fileName     String
+  startTime    DateTime  @default(now())
+  endTime      DateTime?
+  size         BigInt    @default(0)
+  duration     Float     @default(0)
+  format       String    @default("mp4")
+  videoBitrate Int       @default(0)
+  audioBitrate Int       @default(0)
+  encoder      String    @default("copy")
   resolution   String?
-  continuous   Boolean @default(false)
-  sourceType   String  @default("ingest")
-  settingsJson String? @db.Text
+  continuous   Boolean   @default(false)
+  sourceType   String    @default("ingest")
+  settingsJson String?   @db.Text
 }
 
 model VodContent {

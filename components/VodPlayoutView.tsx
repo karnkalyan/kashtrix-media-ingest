@@ -73,6 +73,7 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
     case Protocol.SRT:
       return `srt://127.0.0.1:9001?mode=caller`;
     case Protocol.UDP:
+    case Protocol.UDP_DVB:
       return `udp://224.1.1.2:3000`;
     case Protocol.HTTP_TS:
       return `${WEB_ORIGIN}/ts/${slug}.ts`;

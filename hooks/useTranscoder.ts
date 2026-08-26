@@ -92,28 +92,54 @@ const uniqueId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const quote = (value: string) => `"${value.replace(/"/g, '\\"')}"`;
 
-const normalizeVideoEncoder = (codec?: string): string => {
+const normalizeVideoEncoder = (codec?: string, accelerate?: boolean): string => {
   const c = String(codec || "").toLowerCase();
-  if (c === "h264" || c === "avc") return "libx264";
-  if (c === "hevc" || c === "h265") return "libx265";
+  if (c === "h264_nvenc") return "h264_nvenc";
+  if (c === "h264_amf") return "h264_amf";
+  if (c === "h264_qsv") return "h264_qsv";
+  if (c === "h264_videotoolbox") return "h264_videotoolbox";
+  if (c === "libx264") return "libx264";
+  if (c === "h264" || c === "avc") return accelerate === true ? "h264_nvenc" : "libx264";
+
+  if (c === "hevc_nvenc") return "hevc_nvenc";
+  if (c === "hevc_amf") return "hevc_amf";
+  if (c === "hevc_qsv") return "hevc_qsv";
+  if (c === "hevc_videotoolbox") return "hevc_videotoolbox";
+  if (c === "libx265") return "libx265";
+  if (c === "hevc" || c === "h265") return accelerate === true ? "hevc_nvenc" : "libx265";
+  if (c === "mpeg2" || c === "mpeg2video") return "mpeg2video";
   if (c === "vp9") return "libvpx-vp9";
   if (c === "av1") return "libaom-av1";
   return codec || "libx264";
+};
+
+const normalizeAudioEncoder = (codec?: string): string => {
+  const c = String(codec || "").toLowerCase();
+  if (c === "mp2" || c === "libtwolame") return "mp2";
+  if (c === "ac3" || c === "dolby") return "ac3";
+  if (c === "eac3") return "eac3";
+  if (c === "mp3") return "libmp3lame";
+  if (c === "opus") return "libopus";
+  if (c === "pcm_s16le" || c === "pcm16") return "pcm_s16le";
+  if (c === "pcm_s24le" || c === "pcm24") return "pcm_s24le";
+  if (c === "copy") return "copy";
+  return "aac";
 };
 
 const buildVideoFlags = (
   profile: TranscodingProfile,
   destination?: ChannelDestination,
 ) => {
-  if (profile.isAudioOnly) return "-vn";
-  if (profile.videoCodec === VideoCodec.Copy) return "-c:v copy";
+  if (profile.videoEnabled === false || profile.isAudioOnly) return "-vn";
+  if (profile.videoCodec === VideoCodec.Copy || profile.videoCodec === 'copy') return "-c:v copy";
 
-  const encoder = normalizeVideoEncoder(profile.videoCodec);
-  const isH264 = [VideoCodec.H264, VideoCodec.H264_NVENC, VideoCodec.H264_AMF, VideoCodec.H264_VIDEOTOOLBOX, "libx264", "h264_nvenc", "h264_amf"].includes(profile.videoCodec as any);
-  const bitrate =
-    destination?.recording?.videoBitrate || profile.videoBitrate || 2000;
-  const rawResolution =
-    destination?.recording?.resolution || profile.resolution;
+  const encoder = normalizeVideoEncoder(profile.videoCodec, profile.accelerate);
+  const isH264 = [VideoCodec.H264, VideoCodec.H264_NVENC, VideoCodec.H264_AMF, VideoCodec.H264_QSV, VideoCodec.H264_VIDEOTOOLBOX, "libx264", "h264_nvenc", "h264_amf", "h264_qsv"].includes(profile.videoCodec as any);
+  const isHEVC = [VideoCodec.H265, VideoCodec.HEVC_NVENC, VideoCodec.HEVC_AMF, VideoCodec.HEVC_QSV, VideoCodec.HEVC_VIDEOTOOLBOX, "libx265", "hevc_nvenc", "hevc_amf", "hevc_qsv"].includes(profile.videoCodec as any);
+  const isMpeg2 = profile.videoCodec === VideoCodec.MPEG2 || profile.videoCodec === 'mpeg2video' || profile.videoCodec === VideoCodec.MPEG2_QSV;
+
+  const bitrate = destination?.recording?.videoBitrate || profile.videoBitrate || 3000;
+  const rawResolution = destination?.recording?.resolution || profile.resolution;
   const resolution =
     rawResolution &&
     !["N/A", "source", "auto", "original"].includes(rawResolution.toLowerCase())
@@ -142,7 +168,7 @@ const buildVideoFlags = (
     qualityFlags = `-b:v ${bitrate}k -minrate ${min}k -maxrate ${max}k -bufsize ${buf}k`;
   }
 
-  // MPEG-4 AVC Advanced Parameters (Profile, Level, B-Frames, CABAC)
+  // AVC / HEVC Advanced Parameters
   const avcFlags: string[] = [];
   if (isH264) {
     if (profile.avcProfile) {
@@ -150,7 +176,7 @@ const buildVideoFlags = (
     } else {
       avcFlags.push("-profile:v high");
     }
-    if (profile.avcLevel) {
+    if (profile.avcLevel && profile.avcLevel !== 'auto') {
       avcFlags.push(`-level:v ${profile.avcLevel}`);
     }
     if (profile.bFrames !== undefined && profile.bFrames >= 0) {
@@ -162,6 +188,21 @@ const buildVideoFlags = (
       avcFlags.push("-coder 0"); // CAVLC
     } else {
       avcFlags.push("-coder 1"); // CABAC
+    }
+  } else if (isHEVC) {
+    if (profile.avcProfile) {
+      avcFlags.push(`-profile:v ${profile.avcProfile}`);
+    }
+    if (profile.avcLevel && profile.avcLevel !== 'auto') {
+      avcFlags.push(`-level:v ${profile.avcLevel}`);
+    }
+    if (profile.bFrames !== undefined && profile.bFrames >= 0) {
+      avcFlags.push(`-bf ${profile.bFrames}`);
+    }
+  } else if (isMpeg2) {
+    avcFlags.push("-bf 2");
+    if (profile.interlaced) {
+      avcFlags.push("-flags +ilme+ildct");
     }
   }
 
@@ -176,11 +217,22 @@ const buildVideoFlags = (
     filters.push("yadif=0:-1:1");
   }
   if (resolution) {
-    filters.push(`scale=${resolution.replace("x", ":")}`);
+    const interp = profile.scaleInterpolation && profile.scaleInterpolation !== 'default'
+      ? `:flags=${profile.scaleInterpolation}`
+      : '';
+    filters.push(`scale=${resolution.replace("x", ":")}${interp}`);
   }
 
-  const gop = profile.gopSize || 50;
+  if (profile.aspectRatio && profile.aspectRatio !== 'original') {
+    const dar = profile.aspectRatio === '16:9' ? '16/9' : profile.aspectRatio === '4:3' ? '4/3' : profile.aspectRatio;
+    filters.push(`setdar=${dar}`);
+  }
+
+  const gop = profile.gopSize || (isMpeg2 ? 12 : 50);
   const keyintMin = Math.max(1, Math.floor(gop / 2));
+
+  // FPS Mode (CFR for DVB standard)
+  const fpsFlags = profile.fpsMode === 'cfr' ? '-fps_mode cfr' : profile.fpsMode === 'vfr' ? '-fps_mode vfr' : '';
 
   return [
     `-c:v ${encoder}`,
@@ -188,25 +240,48 @@ const buildVideoFlags = (
     qualityFlags,
     filters.length ? `-vf ${quote(filters.join(","))}` : "",
     framerate > 0 ? `-r ${framerate}` : "",
+    fpsFlags,
     !isAmdAmf && profile.preset ? `-preset ${profile.preset}` : "",
     profile.tune ? `-tune ${profile.tune}` : "",
     `-g ${gop}`,
     `-keyint_min ${keyintMin}`,
-    profile.pixelFormat
+    profile.pixelFormat && profile.pixelFormat !== 'default'
       ? `-pix_fmt ${profile.pixelFormat}`
       : "-pix_fmt yuv420p",
+    profile.advancedVideoFlags ? profile.advancedVideoFlags : "",
   ]
     .filter(Boolean)
     .join(" ");
 };
 
 const buildAudioFlags = (profile: TranscodingProfile) => {
-  if (profile.audioCodec === AudioCodec.Copy) return "-c:a copy";
+  if (profile.audioEnabled === false) return "-an";
+  if (profile.audioCodec === AudioCodec.Copy || profile.audioCodec === 'copy') return "-c:a copy";
+
+  const aCodec = normalizeAudioEncoder(profile.audioCodec);
+  const aBitrate = profile.audioBitrate || (aCodec === 'mp2' ? 192 : 128);
+  const sampleRate = profile.sampleRate || 48000;
+  const channels = profile.audioChannels === 'all' || !profile.audioChannels ? 2 : profile.audioChannels;
+
+  const audioFilters: string[] = [];
+  if (profile.volumeGainPercent !== undefined && profile.volumeGainPercent !== 0) {
+    const multiplier = Math.max(0, 1 + profile.volumeGainPercent / 100).toFixed(2);
+    audioFilters.push(`volume=${multiplier}`);
+  }
+  if (profile.audioSync && profile.audioSync !== 'passthrough') {
+    audioFilters.push("aresample=async=1000");
+  }
+  if (profile.audioUpmix && profile.audioUpmix.trim()) {
+    audioFilters.push(`pan=${profile.audioUpmix}`);
+  }
+
   return [
-    `-c:a ${profile.audioCodec}`,
-    profile.audioBitrate ? `-b:a ${profile.audioBitrate}k` : "",
-    profile.sampleRate ? `-ar ${profile.sampleRate}` : "",
-    profile.audioChannels ? `-ac ${profile.audioChannels}` : "-ac 2",
+    `-c:a ${aCodec}`,
+    `-b:a ${aBitrate}k`,
+    `-ar ${sampleRate}`,
+    `-ac ${channels}`,
+    audioFilters.length ? `-af ${quote(audioFilters.join(","))}` : "",
+    profile.advancedAudioFlags ? profile.advancedAudioFlags : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -274,9 +349,22 @@ const teeDestination = (
     case Protocol.UDP: {
       const pktSize = destination.dvbPacketSize || 1316;
       const ttl = destination.dvbTtl || 64;
-      const buf = destination.dvbBufferSize || 65535;
+      const buf = destination.dvbBufferSize || 10485760;
       const local = destination.dvbLocalAddr ? `&localaddr=${encodeURIComponent(destination.dvbLocalAddr)}` : "";
-      const udpParams = `pkt_size=${pktSize}&ttl=${ttl}&buffer_size=${buf}${local}`;
+      const udpParams = `pkt_size=${pktSize}&ttl=${ttl}&buffer_size=${buf}&overrun_nonfatal=1${local}`;
+      const destUrl = destination.url.includes("?")
+        ? `${destination.url}&${udpParams}`
+        : `${destination.url}?${udpParams}`;
+      return [`[f=mpegts]${teeEscape(destUrl)}`];
+    }
+    case Protocol.UDP_DVB: {
+      const pktSize = destination.dvbPacketSize || 1316;
+      const ttl = destination.dvbTtl || 64;
+      const buf = destination.dvbBufferSize || 10485760;
+      const local = destination.dvbLocalAddr ? `&localaddr=${encodeURIComponent(destination.dvbLocalAddr)}` : "";
+      const targetBps = destination.dvbMuxrate ? destination.dvbMuxrate * 1000 : 0;
+      const bitrateParam = targetBps > 0 ? `&bitrate=${targetBps}` : "";
+      const udpParams = `pkt_size=${pktSize}&ttl=${ttl}&buffer_size=${buf}${bitrateParam}&overrun_nonfatal=1${local}`;
       const destUrl = destination.url.includes("?")
         ? `${destination.url}&${udpParams}`
         : `${destination.url}?${udpParams}`;
@@ -289,9 +377,9 @@ const teeDestination = (
       const vidPid = destination.dvbVideoPid || 256;
       const tsId = destination.dvbTsid || 1;
       const onId = destination.dvbOnid || 1;
-      const muxrateFlag = destination.dvbMuxrate ? `:muxrate=${destination.dvbMuxrate}k` : "";
+      const muxrateFlag = destination.dvbMuxrate ? `:muxrate=${destination.dvbMuxrate * 1000}` : "";
 
-      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=digital_tv:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:metadata=service_name=${teeEscape(sName)}:metadata=service_provider=${teeEscape(sProvider)}${muxrateFlag}`;
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=digital_tv:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:pcr_period=20:pat_period=0.1:sdt_period=0.5:tables_version=1:metadata=service_name=${teeEscape(sName)}:metadata=service_provider=${teeEscape(sProvider)}${muxrateFlag}`;
 
       return [`[${dvbMuxer}]${teeEscape(destUrl)}`];
     }
@@ -466,8 +554,15 @@ export const generateCommand = (
     (d) => d.protocol !== Protocol.DECKLINK,
   );
 
-  if (!profile && nonDecklinkDests.length > 0)
-    return "Error: Profile not found";
+  if (!profile && nonDecklinkDests.length > 0) {
+    if (!channel.profileId || channel.profileId === 'copy' || channel.profileId === 'passthrough' || channel.profileId === 'default' || channel.id?.startsWith('ch-relay-')) {
+      const isLiveNet = channel.inputUrl?.startsWith("srt://") || channel.inputUrl?.startsWith("udp://") || channel.inputUrl?.startsWith("rtmp://") || channel.inputUrl?.startsWith("http://");
+      const inFlag = isLiveNet ? `-thread_queue_size 2048 -analyzeduration 2000000 -probesize 2000000 -i "${channel.inputUrl}"` : `-re -i "${channel.inputUrl}"`;
+      const outUrl = nonDecklinkDests[0]?.url || channel.outputUrl || '';
+      const isMpegts = outUrl.startsWith('udp://') || outUrl.startsWith('srt://') || outUrl.startsWith('rtp://');
+      return `ffmpeg -hide_banner -nostats ${inFlag} -map 0:v:0? -c:v copy -map 0:a:0? -c:a copy -f ${isMpegts ? 'mpegts' : 'flv'} "${outUrl}"`;
+    }
+  }
 
   let inputFlags = "";
   const isWindows =
@@ -493,25 +588,29 @@ export const generateCommand = (
     const aDev = (parts[1] || vDev).replace(/^audio=/i, "").trim();
     const dev = vDev || aDev;
 
-    const isDeckLink = /decklink|intensity|blackmagic/i.test(dev);
+    const isDeckLink = /decklink|intensity|blackmagic|ultra\s*studio/i.test(dev || "");
     const resolvedVideoInput = videoInput && videoInput !== "unset" && videoInput !== "auto"
       ? videoInput
       : (isDeckLink ? "sdi" : "");
-    const resolvedFormatCode = formatCode && formatCode !== "unset" && formatCode !== "auto"
+    const resolvedFormatCode = formatCode && formatCode !== "unset" && formatCode !== "auto" && formatCode !== ""
       ? formatCode
-      : (isDeckLink ? "Hi50" : "");
+      : (formatCode === "auto" ? "auto" : "");
 
     if (!dev) {
       inputFlags = "-i pipe:0"; // placeholder — server will resolve actual device
+    } else if (isDeckLink) {
+      // Native Blackmagic DeckLink SDK input (locks to SDI/HDMI frame rate on Windows & Linux)
+      const formatFlag = resolvedFormatCode ? `-format_code ${resolvedFormatCode} ` : "";
+      const vInputFlag = resolvedVideoInput ? `-video_input ${resolvedVideoInput} ` : "";
+      inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(dev)}`;
     } else if (isWindows) {
+      // Standard DirectShow USB WebCam / UVC Device
       const vSpec = vDev ? `video=${vDev}` : `video=${dev}`;
       const aSpec = aDev ? `audio=${aDev}` : "";
       const srcSpec = aSpec && aSpec !== vSpec ? `${vSpec}:${aSpec}` : vSpec;
       inputFlags = `-thread_queue_size 2048 -f dshow -rtbufsize 2048M -i ${quote(srcSpec)}`;
     } else {
-      const formatFlag = resolvedFormatCode ? `-format_code ${resolvedFormatCode} ` : "";
-      const vInputFlag = resolvedVideoInput ? `-video_input ${resolvedVideoInput} ` : "";
-      inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(dev)}`;
+      inputFlags = `-thread_queue_size 2048 -f v4l2 -i ${quote(dev)}`;
     }
   } else if (channel.inputType === InputType.VOD) {
     inputFlags = `-re -i ${quote(`${VOD_BASE_PATH}${channel.inputUrl}`)}`;
@@ -521,11 +620,14 @@ export const generateCommand = (
       : `rtmp://127.0.0.1:${settings.rtmpPort}/${channel.inputUrl.replace(/^\/+/, "")}`;
     inputFlags = `-re -i ${quote(url)}`;
   } else if (channel.inputType === InputType.SRT) {
-    inputFlags = `-i ${quote(channel.inputUrl)}`;
+    inputFlags = `-thread_queue_size 2048 -analyzeduration 3000000 -probesize 3000000 -i ${quote(channel.inputUrl)}`;
   } else if (channel.inputType === InputType.YOUTUBE) {
     inputFlags = `-i pipe:0`;
   } else {
-    inputFlags = `-re -i ${quote(channel.inputUrl)}`;
+    const isLiveNet = channel.inputUrl.startsWith("srt://") || channel.inputUrl.startsWith("udp://") || channel.inputUrl.startsWith("rtmp://") || channel.inputUrl.startsWith("rtsp://");
+    inputFlags = isLiveNet
+      ? `-thread_queue_size 2048 -analyzeduration 3000000 -probesize 3000000 -i ${quote(channel.inputUrl)}`
+      : `-re -i ${quote(channel.inputUrl)}`;
   }
 
   const youtubePrefix =
@@ -554,6 +656,7 @@ export const generateCommand = (
   const outputFormatOptions: Partial<Record<Protocol, string>> = {
     [Protocol.SRT]: "-f mpegts",
     [Protocol.UDP]: "-f mpegts",
+    [Protocol.UDP_DVB]: "-f mpegts",
     [Protocol.HTTP_TS]: "-f mpegts",
     [Protocol.RTMP]: "-f flv",
     [Protocol.YOUTUBE]: "-f flv",
@@ -629,7 +732,7 @@ export const generateCommand = (
 
 type PersistentChannel = Omit<
   Channel,
-  "status" | "uptime" | "speed" | "speedHistory" | "outputLog"
+  "status" | "uptime" | "speed" | "speedHistory" | "outputLog" | "command"
 >;
 
 const channelToPersistentData = (channel: Channel): PersistentChannel => {
@@ -639,6 +742,7 @@ const channelToPersistentData = (channel: Channel): PersistentChannel => {
     speed,
     speedHistory,
     outputLog,
+    command,
     ...persistentChannel
   } = channel;
   return persistentChannel;
@@ -1264,6 +1368,7 @@ const useEngine = () => {
           body: JSON.stringify({
             channelId: channel.id,
             streamName: sanitizeName(channel.name),
+            command,
           }),
         });
         dispatch({ type: "START_CHANNEL", payload: { id } });
@@ -1362,7 +1467,7 @@ const useEngine = () => {
       if (!input) return [];
       return api("/api/ffprobe-ts-programs", {
         method: "POST",
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ inputUrl: input, input }),
       });
     },
     [api],

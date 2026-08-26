@@ -74,7 +74,6 @@ const inputSourceOptions = [
   { value: InputType.VOD, label: 'VOD', icon: Film },
   { value: InputType.DEVICE, label: 'Device', icon: Video },
   { value: InputType.LIVE, label: 'Live', icon: Zap },
-  { value: InputType.SRT, label: 'SRT', icon: Activity },
   { value: InputType.YOUTUBE, label: 'YouTube', icon: Play },
 ];
 
@@ -99,8 +98,9 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
     case Protocol.CUSTOM:
       return `rtmp://${API_HOST}:${settings.rtmpPort}/live/${slug}`;
     case Protocol.SRT:
-      return `srt://127.0.0.1:9001?mode=caller`;
+      return `srt://127.0.0.1:9001?mode=caller&latency=200`;
     case Protocol.UDP:
+    case Protocol.UDP_DVB:
       return `udp://224.1.1.2:3000`;
     case Protocol.HTTP_TS:
       return `${WEB_ORIGIN}/ts/${slug}.ts`;
@@ -126,13 +126,11 @@ const resolveInputType = (type?: string, url: string = ''): InputType => {
   const rawUrl = url.toLowerCase().trim();
 
   if (rawType.includes('vod') || rawType === 'file') return InputType.VOD;
-  if (rawType.includes('srt')) return InputType.SRT;
   if (rawType.includes('device')) return InputType.DEVICE;
   if (rawType.includes('live') || rawType.includes('incoming')) return InputType.LIVE;
   if (rawType.includes('youtube')) return InputType.YOUTUBE;
-  if (rawType.includes('url') || rawType.includes('http')) return InputType.URL;
+  if (rawType.includes('url') || rawType.includes('http') || rawType.includes('srt') || rawType.includes('udp')) return InputType.URL;
 
-  if (rawUrl.startsWith('srt://')) return InputType.SRT;
   if (rawUrl.startsWith('device://')) return InputType.DEVICE;
   if (rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be')) return InputType.YOUTUBE;
   if (rawUrl.startsWith('rtmp://') || rawUrl.startsWith('/live/') || rawUrl.startsWith('live/')) return InputType.LIVE;
@@ -467,13 +465,18 @@ export const Configurator: React.FC<Props> = ({
     if (!target) return toast.error('Enter input URL or select capture device before probing.');
     setLoading(true);
     try {
-      const data = await getTsPrograms(target);
-      setPrograms(data || []);
-      if (data && data.length) {
-        setProgramId(data[0].id);
-        toast.success(`Found ${data.length} program(s).`);
+      const data: any = await getTsPrograms(target);
+      const progList = Array.isArray(data) ? data : (data?.programs || []);
+      setPrograms(progList);
+      if (progList.length) {
+        setProgramId(progList[0].id || progList[0].programId);
+        toast.success(`Found ${progList.length} program(s).`);
+      } else if (data?.video || (data && !data.error && data.success)) {
+        toast.success('Live stream signal detected successfully!');
+      } else if (data?.error) {
+        toast.error(data.error);
       } else {
-        toast.error('No TS programs detected.');
+        toast.error('No stream signal or programs detected. Ensure sender is actively transmitting.');
       }
     } catch (error: any) {
       toast.error(error.message || 'Probe failed.');
@@ -530,23 +533,220 @@ export const Configurator: React.FC<Props> = ({
   };
 
   const renderInputFields = () => {
-    if (inputType === InputType.URL || inputType === InputType.SRT || inputType === InputType.YOUTUBE) {
-      const placeholder = inputType === InputType.URL
-        ? 'http://, https://, udp://, rtp://, or rtsp://...'
-        : inputType === InputType.SRT
-        ? 'srt://0.0.0.0:8890?mode=listener'
-        : 'https://www.youtube.com/watch?v=...';
+    if (inputType === InputType.URL) {
+      const isSrt = inputUrl.startsWith('srt://');
       return (
-        <div className="relative">
-          <input
-            className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
-            placeholder={placeholder}
-            value={inputUrl}
-            onChange={e => setInputUrl(e.target.value)}
-          />
+        <div className="space-y-2">
+          <div className="relative">
+            <input
+              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+              placeholder="srt://, udp://, rtmp://, rtsp://, http://, or https://..."
+              value={inputUrl}
+              onChange={e => setInputUrl(e.target.value)}
+            />
+          </div>
+
+          {/* Protocol Quick-Pill Presets */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-[10px] font-semibold text-[#6F6078] dark:text-[#A898BC]">Presets:</span>
+            <button
+              type="button"
+              onClick={() => setInputUrl('srt://0.0.0.0:8890?mode=listener&latency=200')}
+              className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300"
+            >
+              🟢 SRT Listener
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputUrl('srt://127.0.0.1:9001?mode=caller&latency=200')}
+              className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-300"
+            >
+              🔵 SRT Caller
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputUrl('srt://127.0.0.1:9001?mode=rendezvous&latency=200')}
+              className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 dark:bg-purple-950/30 dark:border-purple-800 dark:text-purple-300"
+            >
+              🟣 SRT Rendezvous
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputUrl('udp://239.255.0.1:5000?pkt_size=1316')}
+              className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-300"
+            >
+              📡 UDP Multicast
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputUrl('rtmp://127.0.0.1:1935/live/stream')}
+              className="px-2 py-0.5 rounded text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 dark:bg-violet-950/30 dark:border-violet-800 dark:text-violet-300"
+            >
+              ⚡ RTMP
+            </button>
+          </div>
+
+          {/* Interactive SRT Configuration Assistant when SRT is detected */}
+          {isSrt && (
+            <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-2.5 space-y-2 dark:bg-purple-950/20 dark:border-purple-900/40 text-[10px]">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1">
+                  <Activity size={12} className="text-purple-600 dark:text-purple-400" /> SRT Input Mode & Parameters (All 3 Options)
+                </span>
+                <span className="text-[9px] text-purple-700 dark:text-purple-300 font-mono">Live Sync</span>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#1B1024] dark:text-white mb-1">SRT Connection Mode</label>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['listener', 'caller', 'rendezvous'] as const).map(mode => {
+                    const currentMode = inputUrl.includes('mode=caller') ? 'caller' : inputUrl.includes('mode=rendezvous') ? 'rendezvous' : 'listener';
+                    const isSelected = currentMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          let newUrl = inputUrl;
+                          if (newUrl.includes('mode=')) {
+                            newUrl = newUrl.replace(/mode=(caller|listener|rendezvous)/g, `mode=${mode}`);
+                          } else {
+                            newUrl += (newUrl.includes('?') ? '&' : '?') + `mode=${mode}`;
+                          }
+                          setInputUrl(newUrl);
+                        }}
+                        className={`py-1 px-1.5 rounded text-center font-bold capitalize transition-colors ${
+                          isSelected
+                            ? 'bg-[#7C3AED] text-white shadow-xs'
+                            : 'bg-white dark:bg-[#211335] text-[#6F6078] dark:text-[#B9A5CD] border border-[#E8DFF0] dark:border-[#371F59] hover:bg-white/80'
+                        }`}
+                      >
+                        {mode === 'listener' ? '🟢 Listener' : mode === 'caller' ? '🔵 Caller' : '🟣 Rendezvous'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                <div>
+                  <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Latency (ms)</label>
+                  <input
+                    type="number"
+                    value={(() => {
+                      const match = inputUrl.match(/latency=(\d+)/);
+                      return match ? Number(match[1]) : 200;
+                    })()}
+                    onChange={e => {
+                      const lat = Number(e.target.value) || 200;
+                      let newUrl = inputUrl;
+                      if (newUrl.includes('latency=')) {
+                        newUrl = newUrl.replace(/latency=\d+/g, `latency=${lat}`);
+                      } else {
+                        newUrl += (newUrl.includes('?') ? '&' : '?') + `latency=${lat}`;
+                      }
+                      setInputUrl(newUrl);
+                    }}
+                    className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                    placeholder="200"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Passphrase</label>
+                  <input
+                    type="text"
+                    value={(() => {
+                      const match = inputUrl.match(/passphrase=([^&]+)/);
+                      return match ? decodeURIComponent(match[1]) : '';
+                    })()}
+                    onChange={e => {
+                      const pass = e.target.value;
+                      let newUrl = inputUrl;
+                      if (pass) {
+                        if (newUrl.includes('passphrase=')) {
+                          newUrl = newUrl.replace(/passphrase=[^&]+/g, `passphrase=${encodeURIComponent(pass)}`);
+                        } else {
+                          newUrl += (newUrl.includes('?') ? '&' : '?') + `passphrase=${encodeURIComponent(pass)}`;
+                        }
+                      } else {
+                        newUrl = newUrl.replace(/&?passphrase=[^&]+/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+                      }
+                      setInputUrl(newUrl);
+                    }}
+                    className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                    placeholder="AES Key"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Stream ID</label>
+                  <input
+                    type="text"
+                    value={(() => {
+                      const match = inputUrl.match(/streamid=([^&]+)/);
+                      return match ? decodeURIComponent(match[1]) : '';
+                    })()}
+                    onChange={e => {
+                      const sid = e.target.value;
+                      let newUrl = inputUrl;
+                      if (sid) {
+                        if (newUrl.includes('streamid=')) {
+                          newUrl = newUrl.replace(/streamid=[^&]+/g, `streamid=${encodeURIComponent(sid)}`);
+                        } else {
+                          newUrl += (newUrl.includes('?') ? '&' : '?') + `streamid=${encodeURIComponent(sid)}`;
+                        }
+                      } else {
+                        newUrl = newUrl.replace(/&?streamid=[^&]+/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+                      }
+                      setInputUrl(newUrl);
+                    }}
+                    className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                    placeholder="e.g. live/stream"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
+
+    if (inputType === InputType.YOUTUBE) {
+      return (
+        <div className="space-y-2.5">
+          <div className="relative">
+            <input
+              className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-mono text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+              placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+              value={inputUrl}
+              onChange={e => setInputUrl(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/60 p-2 text-[11px] text-red-900 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Play size={13} className="text-red-600 fill-red-600 dark:text-red-400" />
+              YouTube Live Stream &amp; VOD Ingest
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const clip = await navigator.clipboard.readText();
+                  if (clip.includes('youtube.com') || clip.includes('youtu.be')) {
+                    setInputUrl(clip);
+                  }
+                } catch (_) {}
+              }}
+              className="rounded bg-white px-2 py-0.5 text-[10px] font-bold text-red-700 border border-red-200 hover:bg-red-50 dark:bg-[#211335] dark:border-red-800 dark:text-red-300"
+            >
+              Paste Clipboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     if (inputType === InputType.VOD) {
       const vodOptions = vodFiles.map(f => ({
         value: f.name,
@@ -570,10 +770,12 @@ export const Configurator: React.FC<Props> = ({
         </div>
       );
     }
+
     if (inputType === InputType.DEVICE) {
+      const isDeckLink = /decklink|intensity|blackmagic|ultra\s*studio/i.test(videoDevice || '');
       const inputDeviceFormats = (videoDevice && decklinkFormats[videoDevice]) || DEFAULT_DECKLINK_FORMATS;
       return (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <Select
               label="Video Device"
@@ -588,34 +790,58 @@ export const Configurator: React.FC<Props> = ({
             />
             <Select label="Audio Device" value={audioDevice} onChange={e => setAudioDevice(e.target.value)} placeholder="No audio" options={audioDevices.map(name => ({ value: name, label: name }))} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Select
-              label="Video Input Port"
-              value={videoInput}
-              onChange={e => setVideoInput(e.target.value)}
-              options={[
-                { value: 'hdmi', label: 'HDMI' },
-                { value: 'sdi', label: 'SDI' },
-                { value: 'component', label: 'Component (YPbPr)' },
-                { value: 'composite', label: 'Composite (CVBS)' },
-                { value: 's_video', label: 'S-Video' },
-                { value: 'optical_sdi', label: 'Optical SDI' },
-                { value: 'unset', label: 'Auto / Default' },
-              ]}
-            />
-            <Select
-              label="Signal Standard"
-              value={formatCode}
-              onChange={e => setFormatCode(e.target.value)}
-              options={[
-                { value: '', label: 'Auto Detect / Native Wire Signal' },
-                ...inputDeviceFormats.map(f => ({
-                  value: f.code,
-                  label: `${f.code} — ${f.description}`,
-                })),
-              ]}
-            />
-          </div>
+
+          {/* DeckLink Specific: Video Input Port and Signal Standard */}
+          {isDeckLink ? (
+            <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-2.5 space-y-2.5 dark:bg-purple-950/20 dark:border-purple-900/40">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                  <Video size={13} className="text-purple-600 dark:text-purple-400" />
+                  DeckLink SDI / HDMI Hardware Ingest
+                </span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                  Blackmagic SDK
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Select
+                  label="Video Input Port"
+                  value={videoInput || 'sdi'}
+                  onChange={e => setVideoInput(e.target.value)}
+                  options={[
+                    { value: 'sdi', label: 'SDI Input' },
+                    { value: 'hdmi', label: 'HDMI Input' },
+                    { value: 'optical_sdi', label: 'Optical SDI' },
+                    { value: 'component', label: 'Component (YPbPr)' },
+                    { value: 'composite', label: 'Composite (CVBS)' },
+                    { value: 's_video', label: 'S-Video' },
+                    { value: 'unset', label: 'Auto / Default' },
+                  ]}
+                />
+                <Select
+                  label="Signal Standard"
+                  value={formatCode || 'auto'}
+                  onChange={e => setFormatCode(e.target.value)}
+                  options={[
+                    { value: 'auto', label: '✨ Auto Detect Wire Signal (Recommended)' },
+                    { value: '', label: 'Auto / Default Format' },
+                    ...inputDeviceFormats.map(f => ({
+                      value: f.code,
+                      label: `${f.code} — ${f.description || f.code} (${f.resolution || '1080'} @ ${f.fps || 50}fps)`,
+                    })),
+                  ]}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 text-[11px] text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
+              <span className="font-semibold text-[#1B1024] dark:text-white">DirectShow / UVC Capture Hardware</span>
+              <p className="mt-0.5 text-[10px]">
+                Standard USB Webcam / DirectShow device selected. Frame rate and resolution are auto-negotiated from the camera device.
+              </p>
+            </div>
+          )}
         </div>
       );
     }
@@ -819,7 +1045,7 @@ export const Configurator: React.FC<Props> = ({
                   />
                 )}
 
-                {(dest.protocol === Protocol.UDP || dest.protocol === Protocol.HTTP_TS) && (
+                {dest.protocol === Protocol.UDP_DVB && (
                   <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2.5 dark:bg-[#1A0F26] dark:border-[#371F59]">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C3AED] dark:text-[#C4B5FD]">
@@ -948,6 +1174,123 @@ export const Configurator: React.FC<Props> = ({
                             className="h-7 w-12 rounded border border-[#E8DFF0] bg-white px-1 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
                             placeholder="TTL"
                             title="Multicast TTL"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {dest.protocol === Protocol.SRT && (
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2.5 dark:bg-[#1A0F26] dark:border-[#371F59]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C3AED] dark:text-[#C4B5FD]">
+                        SRT Protocol Parameters (All 3 Modes)
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-[#7C3AED] dark:bg-[#311754] dark:text-[#E2D1F9]">
+                        Secure Reliable Transport
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-[10px]">
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-1">SRT Connection Mode</label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {(['caller', 'listener', 'rendezvous'] as const).map(mode => {
+                            const currentMode = dest.srtMode || (dest.url.includes('mode=listener') ? 'listener' : dest.url.includes('mode=rendezvous') ? 'rendezvous' : 'caller');
+                            const isSelected = currentMode === mode;
+                            return (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => {
+                                  let newUrl = dest.url || 'srt://127.0.0.1:9001';
+                                  if (newUrl.includes('mode=')) {
+                                    newUrl = newUrl.replace(/mode=(caller|listener|rendezvous)/g, `mode=${mode}`);
+                                  } else {
+                                    newUrl += (newUrl.includes('?') ? '&' : '?') + `mode=${mode}`;
+                                  }
+                                  setDestination(dest.id, { srtMode: mode, url: newUrl });
+                                }}
+                                className={`py-1 px-2 rounded text-center font-bold capitalize transition-colors ${
+                                  isSelected
+                                    ? 'bg-[#7C3AED] text-white shadow-xs'
+                                    : 'bg-white dark:bg-[#211335] text-[#6F6078] dark:text-[#B9A5CD] border border-[#E8DFF0] dark:border-[#371F59] hover:bg-[#F4EEFF]'
+                                }`}
+                              >
+                                {mode === 'caller' ? '🔵 Caller' : mode === 'listener' ? '🟢 Listener' : '🟣 Rendezvous'}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Latency (ms)</label>
+                          <input
+                            type="number"
+                            value={dest.srtLatency ?? 200}
+                            onChange={e => {
+                              const lat = Number(e.target.value) || 200;
+                              let newUrl = dest.url || 'srt://127.0.0.1:9001?mode=caller';
+                              if (newUrl.includes('latency=')) {
+                                newUrl = newUrl.replace(/latency=\d+/g, `latency=${lat}`);
+                              } else {
+                                newUrl += (newUrl.includes('?') ? '&' : '?') + `latency=${lat}`;
+                              }
+                              setDestination(dest.id, { srtLatency: lat, url: newUrl });
+                            }}
+                            className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="200"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Passphrase (AES)</label>
+                          <input
+                            type="text"
+                            value={dest.srtPassphrase ?? ''}
+                            onChange={e => {
+                              const pass = e.target.value;
+                              let newUrl = dest.url || 'srt://127.0.0.1:9001?mode=caller';
+                              if (pass) {
+                                if (newUrl.includes('passphrase=')) {
+                                  newUrl = newUrl.replace(/passphrase=[^&]+/g, `passphrase=${encodeURIComponent(pass)}`);
+                                } else {
+                                  newUrl += (newUrl.includes('?') ? '&' : '?') + `passphrase=${encodeURIComponent(pass)}`;
+                                }
+                              } else {
+                                newUrl = newUrl.replace(/&?passphrase=[^&]+/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+                              }
+                              setDestination(dest.id, { srtPassphrase: pass, url: newUrl });
+                            }}
+                            className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="Optional"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Stream ID</label>
+                          <input
+                            type="text"
+                            value={dest.srtStreamId ?? ''}
+                            onChange={e => {
+                              const sid = e.target.value;
+                              let newUrl = dest.url || 'srt://127.0.0.1:9001?mode=caller';
+                              if (sid) {
+                                if (newUrl.includes('streamid=')) {
+                                  newUrl = newUrl.replace(/streamid=[^&]+/g, `streamid=${encodeURIComponent(sid)}`);
+                                } else {
+                                  newUrl += (newUrl.includes('?') ? '&' : '?') + `streamid=${encodeURIComponent(sid)}`;
+                                }
+                              } else {
+                                newUrl = newUrl.replace(/&?streamid=[^&]+/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+                              }
+                              setDestination(dest.id, { srtStreamId: sid, url: newUrl });
+                            }}
+                            className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="Optional (e.g. live/stream)"
                           />
                         </div>
                       </div>

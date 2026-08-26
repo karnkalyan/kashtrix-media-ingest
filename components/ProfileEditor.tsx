@@ -2,20 +2,30 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { AudioCodec, TranscodingProfile, VideoCodec } from '../types';
 import {
+  AUDIO_BITRATE_OPTIONS,
+  AUDIO_CHANNELS_OPTIONS,
   AUDIO_CODEC_OPTIONS,
+  AUDIO_TRACK_OPTIONS,
   AVC_LEVEL_OPTIONS,
   AVC_PROFILE_OPTIONS,
+  ASPECT_RATIO_OPTIONS,
+  FPS_MODE_OPTIONS,
   FRAMERATE_OPTIONS,
+  INTERPOLATION_OPTIONS,
   PIXEL_FORMAT_OPTIONS,
   PRESET_OPTIONS,
   RATE_CONTROL_OPTIONS,
   RESOLUTION_OPTIONS,
   SAMPLE_RATE_OPTIONS,
+  SUBTITLE_OVERLAY_OPTIONS,
+  TUNE_OPTIONS,
   VIDEO_CODEC_OPTIONS,
+  VIDEO_TRACK_OPTIONS,
 } from '../constants';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Select from './ui/Select';
+import { Sliders, Volume2, Video, Cpu, Sparkles, Check, X } from 'lucide-react';
 
 interface ProfileEditorProps {
   isOpen: boolean;
@@ -27,37 +37,58 @@ interface ProfileEditorProps {
 const blankProfile: Omit<TranscodingProfile, 'id'> = {
   name: '',
   isAudioOnly: false,
+  accelerate: true,
+  videoEnabled: true,
   videoCodec: VideoCodec.H264,
-  resolution: '1920x1080',
-  videoQualityMode: 'bitrate',
+  videoTrack: 'first',
+  resolution: 'source',
+  videoQualityMode: 'cbr',
   rateControl: 'cbr',
-  avcProfile: 'high',
-  avcLevel: '4.1',
+  avcProfile: 'main',
+  avcLevel: 'auto',
+  preset: 'medium',
+  tune: 'hq',
+  scaleInterpolation: 'default',
+  aspectRatio: 'original',
+  framerate: 0,
+  fpsMode: 'auto',
+  gopSize: 50,
   bFrames: 2,
   cabac: true,
   videoBitrate: 4000,
   minrate: 4000,
   maxrate: 4000,
-  bufsize: 8000,
+  bufsize: 6000,
   crf: 23,
-  framerate: 25,
-  audioCodec: AudioCodec.AAC,
-  audioBitrate: 128,
-  audioChannels: 2,
-  sampleRate: 48000,
-  preset: 'medium',
-  gopSize: 50,
-  pixelFormat: 'yuv420p',
+  pixelFormat: 'default',
   interlaced: false,
+  subtitleOverlay: 'off',
+  subtitlePosition: '',
+  subtitleTrack: 'first',
+  advancedVideoFlags: '',
+  
+  audioEnabled: true,
+  audioCodec: AudioCodec.AAC,
+  audioTrack: 'all',
+  sampleRate: 48000,
+  audioChannels: 'all',
+  audioUpmix: '',
+  audioBitrate: 192,
+  audioSync: 'default',
+  volumeGainPercent: 0,
+  advancedAudioFlags: '',
 };
 
-const inputClass = 'w-full rounded-md border border-[#E8DFF0] bg-white px-3 py-2 text-sm text-[#1B1024] shadow-2xs outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 dark:bg-[#1E1130] dark:border-[#371F59] dark:text-white';
+const inputClass = 'w-full rounded-lg border border-[#D5CBE5] bg-white px-2.5 py-1.5 text-xs text-[#1B1024] shadow-2xs outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 dark:bg-[#1E1130] dark:border-[#371F59] dark:text-white';
+const labelClass = 'mb-1 block text-[11px] font-semibold text-[#4A3B59] dark:text-[#D1C2E6]';
 
-const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, onSave, profile }) => {
+export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, onSave, profile }) => {
   const [form, setForm] = useState<Omit<TranscodingProfile, 'id'>>({ ...blankProfile });
 
   useEffect(() => {
-    if (isOpen) setForm(profile ? { ...blankProfile, ...profile } : { ...blankProfile });
+    if (isOpen) {
+      setForm(profile ? { ...blankProfile, ...profile } : { ...blankProfile });
+    }
   }, [isOpen, profile]);
 
   const setField = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) => {
@@ -67,107 +98,334 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, onSave, 
   const save = async () => {
     if (!form.name.trim()) return toast.error('Profile name is required.');
     await onSave(profile ? { ...form, id: profile.id } : form);
-    toast.success('Profile saved.');
+    toast.success('Transcoding profile saved successfully.');
     onClose();
   };
 
-  const videoDisabled = form.isAudioOnly || form.videoCodec === VideoCodec.Copy;
-  const isH264 = [VideoCodec.H264, VideoCodec.H264_NVENC, VideoCodec.H264_AMF, VideoCodec.H264_VIDEOTOOLBOX, 'libx264'].includes(form.videoCodec);
+  const isVideoDisabled = !form.videoEnabled || form.isAudioOnly || form.videoCodec === VideoCodec.Copy;
+  const isAudioDisabled = !form.audioEnabled || form.audioCodec === AudioCodec.Copy;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={profile ? `Edit Profile — ${profile.name}` : 'Create Transcoding Profile'}>
-      <div className="space-y-5 text-[#1B1024] dark:text-[#E2D1F9]">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Profile Name</label>
-            <input className={inputClass} value={form.name} onChange={event => setField('name', event.target.value)} placeholder="H.264 1080i50 Broadcast" />
+    <Modal isOpen={isOpen} onClose={onClose} title={profile ? `Edit Profile — ${profile.name}` : 'Transcoding Profile'}>
+      <div className="space-y-4 max-h-[82vh] overflow-y-auto pr-1 text-[#1B1024] dark:text-[#E2D1F9]">
+        {/* Profile Header */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 bg-[#F4F1F8] dark:bg-[#1A0E2B] p-3.5 rounded-xl border border-[#E0D7ED] dark:border-[#351957]">
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Profile Name <span className="text-rose-500">*</span></label>
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={event => setField('name', event.target.value)}
+              placeholder="e.g. DVB-T2 Broadcast Master (H.264 1080i50 + MP2 48k)"
+            />
           </div>
-          <div className="flex items-end gap-4 pb-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-[#E8DFF0] text-[#7C3AED]" checked={!!form.isAudioOnly} onChange={event => setField('isAudioOnly', event.target.checked)} />
-              Audio-only profile
+          <div className="flex items-end gap-3 pb-1">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-[#D5CBE5] text-[#7C3AED] focus:ring-[#7C3AED]"
+                checked={!!form.isAudioOnly}
+                onChange={event => setField('isAudioOnly', event.target.checked)}
+              />
+              <span>Audio-only</span>
             </label>
-            <label className="flex items-center gap-2 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-[#E8DFF0] text-[#7C3AED]" checked={!!form.interlaced} onChange={event => setField('interlaced', event.target.checked)} />
-              Interlaced (Upper Field)
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-[#D5CBE5] text-[#7C3AED] focus:ring-[#7C3AED]"
+                checked={!!form.interlaced}
+                onChange={event => setField('interlaced', event.target.checked)}
+              />
+              <span>Interlaced</span>
             </label>
           </div>
         </div>
 
-        {/* Video Settings Section */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3.5 space-y-3 dark:bg-[#150B20] dark:border-[#311754]">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-[#7C3AED] dark:text-[#C4B5FD]">
-            Video Encoding & MPEG-4 AVC Parameters
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-            <Select label="Video Codec" value={form.videoCodec} onChange={event => setField('videoCodec', event.target.value as VideoCodec)} options={VIDEO_CODEC_OPTIONS} disabled={!!form.isAudioOnly} />
-            <Select label="Resolution" value={form.resolution || 'source'} onChange={event => setField('resolution', event.target.value)} options={RESOLUTION_OPTIONS} disabled={videoDisabled} />
-            <Select label="Frame Rate" value={String(form.framerate ?? 0)} onChange={event => setField('framerate', Number(event.target.value))} options={FRAMERATE_OPTIONS} disabled={videoDisabled} />
-            
-            {isH264 && (
-              <>
-                <Select label="AVC Profile" value={form.avcProfile || 'high'} onChange={event => setField('avcProfile', event.target.value as any)} options={AVC_PROFILE_OPTIONS} disabled={videoDisabled} />
-                <Select label="AVC Level" value={form.avcLevel || '4.1'} onChange={event => setField('avcLevel', event.target.value as any)} options={AVC_LEVEL_OPTIONS} disabled={videoDisabled} />
-                <Select label="Rate Control Mode" value={form.rateControl || 'cbr'} onChange={event => setField('rateControl', event.target.value as any)} options={RATE_CONTROL_OPTIONS} disabled={videoDisabled} />
-              </>
-            )}
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Target Bitrate (kbps)</label>
-              <input className={inputClass} type="number" value={form.videoBitrate || ''} onChange={event => setField('videoBitrate', Number(event.target.value) || undefined)} disabled={videoDisabled} placeholder="4000" />
+        {/* Video Encoder Section (Single Full Option Panel) */}
+        <div className="rounded-xl border border-[#D5CBE5] bg-white p-4 shadow-2xs dark:bg-[#160B24] dark:border-[#311754] space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E8DFF0] pb-2.5 dark:border-[#311754]">
+            <div className="flex items-center gap-2">
+              <div className="grid h-6 w-6 place-items-center rounded bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                <Video size={13} />
+              </div>
+              <span className="text-xs font-bold text-[#1B1024] dark:text-white">Video Encoder</span>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Max Bitrate / Peak (kbps)</label>
-              <input className={inputClass} type="number" value={form.maxrate || ''} onChange={event => setField('maxrate', Number(event.target.value) || undefined)} disabled={videoDisabled} placeholder="4500" />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">VBV Buffer Size (kbps)</label>
-              <input className={inputClass} type="number" value={form.bufsize || ''} onChange={event => setField('bufsize', Number(event.target.value) || undefined)} disabled={videoDisabled} placeholder="8000" />
-            </div>
-
-            <Select label="Encoder Preset" value={form.preset || ''} onChange={event => setField('preset', event.target.value)} options={PRESET_OPTIONS} disabled={videoDisabled} />
-            
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">GOP Keyframe Interval</label>
-              <input className={inputClass} type="number" value={form.gopSize || ''} onChange={event => setField('gopSize', Number(event.target.value) || undefined)} disabled={videoDisabled} placeholder="50" />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">B-Frames Count</label>
-              <input className={inputClass} type="number" min={0} max={16} value={form.bFrames ?? 2} onChange={event => setField('bFrames', Number(event.target.value))} disabled={videoDisabled} placeholder="2" />
-            </div>
-
-            <Select label="Pixel Format" value={form.pixelFormat || 'yuv420p'} onChange={event => setField('pixelFormat', event.target.value)} options={PIXEL_FORMAT_OPTIONS} disabled={videoDisabled} />
-
-            <div className="flex items-center gap-2 pt-6">
-              <label className="flex items-center gap-2 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer">
-                <input type="checkbox" className="h-4 w-4 rounded border-[#E8DFF0] text-[#7C3AED]" checked={form.cabac !== false} onChange={event => setField('cabac', event.target.checked)} disabled={videoDisabled} />
-                <span>Enable CABAC Entropy Coding</span>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-[#D5CBE5] text-blue-600 focus:ring-blue-500"
+                  checked={!!form.videoEnabled && !form.isAudioOnly}
+                  onChange={e => setField('videoEnabled', e.target.checked)}
+                  disabled={form.isAudioOnly}
+                />
+                <span>Enable Video</span>
+              </label>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-[#D5CBE5] text-amber-600 focus:ring-amber-500"
+                  checked={!!form.accelerate}
+                  onChange={e => setField('accelerate', e.target.checked)}
+                />
+                <span>Hardware Acceleration</span>
               </label>
             </div>
           </div>
-        </div>
 
-        {/* Audio Settings Section */}
-        <div className="rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] p-3.5 space-y-3 dark:bg-[#150B20] dark:border-[#311754]">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-[#7C3AED] dark:text-[#C4B5FD]">
-            Audio Stream Parameters
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Select label="Audio Codec" value={form.audioCodec} onChange={event => setField('audioCodec', event.target.value as AudioCodec)} options={AUDIO_CODEC_OPTIONS} />
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-[#1B1024] dark:text-white">Audio Bitrate (kbps)</label>
-              <input className={inputClass} type="number" value={form.audioBitrate || ''} onChange={event => setField('audioBitrate', Number(event.target.value) || undefined)} disabled={form.audioCodec === AudioCodec.Copy} placeholder="128" />
+          <div className={`space-y-3 ${isVideoDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <Select
+                label="Codec"
+                value={form.videoCodec}
+                onChange={event => setField('videoCodec', event.target.value as VideoCodec)}
+                options={VIDEO_CODEC_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Track"
+                value={form.videoTrack || 'first'}
+                onChange={event => setField('videoTrack', event.target.value)}
+                options={VIDEO_TRACK_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Profile (H.264/HEVC)"
+                value={form.avcProfile || 'main'}
+                onChange={event => setField('avcProfile', event.target.value)}
+                options={AVC_PROFILE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Preset"
+                value={form.preset || 'medium'}
+                onChange={event => setField('preset', event.target.value)}
+                options={PRESET_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Tune"
+                value={form.tune || 'hq'}
+                onChange={event => setField('tune', event.target.value)}
+                options={TUNE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Level"
+                value={form.avcLevel || 'auto'}
+                onChange={event => setField('avcLevel', event.target.value)}
+                options={AVC_LEVEL_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
             </div>
-            <Select label="Sample Rate" value={String(form.sampleRate || 48000)} onChange={event => setField('sampleRate', Number(event.target.value))} options={SAMPLE_RATE_OPTIONS} disabled={form.audioCodec === AudioCodec.Copy} />
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <Select
+                label="Scale / Resolution"
+                value={form.resolution || 'source'}
+                onChange={event => setField('resolution', event.target.value)}
+                options={RESOLUTION_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Interpolation"
+                value={form.scaleInterpolation || 'default'}
+                onChange={event => setField('scaleInterpolation', event.target.value as any)}
+                options={INTERPOLATION_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Pixel Format"
+                value={form.pixelFormat || 'default'}
+                onChange={event => setField('pixelFormat', event.target.value)}
+                options={PIXEL_FORMAT_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Aspect Ratio"
+                value={form.aspectRatio || 'original'}
+                onChange={event => setField('aspectRatio', event.target.value)}
+                options={ASPECT_RATIO_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Frame Rate"
+                value={String(form.framerate || 0)}
+                onChange={event => setField('framerate', Number(event.target.value))}
+                options={FRAMERATE_OPTIONS.map(o => ({ value: String(o.value), label: o.label }))}
+              />
+              <Select
+                label="FPS Mode"
+                value={form.fpsMode || 'auto'}
+                onChange={event => setField('fpsMode', event.target.value as any)}
+                options={FPS_MODE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <Select
+                label="Bitrate Control"
+                value={form.rateControl || 'cbr'}
+                onChange={event => setField('rateControl', event.target.value as any)}
+                options={RATE_CONTROL_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <div>
+                <label className={labelClass}>Target Bitrate (Kbps)</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={form.videoBitrate || 4000}
+                  onChange={event => {
+                    const val = Number(event.target.value);
+                    setField('videoBitrate', val);
+                    if (form.rateControl === 'cbr') {
+                      setField('minrate', val);
+                      setField('maxrate', val);
+                      setField('bufsize', Math.round(val * 1.5));
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>VBV Buffer Size (Kbps)</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={form.bufsize || 6000}
+                  onChange={event => setField('bufsize', Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>GOP (Keyframe Interval)</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={form.gopSize ?? 50}
+                  onChange={event => setField('gopSize', Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>B-Frames (bf)</label>
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={form.bFrames ?? 2}
+                  onChange={event => setField('bFrames', Number(event.target.value))}
+                />
+              </div>
+              <Select
+                label="Subtitle Overlay"
+                value={form.subtitleOverlay || 'off'}
+                onChange={event => setField('subtitleOverlay', event.target.value as any)}
+                options={SUBTITLE_OVERLAY_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>Advanced Video FFmpeg Arguments</label>
+              <input
+                type="text"
+                className={inputClass}
+                value={form.advancedVideoFlags || ''}
+                onChange={event => setField('advancedVideoFlags', event.target.value)}
+                placeholder="e.g. -x264opts keyint=50:scenecut=0 -flags +ilme+ildct"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-[#E8DFF0] pt-4 dark:border-[#311754]">
-          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="button" onClick={save}>Save Transcoding Profile</Button>
+        {/* Audio Encoder Section (Single Full Option Panel) */}
+        <div className="rounded-xl border border-[#D5CBE5] bg-white p-4 shadow-2xs dark:bg-[#160B24] dark:border-[#311754] space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E8DFF0] pb-2.5 dark:border-[#311754]">
+            <div className="flex items-center gap-2">
+              <div className="grid h-6 w-6 place-items-center rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                <Volume2 size={13} />
+              </div>
+              <span className="text-xs font-bold text-[#1B1024] dark:text-white">Audio Encoder (DVB MPEG-1 Layer II & AAC)</span>
+            </div>
+
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1B1024] dark:text-white cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-[#D5CBE5] text-emerald-600 focus:ring-emerald-500"
+                checked={!!form.audioEnabled}
+                onChange={e => setField('audioEnabled', e.target.checked)}
+              />
+              <span>Enable Audio</span>
+            </label>
+          </div>
+
+          <div className={`space-y-3 ${isAudioDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <Select
+                label="Audio Codec"
+                value={form.audioCodec}
+                onChange={event => setField('audioCodec', event.target.value as AudioCodec)}
+                options={AUDIO_CODEC_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Audio Track"
+                value={form.audioTrack || 'all'}
+                onChange={event => setField('audioTrack', event.target.value)}
+                options={AUDIO_TRACK_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Sampling Rate"
+                value={String(form.sampleRate || 48000)}
+                onChange={event => setField('sampleRate', Number(event.target.value))}
+                options={SAMPLE_RATE_OPTIONS.map(o => ({ value: String(o.value), label: o.label }))}
+              />
+              <Select
+                label="Audio Channels"
+                value={form.audioChannels || 'all'}
+                onChange={event => setField('audioChannels', event.target.value)}
+                options={AUDIO_CHANNELS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              />
+              <Select
+                label="Audio Bitrate"
+                value={String(form.audioBitrate || 192)}
+                onChange={event => setField('audioBitrate', Number(event.target.value))}
+                options={AUDIO_BITRATE_OPTIONS.map(o => ({ value: String(o.value), label: o.label }))}
+              />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-[#4A3B59] dark:text-[#D1C2E6]">Volume Gain</label>
+                  <span className="font-mono text-[10px] font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
+                    {(form.volumeGainPercent || 0) > 0 ? `+${form.volumeGainPercent}%` : `${form.volumeGainPercent || 0}%`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-50"
+                  max="100"
+                  step="5"
+                  className="w-full h-1.5 rounded-lg bg-gray-200 accent-[#7C3AED] dark:bg-gray-700 cursor-pointer"
+                  value={form.volumeGainPercent || 0}
+                  onChange={e => setField('volumeGainPercent', Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className={labelClass}>Upmix / Matrix Downmix</label>
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={form.audioUpmix || ''}
+                  onChange={event => setField('audioUpmix', event.target.value)}
+                  placeholder="e.g. FL,FR,FC,LFE,BL,BR or 5.1 to Stereo"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Advanced Audio Arguments</label>
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={form.advancedAudioFlags || ''}
+                  onChange={event => setField('advancedAudioFlags', event.target.value)}
+                  placeholder="e.g. -af loudnorm=I=-24:LRA=7"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E8DFF0] dark:border-[#311754]">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={save}>Save Transcoding Profile</Button>
         </div>
       </div>
     </Modal>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FiChevronDown,
   FiDisc,
@@ -212,8 +212,6 @@ const DEFAULT_PRESETS: SavedRecordingPreset[] = [
   },
 ];
 
-const PRESETS_STORAGE_KEY = "kte-saved-recording-presets-v2";
-
 const normalizeClientStoragePath = (value?: string) => {
   const raw = String(value || "").trim();
   if (!raw) return PROJECT_RECORDINGS_PATH;
@@ -222,32 +220,6 @@ const normalizeClientStoragePath = (value?: string) => {
   if (!projectMedia) return raw;
   const suffix = String(projectMedia[1] || "").replace(/^\/+|\/+$/g, "");
   return suffix ? `media/${suffix}` : "media";
-};
-
-const getSavedPresets = (): SavedRecordingPreset[] => {
-  try {
-    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (!raw) return DEFAULT_PRESETS;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0
-      ? parsed.map((preset: SavedRecordingPreset) => ({
-          ...preset,
-          config: {
-            ...preset.config,
-            storagePath: normalizeClientStoragePath(preset.config?.storagePath),
-            storageLocations: preset.config?.storageLocations?.map((location) => ({
-              ...location,
-              storagePath:
-                location.storageType === "local"
-                  ? normalizeClientStoragePath(location.storagePath)
-                  : location.storagePath,
-            })),
-          },
-        }))
-      : DEFAULT_PRESETS;
-  } catch {
-    return DEFAULT_PRESETS;
-  }
 };
 
 const defaultConfig: IngestRecordingOptions = {
@@ -359,10 +331,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   // Presets & Active Selection
   const [savedPresets, setSavedPresets] =
-    useState<SavedRecordingPreset[]>(getSavedPresets());
+    useState<SavedRecordingPreset[]>(DEFAULT_PRESETS);
   const [selectedPresetId, setSelectedPresetId] = useState<string>(
     "preset-broadcast-15mbps",
   );
+  const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
 
   // Database API helper
   const callApi = useCallback(async (endpoint: string, options?: RequestInit) => {
@@ -391,16 +364,42 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       const data = await callApi("/api/ingest/record/presets");
       if (Array.isArray(data.presets) && data.presets.length > 0) {
         setSavedPresets(data.presets);
-        localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(data.presets));
       }
     } catch (err) {
-      console.warn("[Presets] DB load fallback to local cache:", err);
+      console.warn("[Presets] Database load failed:", err);
+      toast.error("Could not load recording presets from the database");
+    }
+    try {
+      const data = await callApi("/api/recording/presets/default");
+      if (data.defaultPresetId) {
+        setDefaultPresetId(data.defaultPresetId);
+      }
+    } catch (err) {
+      console.warn("[Presets] Default preset load failed:", err);
     }
   }, [callApi]);
 
+  // Auto-load default preset on mount
+  const defaultPresetLoadedRef = useRef(false);
   useEffect(() => {
     loadPresetsFromDb();
   }, [loadPresetsFromDb]);
+
+  useEffect(() => {
+    if (defaultPresetLoadedRef.current || !defaultPresetId || savedPresets.length === 0) return;
+    const target = savedPresets.find((p) => p.id === defaultPresetId);
+    if (target) {
+      defaultPresetLoadedRef.current = true;
+      setSelectedPresetId(target.id);
+      if (target.sourceType) setSourceType(target.sourceType);
+      if (target.videoDevice !== undefined && typeof setVideoDevice === "function") setVideoDevice(target.videoDevice);
+      if (target.audioDevice !== undefined && typeof setAudioDevice === "function") setAudioDevice(target.audioDevice);
+      if (target.selectedStreamKey !== undefined && typeof setSelectedStreamKey === "function") setSelectedStreamKey(target.selectedStreamKey);
+      if (target.config) {
+        setConfig((prev: any) => ({ ...(prev || defaultConfig), ...target.config }));
+      }
+    }
+  }, [defaultPresetId, savedPresets, setSourceType, setVideoDevice, setAudioDevice, setSelectedStreamKey, setConfig]);
 
   // Selected Profile
   const [profileId, setProfileId] = useState("source-default");
@@ -525,18 +524,36 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     fetchFormats();
   }, [videoDevice, deviceFormats]);
 
-  // Recording elapsed timer
+  // Recording elapsed timer synchronized with backend startTime
+  const primaryActiveRecording = useMemo(() => {
+    if (!activeRecordings || activeRecordings.length === 0) return null;
+    return activeRecordings.find((r: any) => r && r.is_active !== false) || activeRecordings[0];
+  }, [activeRecordings]);
+
+  const activeRecordingStartTime = useMemo(() => {
+    if (!primaryActiveRecording) return 0;
+    const raw = primaryActiveRecording.startTime || primaryActiveRecording.start_time || primaryActiveRecording.started_at;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw > 1e11 ? raw : raw * 1000;
+    const parsed = raw ? new Date(raw).getTime() : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }, [primaryActiveRecording]);
+
   useEffect(() => {
-    let timer: any;
-    if (isRecordingActive) {
-      timer = setInterval(() => {
-        setRecordingElapsed((prev) => prev + 1);
-      }, 1000);
-    } else {
+    if (!isRecordingActive) {
       setRecordingElapsed(0);
+      return;
     }
+    const updateElapsed = () => {
+      if (activeRecordingStartTime > 0) {
+        setRecordingElapsed(Math.max(0, Math.floor((Date.now() - activeRecordingStartTime) / 1000)));
+      } else {
+        setRecordingElapsed((prev) => prev + 1);
+      }
+    };
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 500);
     return () => clearInterval(timer);
-  }, [isRecordingActive]);
+  }, [isRecordingActive, activeRecordingStartTime]);
 
   // Fetch disk storage status
   const fetchStorageStatus = useCallback(async () => {
@@ -558,7 +575,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, [fetchStorageStatus]);
 
-  // Check active preview status on mount
+  // Check active preview status on mount and sync with recording state
   useEffect(() => {
     let isMounted = true;
     const checkPreviewStatus = async () => {
@@ -591,10 +608,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       } catch {}
     };
     checkPreviewStatus();
+    const interval = setInterval(checkPreviewStatus, 3000);
     return () => {
       isMounted = false;
+      clearInterval(interval);
     };
-  }, [sourceType]);
+  }, [sourceType, isRecordingActive]);
 
   const devicePreviewIdRef = useRef<string | null>(null);
 
@@ -832,19 +851,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       });
       const updatedList = res.presets || [newPresetPayload, ...savedPresets];
       setSavedPresets(updatedList);
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updatedList));
       setSelectedPresetId(res.preset?.id || newPresetPayload.id);
       setSaveSetupModalOpen(false);
       setSetupNameInput("");
       toast.success(`Preset "${name}" saved to database!`);
     } catch (err: any) {
-      const updated = [newPresetPayload, ...savedPresets];
-      setSavedPresets(updated);
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
-      setSelectedPresetId(newPresetPayload.id);
-      setSaveSetupModalOpen(false);
-      setSetupNameInput("");
-      toast.success(`Preset "${name}" saved locally`);
+      toast.error(err?.message || `Preset "${name}" could not be saved to the database`);
     }
   };
 
@@ -855,19 +867,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       });
       const updated = res.presets || savedPresets.filter((p) => p.id !== id);
       setSavedPresets(updated);
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
       if (selectedPresetId === id && updated.length > 0) {
         setSelectedPresetId(updated[0].id);
       }
       toast.success("Preset deleted from database");
     } catch (err: any) {
-      const updated = savedPresets.filter((p) => p.id !== id);
-      setSavedPresets(updated);
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
-      if (selectedPresetId === id && updated.length > 0) {
-        setSelectedPresetId(updated[0].id);
-      }
-      toast.success("Preset deleted");
+      toast.error(err?.message || "Preset could not be deleted from the database");
     }
   };
 
@@ -878,14 +883,29 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       });
       const resetList = res.presets || DEFAULT_PRESETS;
       setSavedPresets(resetList);
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(resetList));
       setSelectedPresetId(resetList[0]?.id || DEFAULT_PRESETS[0].id);
       toast.success("Presets reset to broadcast defaults in database");
     } catch (err: any) {
-      setSavedPresets(DEFAULT_PRESETS);
-      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(DEFAULT_PRESETS));
-      setSelectedPresetId(DEFAULT_PRESETS[0].id);
-      toast.success("Presets reset to broadcast defaults");
+      toast.error(err?.message || "Presets could not be reset in the database");
+    }
+  };
+
+  const handleSetDefaultPreset = async (presetId: string) => {
+    const newDefaultId = defaultPresetId === presetId ? null : presetId;
+    try {
+      await callApi("/api/recording/presets/default", {
+        method: "PUT",
+        body: JSON.stringify({ presetId: newDefaultId }),
+      });
+      setDefaultPresetId(newDefaultId);
+      const preset = savedPresets.find((p) => p.id === presetId);
+      toast.success(
+        newDefaultId
+          ? `"${preset?.name || presetId}" set as default preset`
+          : "Default preset cleared",
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Could not update default preset");
     }
   };
 
@@ -2297,43 +2317,54 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 </select>
               </Label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Label>
-                  Video Input Port
-                  <select
-                    value={activeConfig.videoInput || "sdi"}
-                    onChange={(e) =>
-                      patch({ videoInput: e.target.value as any })
-                    }
-                    className={selectClass}
-                  >
-                    <option value="sdi">SDI Input</option>
-                    <option value="hdmi">HDMI Input</option>
-                    <option value="optical">Optical SDI</option>
-                    <option value="composite">Composite Video</option>
-                    <option value="component">Component Video</option>
-                  </select>
-                </Label>
+              {/decklink|intensity|blackmagic|ultra\s*studio/i.test(videoDevice || '') ? (
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <Label>
+                    Video Input Port
+                    <select
+                      value={activeConfig.videoInput || "sdi"}
+                      onChange={(e) =>
+                        patch({ videoInput: e.target.value as any })
+                      }
+                      className={selectClass}
+                    >
+                      <option value="sdi">SDI Input</option>
+                      <option value="hdmi">HDMI Input</option>
+                      <option value="optical">Optical SDI</option>
+                      <option value="composite">Composite Video</option>
+                      <option value="component">Component Video</option>
+                      <option value="unset">Auto / Default</option>
+                    </select>
+                  </Label>
 
-                <Label>
-                  Hardware Format Standard
-                  <select
-                    value={activeConfig.formatCode || ""}
-                    onChange={(e) => patch({ formatCode: e.target.value })}
-                    className={selectClass}
-                  >
-                    <option value="">Auto Detect Format</option>
-                    {(
-                      deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS
-                    ).map((f) => (
-                      <option key={f.code} value={f.code}>
-                        {f.code} - {f.description || f.code} ({f.resolution} @{" "}
-                        {f.fps}fps)
-                      </option>
-                    ))}
-                  </select>
-                </Label>
-              </div>
+                  <Label>
+                    Signal Standard
+                    <select
+                      value={activeConfig.formatCode || "auto"}
+                      onChange={(e) => patch({ formatCode: e.target.value })}
+                      className={selectClass}
+                    >
+                      <option value="auto">Auto Detect Wire Signal</option>
+                      <option value="">Auto / Default</option>
+                      {(
+                        deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS
+                      ).map((f) => (
+                        <option key={f.code} value={f.code}>
+                          {f.code} - {f.description || f.code} ({f.resolution} @{" "}
+                          {f.fps}fps)
+                        </option>
+                      ))}
+                    </select>
+                  </Label>
+                </div>
+              ) : videoDevice ? (
+                <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-2 text-[11px] text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
+                  <span className="font-semibold text-[#1B1024] dark:text-white">DirectShow / UVC Capture Hardware</span>
+                  <p className="mt-0.5 text-[10px]">
+                    Standard webcam / DirectShow device selected. Frame rate and resolution are auto-negotiated from the camera device.
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-3">
@@ -3219,9 +3250,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         }
       >
         <div className="space-y-3">
+          <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD]">
+            Click the <FiStar size={10} className="inline" /> star to set a preset as default — it will auto-load when the recording panel opens.
+          </p>
           {savedPresets.map((preset) => {
-            const isDefault = DEFAULT_PRESETS.some((dp) => dp.id === preset.id);
+            const isBuiltIn = DEFAULT_PRESETS.some((dp) => dp.id === preset.id);
             const isSelected = selectedPresetId === preset.id;
+            const isUserDefault = defaultPresetId === preset.id;
             return (
               <div
                 key={preset.id}
@@ -3236,9 +3271,14 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     <h5 className="font-bold text-[12px] text-slate-900 dark:text-white truncate">
                       {preset.name}
                     </h5>
-                    {isDefault && (
+                    {isBuiltIn && (
                       <span className="rounded bg-slate-100 text-slate-600 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-slate-800 dark:text-slate-300">
-                        Default
+                        Built-in
+                      </span>
+                    )}
+                    {isUserDefault && (
+                      <span className="rounded bg-amber-100 text-amber-700 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-amber-900/40 dark:text-amber-300">
+                        ★ Default
                       </span>
                     )}
                   </div>
@@ -3253,6 +3293,18 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => handleSetDefaultPreset(preset.id)}
+                    className={`p-1 transition ${
+                      isUserDefault
+                        ? "text-amber-500 hover:text-amber-600"
+                        : "text-slate-300 hover:text-amber-500 dark:text-slate-600 dark:hover:text-amber-400"
+                    }`}
+                    title={isUserDefault ? "Remove as default preset" : "Set as default preset"}
+                  >
+                    <FiStar size={14} fill={isUserDefault ? "currentColor" : "none"} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       handleLoadPreset(preset.id);
                       setManagePresetsOpen(false);
@@ -3262,7 +3314,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     Load
                   </button>
 
-                  {!isDefault && (
+                  {!isBuiltIn && (
                     <button
                       type="button"
                       onClick={() => handleDeletePreset(preset.id)}

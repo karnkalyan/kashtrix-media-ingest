@@ -2,7 +2,7 @@ const NodeMediaServer = require('node-media-server');
 const ffmpegPath = process.env.FFMPEG_PATH || require('@ffmpeg-installer/ffmpeg').path;
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
+const { PrismaClient } = require('@prisma/client');
 
 const loadEnvFile = () => {
   const envFile = path.join(__dirname, '.env');
@@ -19,14 +19,10 @@ const loadEnvFile = () => {
 };
 loadEnvFile();
 
-const readSettings = () => {
+const readSettings = async (prisma) => {
   const defaults = { rtmpPort: 1935, httpPort: 8000 };
-  const dbFile = path.join(__dirname, 'data', 'kte.sqlite');
-  if (!fs.existsSync(dbFile)) return defaults;
   try {
-    const db = new DatabaseSync(dbFile);
-    const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get('settings');
-    db.close();
+    const row = await prisma.kvStore.findUnique({ where: { key: 'settings' } });
     return row ? { ...defaults, ...JSON.parse(row.value) } : defaults;
   } catch (error) {
     console.warn('Unable to read RTMP settings, using defaults:', error.message);
@@ -41,7 +37,10 @@ if (!fs.existsSync(mediaRoot)) {
   console.log(`Created media directory: ${mediaRoot}`);
 }
 
-const settings = readSettings();
+const start = async () => {
+const prisma = new PrismaClient();
+const settings = await readSettings(prisma);
+await prisma.$disconnect();
 
 const config = {
   // Set logType to 4 for the most verbose logging
@@ -88,3 +87,9 @@ console.log('Node Media Server started...');
 console.log('FFmpeg path is:', ffmpegPath);
 console.log('Media root is:', mediaRoot);
 console.log('Config is:', JSON.stringify(config, null, 2));
+};
+
+start().catch(error => {
+  console.error('Unable to start Node Media Server:', error);
+  process.exitCode = 1;
+});

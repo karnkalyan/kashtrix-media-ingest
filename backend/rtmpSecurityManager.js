@@ -25,40 +25,73 @@ const DEFAULT_SETTINGS = {
     enabled: false, // false = unsecure/open, true = secure/authorized only
     authMode: 'flexible', // 'flexible' (allow key OR credentials), 'key_only', 'credentials_only'
     singlePublisherPerKey: true, // enforce 1 concurrent publisher per key
+    playbackSecurityEnabled: false, // global playback security
     keys: [],
     accounts: []
 };
 
+// In-memory cache for synchronous validation during RTMP prePublish lifecycle
+let cachedSettings = { ...DEFAULT_SETTINGS };
+
 /**
- * Load RTMP security settings from DB
+ * Load RTMP security settings synchronously from in-memory PrismaStore cache
+ */
+const getSecuritySettingsSync = (db) => {
+    try {
+        if (db && db.data && Array.isArray(db.data.kv)) {
+            const row = db.data.kv.find(item => item.key === RTMP_SECURITY_STORAGE_KEY);
+            if (row && row.value) {
+                const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                cachedSettings = {
+                    ...DEFAULT_SETTINGS,
+                    ...parsed,
+                    keys: Array.isArray(parsed.keys) ? parsed.keys : [],
+                    accounts: Array.isArray(parsed.accounts) ? parsed.accounts : []
+                };
+                return cachedSettings;
+            }
+        }
+    } catch (_) {}
+    return cachedSettings || { ...DEFAULT_SETTINGS };
+};
+
+/**
+ * Load RTMP security settings from DB asynchronously
  */
 const getSecuritySettings = async (db) => {
     try {
         if (db && db.getKv) {
             const raw = await db.getKv(RTMP_SECURITY_STORAGE_KEY);
             if (raw) {
-                const parsed = JSON.parse(raw);
-                return {
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                cachedSettings = {
                     ...DEFAULT_SETTINGS,
                     ...parsed,
                     keys: Array.isArray(parsed.keys) ? parsed.keys : [],
                     accounts: Array.isArray(parsed.accounts) ? parsed.accounts : []
                 };
+                return cachedSettings;
             }
         }
     } catch (e) {
         console.warn('[RtmpSecurity] Error reading settings:', e.message);
     }
-    return { ...DEFAULT_SETTINGS };
+    return getSecuritySettingsSync(db);
 };
 
 /**
  * Persist RTMP security settings to DB
  */
 const saveSecuritySettings = async (db, settings) => {
+    cachedSettings = {
+        ...DEFAULT_SETTINGS,
+        ...settings,
+        keys: Array.isArray(settings.keys) ? settings.keys : [],
+        accounts: Array.isArray(settings.accounts) ? settings.accounts : []
+    };
     try {
         if (db && db.setKv) {
-            await db.setKv(RTMP_SECURITY_STORAGE_KEY, JSON.stringify(settings));
+            await db.setKv(RTMP_SECURITY_STORAGE_KEY, JSON.stringify(cachedSettings));
         }
     } catch (e) {
         console.error('[RtmpSecurity] Error persisting settings:', e.message);
@@ -68,17 +101,17 @@ const saveSecuritySettings = async (db, settings) => {
 /**
  * Generate cryptographically secure stream key
  */
-const generateRandomKey = (prefix = 'sk_live_') => {
+const generateRandomKey = (prefix = 'kas_live_') => {
     return `${prefix}${crypto.randomBytes(16).toString('hex')}`;
 };
 
 /**
- * Authenticate incoming RTMP publish attempt
+ * Synchronous authentication for immediate NodeMediaServer prePublish lifecycle rejection
  */
-const authenticatePublishSession = async (db, StreamPath, args = {}, session = null) => {
-    const settings = await getSecuritySettings(db);
+const authenticatePublishSessionSync = (db, StreamPath, args = {}, session = null) => {
+    const settings = getSecuritySettingsSync(db);
 
-    // 1. If security is disabled (Unsecure Mode), allow all publishers immediately
+    // 1. If security is disabled (Unsecure / Open Mode), allow all publishers immediately
     if (!settings.enabled) {
         return {
             allowed: true,
@@ -92,6 +125,29 @@ const authenticatePublishSession = async (db, StreamPath, args = {}, session = n
     const parts = cleanStreamPath.split('?')[0].split('/').filter(Boolean);
     const appName = parts[0] || 'live';
     const streamName = parts[1] || 'feed';
+
+    // Allow internal loopback bridges (e.g. SRT Ingest listener, internal FFmpeg demuxers)
+    const remoteIp = String(session?.ip || session?.socket?.remoteAddress || '');
+    const isLoopback = remoteIp.includes('127.0.0.1') || remoteIp.includes('::1') || remoteIp.includes('localhost') || remoteIp === '127.0.0.1';
+    const isSrtStream = streamName.includes('srt') || streamName === 'srt-feed' || appName.includes('srt');
+    if (isLoopback || isSrtStream) {
+        return {
+            allowed: true,
+            secureMode: true,
+            authMethod: 'internal_bridge',
+            message: 'Internal loopback / SRT bridge publisher authorized.'
+        };
+    }
+
+    // If Secure Mode is enabled and 0 keys and 0 accounts exist, reject immediately
+    const hasKeys = Array.isArray(settings.keys) && settings.keys.length > 0;
+    const hasAccounts = Array.isArray(settings.accounts) && settings.accounts.length > 0;
+    if (!hasKeys && !hasAccounts) {
+        return {
+            allowed: false,
+            reason: 'Secure Mode is ACTIVE, but NO authorized stream keys or publisher accounts are registered. Stream rejected.'
+        };
+    }
 
     // Parse URL query arguments if present in StreamPath
     let combinedArgs = { ...(args || {}) };
@@ -111,7 +167,7 @@ const authenticatePublishSession = async (db, StreamPath, args = {}, session = n
         combinedArgs.stream_key ||
         combinedArgs.k ||
         combinedArgs.auth ||
-        (settings.keys.some(k => k.key === streamName) ? streamName : '')
+        (settings.keys.some(k => k.key === streamName && k.enabled !== false) ? streamName : '')
     )?.trim();
 
     // Extract Candidate Username & Password
@@ -180,7 +236,6 @@ const authenticatePublishSession = async (db, StreamPath, args = {}, session = n
 
             // Update last used timestamp in settings
             matchingKey.lastUsedAt = now.toISOString();
-            saveSecuritySettings(db, settings).catch(() => {});
 
             return {
                 allowed: true,
@@ -226,7 +281,6 @@ const authenticatePublishSession = async (db, StreamPath, args = {}, session = n
             });
 
             matchingAccount.lastUsedAt = now.toISOString();
-            saveSecuritySettings(db, settings).catch(() => {});
 
             return {
                 allowed: true,
@@ -237,11 +291,23 @@ const authenticatePublishSession = async (db, StreamPath, args = {}, session = n
         }
     }
 
-    // 4. If Secure Mode is active and neither key nor valid credentials were provided: REJECT
+    // 4. If Secure Mode is active and neither valid key nor valid credentials were provided: REJECT
     return {
         allowed: false,
-        reason: 'Unauthorized stream: Secure Mode is ACTIVE. Please provide a valid stream key (?key=YOUR_KEY) or publisher credentials (user/password).'
+        reason: 'Unauthorized stream: Secure Mode is ACTIVE. Please provide a valid registered stream key (?key=YOUR_KEY) or publisher credentials.'
     };
+};
+
+/**
+ * Authenticate incoming RTMP publish attempt (async wrapper)
+ */
+const authenticatePublishSession = async (db, StreamPath, args = {}, session = null) => {
+    const res = authenticatePublishSessionSync(db, StreamPath, args, session);
+    if (res.allowed && res.secureMode) {
+        const settings = getSecuritySettingsSync(db);
+        saveSecuritySettings(db, settings).catch(() => {});
+    }
+    return res;
 };
 
 /**
@@ -297,11 +363,86 @@ const generatePublishUrls = (hostname = 'localhost', rtmpPort = 1935, streamName
     };
 };
 
+/**
+ * Authenticate incoming playback session (HLS / RTMP play)
+ */
+const authenticatePlaybackSession = async (db, StreamPath, args = {}) => {
+    const settings = getSecuritySettingsSync(db);
+    const cleanStreamPath = (typeof StreamPath === 'string' ? StreamPath : '').trim();
+    const parts = cleanStreamPath.split('?')[0].split('/').filter(Boolean);
+    const streamName = parts[1] || parts[0] || 'feed';
+
+    // Parse URL query arguments if present in StreamPath
+    let combinedArgs = { ...(args || {}) };
+    if (cleanStreamPath.includes('?')) {
+        const queryString = cleanStreamPath.split('?')[1];
+        const searchParams = new URLSearchParams(queryString);
+        for (const [k, v] of searchParams.entries()) {
+            if (!combinedArgs[k]) combinedArgs[k] = v;
+        }
+    }
+
+    const providedToken = (combinedArgs.token || combinedArgs.key || combinedArgs.auth || combinedArgs.secret || '')?.trim();
+
+    // Allow SRT ingest streams and internal relay streams to be previewed/played without requiring RTMP keys
+    if (streamName.includes('srt') || streamName === 'srt-feed') {
+        return { allowed: true, playbackMode: 'open', streamName };
+    }
+
+    // Find active per-stream key configuration (enabled only)
+    const matchingKey = settings.keys.find(k => 
+        k.enabled !== false &&
+        (k.key === streamName || (Array.isArray(k.allowedStreams) && (k.allowedStreams.includes('*') || k.allowedStreams.includes(streamName))))
+    );
+
+    const isGlobalSecure = settings.enabled === true || settings.playbackSecurityEnabled === true;
+
+    // Case 1: Matching active key found
+    if (matchingKey) {
+        // If explicitly set to open playback, allow without token
+        if (matchingKey.playbackSecurity === 'open') {
+            return { allowed: true, playbackMode: 'open', streamName };
+        }
+
+        // If explicitly set to secure, or if global security is ON: require valid token
+        const isSecureRequired = matchingKey.playbackSecurity === 'secure' || isGlobalSecure;
+        if (isSecureRequired) {
+            const expectedToken = (matchingKey.playbackToken || matchingKey.key || '').trim();
+            if (providedToken && (providedToken === expectedToken || providedToken === matchingKey.key)) {
+                return { allowed: true, playbackMode: 'secure_authorized', keyName: matchingKey.name, streamName };
+            }
+            return {
+                allowed: false,
+                playbackMode: 'secure_rejected',
+                reason: `Secure Playback Active for stream "${streamName}". Valid playback token required (?token=...).`
+            };
+        }
+
+        return { allowed: true, playbackMode: 'open', streamName };
+    }
+
+    // Case 2: No active key exists (e.g. key was deleted or never created)
+    if (isGlobalSecure) {
+        // In secure mode, streams on deleted/unregistered keys MUST NOT play
+        return {
+            allowed: false,
+            playbackMode: 'secure_rejected',
+            reason: `Stream "${streamName}" is not authorized or key was deleted. Playback denied.`
+        };
+    }
+
+    // In open mode with no security, allow playback
+    return { allowed: true, playbackMode: 'open', streamName };
+};
+
 module.exports = {
     getSecuritySettings,
+    getSecuritySettingsSync,
     saveSecuritySettings,
     generateRandomKey,
+    authenticatePublishSessionSync,
     authenticatePublishSession,
+    authenticatePlaybackSession,
     releasePublishSession,
     generatePublishUrls,
     activeKeyPublishers,

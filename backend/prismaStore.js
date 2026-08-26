@@ -1,399 +1,228 @@
 const { PrismaClient } = require('@prisma/client');
 const { normalizeUserRole } = require('./securityPolicy');
 
-const toPrismaRole = role => ({ superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER', operator: 'USER', archive: 'USER' })[normalizeUserRole(role)] || 'USER';
-const snakeUser = row => row && ({ id: row.id, username: row.username, password_hash: row.passwordHash, role: normalizeUserRole(row.role), is_active: row.isActive !== false, created_at: row.createdAt });
-const snakeSession = row => row && ({ id: row.id, app: row.app, stream: row.stream, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, max_viewers: row.maxViewers, total_bytes: Number(row.totalBytes), outgoing_bytes: Number(row.outgoingBytes), video_info: row.videoInfo, audio_info: row.audioInfo });
-const snakeRecording = row => row && ({ id: row.id, app: row.app, stream: row.stream, file_path: row.filePath, file_name: row.fileName, start_time: row.startTime?.toISOString?.() || row.startTime, end_time: row.endTime?.toISOString?.() || row.endTime, size: Number(row.size), duration: Number(row.duration) || 0, format: row.format, video_bitrate: row.videoBitrate, audio_bitrate: row.audioBitrate, encoder: row.encoder, resolution: row.resolution, continuous: row.continuous ? 1 : 0, source_type: row.sourceType, settings_json: row.settingsJson });
+const toPrismaRole = role => ({
+  superadmin: 'SUPER_ADMIN', admin: 'ADMIN', user: 'USER', operator: 'USER', archive: 'USER',
+})[normalizeUserRole(role)] || 'USER';
+
+const snakeUser = row => row && ({
+  id: row.id, username: row.username, password_hash: row.passwordHash,
+  role: normalizeUserRole(row.role), is_active: row.isActive !== false, created_at: row.createdAt,
+});
+
+const snakeSession = row => row && ({
+  id: row.id, app: row.app, stream: row.stream,
+  start_time: row.startTime?.toISOString?.() || row.startTime,
+  end_time: row.endTime?.toISOString?.() || row.endTime,
+  max_viewers: row.maxViewers, total_bytes: Number(row.totalBytes),
+  outgoing_bytes: Number(row.outgoingBytes), video_info: row.videoInfo, audio_info: row.audioInfo,
+});
+
+const snakeRecording = row => row && ({
+  id: row.id, app: row.app, stream: row.stream, file_path: row.filePath, file_name: row.fileName,
+  start_time: row.startTime?.toISOString?.() || row.startTime,
+  end_time: row.endTime?.toISOString?.() || row.endTime,
+  size: Number(row.size), duration: Number(row.duration) || 0, format: row.format,
+  video_bitrate: row.videoBitrate, audio_bitrate: row.audioBitrate, encoder: row.encoder,
+  resolution: row.resolution, continuous: row.continuous ? 1 : 0,
+  source_type: row.sourceType, settings_json: row.settingsJson,
+});
 
 class PrismaStore {
   constructor() {
     this.prisma = new PrismaClient();
     this.data = { users: [], kv: [], profiles: [], channels: [], sessions: [], recordings: [] };
-    this.pending = Promise.resolve();
-  }
-
-  // --- First-Class Prisma Async Methods ---
-  async getChannels() {
-    try {
-      const rows = await this.prisma.transcodeChannel.findMany();
-      return rows.map(r => {
-        try { return JSON.parse(r.data); } catch (_) { return { id: r.id, name: r.name }; }
-      }).filter(Boolean);
-    } catch (_) {
-      return this.data.channels.map(r => {
-        try { return JSON.parse(r.data); } catch (_) { return { id: r.id }; }
-      }).filter(Boolean);
-    }
-  }
-
-  async saveChannel(channel) {
-    if (!channel || !channel.id) return;
-    const id = channel.id;
-    const name = channel.name || id;
-    const data = JSON.stringify(channel);
-    const existing = this.data.channels.find(r => r.id === id);
-    if (existing) existing.data = data; else this.data.channels.push({ id, data });
-    return this.prisma.transcodeChannel.upsert({
-      where: { id },
-      update: { name, data },
-      create: { id, name, data }
-    }).catch(e => console.error('[Prisma] saveChannel error:', e.message));
-  }
-
-  async deleteChannel(id) {
-    this.data.channels = this.data.channels.filter(r => r.id !== id);
-    return this.prisma.transcodeChannel.delete({ where: { id } }).catch(() => {});
-  }
-
-  async getProfiles() {
-    try {
-      const rows = await this.prisma.transcodeProfile.findMany();
-      return rows.map(r => {
-        try { return JSON.parse(r.data); } catch (_) { return { id: r.id, name: r.name }; }
-      }).filter(Boolean);
-    } catch (_) {
-      return this.data.profiles.map(r => {
-        try { return JSON.parse(r.data); } catch (_) { return { id: r.id }; }
-      }).filter(Boolean);
-    }
-  }
-
-  async saveProfile(profile) {
-    if (!profile || !profile.id) return;
-    const id = profile.id;
-    const name = profile.name || id;
-    const data = JSON.stringify(profile);
-    const existing = this.data.profiles.find(r => r.id === id);
-    if (existing) existing.data = data; else this.data.profiles.push({ id, data });
-    return this.prisma.transcodeProfile.upsert({
-      where: { id },
-      update: { name, data },
-      create: { id, name, data }
-    }).catch(e => console.error('[Prisma] saveProfile error:', e.message));
-  }
-
-  async deleteProfile(id) {
-    this.data.profiles = this.data.profiles.filter(r => r.id !== id);
-    return this.prisma.transcodeProfile.delete({ where: { id } }).catch(() => {});
-  }
-
-  async getKv(key) {
-    try {
-      const row = await this.prisma.kvStore.findUnique({ where: { key } });
-      if (row) return row.value;
-    } catch (_) {}
-    const mem = this.data.kv.find(r => r.key === key);
-    return mem ? mem.value : null;
-  }
-
-  async setKv(key, value) {
-    const strVal = typeof value === 'string' ? value : JSON.stringify(value);
-    const existing = this.data.kv.find(r => r.key === key);
-    if (existing) existing.value = strVal; else this.data.kv.push({ key, value: strVal });
-    return this.prisma.kvStore.upsert({
-      where: { key },
-      update: { value: strVal },
-      create: { key, value: strVal }
-    }).catch(e => console.error('[Prisma] setKv error:', e.message));
   }
 
   async initialize() {
     await this.prisma.$connect();
-    try {
-      await this.prisma.$executeRawUnsafe('DROP TABLE IF EXISTS `GeneratedLicense`');
-      await this.prisma.$executeRawUnsafe("DELETE FROM `KvStore` WHERE `key` IN ('license', 'system_hwid')");
-    } catch (_) {
-      // Ignore if table/rows do not exist or user lacks drop privileges
-    }
+    await this.prisma.kvStore.deleteMany({ where: { key: { in: ['license', 'system_hwid'] } } }).catch(() => {});
     const [users, kv, profiles, channels, sessions, recordings] = await Promise.all([
-      this.prisma.user.findMany().catch(() => []),
-      this.prisma.kvStore.findMany().catch(() => []),
-      this.prisma.transcodeProfile.findMany().catch(() => []),
-      this.prisma.transcodeChannel.findMany().catch(() => []),
-      this.prisma.streamSession.findMany().catch(() => []),
-      this.prisma.streamRecording.findMany().catch(() => []),
+      this.prisma.user.findMany(), this.prisma.kvStore.findMany(), this.prisma.transcodeProfile.findMany(),
+      this.prisma.transcodeChannel.findMany(), this.prisma.streamSession.findMany(), this.prisma.streamRecording.findMany(),
     ]);
     this.data = {
-      users: users.map(snakeUser),
-      kv: kv.map(row => ({ key: row.key, value: row.value })),
-      profiles: profiles.map(row => ({ id: row.id, data: row.data })),
-      channels: channels.map(row => ({ id: row.id, data: row.data })),
-      sessions: sessions.map(snakeSession),
-      recordings: (() => {
-        const clean = [];
-        const seen = new Set();
-        for (const r of recordings.map(snakeRecording)) {
-          if (!r) continue;
-          const k = r.file_name || r.file_path;
-          if (k && !seen.has(k)) {
-            seen.add(k);
-            clean.push(r);
-          }
-        }
-        return clean;
-      })()
+      users: users.map(snakeUser), kv: kv.map(row => ({ key: row.key, value: row.value })),
+      profiles: profiles.map(row => ({ id: row.id, name: row.name, data: row.data })),
+      channels: channels.map(row => ({ id: row.id, name: row.name, data: row.data })),
+      sessions: sessions.map(snakeSession), recordings: recordings.map(snakeRecording),
     };
   }
 
   async refreshUsers() {
-    const users = await this.prisma.user.findMany();
-    this.data.users = users.map(snakeUser);
+    this.data.users = (await this.prisma.user.findMany()).map(snakeUser);
     return this.data.users;
   }
 
-  persist(task) {
-    this.pending = this.pending.then(task).catch(error => console.error('[Prisma Persistence Error]', error.message || error));
-    return this.pending;
+  listUsers() { return [...this.data.users]; }
+  findUserByUsername(username) { return this.data.users.find(row => row.username === username); }
+  findUserById(id) { return this.data.users.find(row => Number(row.id) === Number(id)); }
+
+  async createUser({ username, passwordHash, role }) {
+    const user = await this.prisma.user.create({
+      data: { username, email: `${username}@kashtrix.local`, passwordHash, role: toPrismaRole(role) },
+    });
+    const row = snakeUser(user);
+    this.data.users.push(row);
+    return row;
   }
 
-  prepare(sql) {
-    const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase();
-    return {
-      all: (...args) => this.all(normalized, args),
-      get: (...args) => this.get(normalized, args),
-      run: (...args) => this.run(normalized, args),
-    };
+  async updateUser(id, { username, passwordHash, role }) {
+    if (!this.findUserById(id)) return null;
+    const user = await this.prisma.user.update({
+      where: { id: Number(id) },
+      data: {
+        ...(username !== undefined ? { username, email: `${username}@kashtrix.local` } : {}),
+        ...(passwordHash !== undefined ? { passwordHash } : {}),
+        ...(role !== undefined ? { role: toPrismaRole(role) } : {}),
+      },
+    });
+    const row = snakeUser(user);
+    this.data.users = this.data.users.map(item => Number(item.id) === Number(id) ? row : item);
+    return row;
   }
 
-  all(sql, args) {
-    if (sql.includes('from users')) return [...this.data.users];
-    if (sql.includes('from profiles')) return [...this.data.profiles];
-    if (sql.includes('from channels')) return [...this.data.channels];
-    if (sql.includes('from stream_sessions')) return [...this.data.sessions].sort((a,b) => new Date(b.start_time || 0) - new Date(a.start_time || 0)).slice(0, sql.includes('limit 8') ? 8 : 100);
-    if (sql.includes('from stream_recordings')) {
-      let rows = [...this.data.recordings];
-      if (sql.includes('where end_time is not null')) {
-        rows = rows.filter(row => row.end_time != null);
-      }
-      const limit = args[0] || (sql.includes('limit 8') ? 8 : undefined);
-      return rows.sort((a,b) => new Date(b.start_time || 0) - new Date(a.start_time || 0)).slice(0, limit);
-    }
-    return [];
+  async deleteUser(id) {
+    await this.prisma.user.delete({ where: { id: Number(id) } });
+    this.data.users = this.data.users.filter(row => Number(row.id) !== Number(id));
   }
 
-  get(sql, args) {
-    if (sql.includes('count(*)') && sql.includes('from users')) return { count: this.data.users.length };
-    if (sql.includes('count(*)') && sql.includes('from profiles')) return { count: this.data.profiles.length };
-    if (sql.includes('from users where username')) return this.data.users.find(row => row.username === args[0]);
-    if (sql.includes('from users where id')) return this.data.users.find(row => Number(row.id) === Number(args[0]));
-    if (sql.includes('from kv_store')) return this.data.kv.find(row => row.key === args[0]);
-    if (sql.includes('from stream_recordings where id')) return this.data.recordings.find(row => Number(row.id) === Number(args[0]));
-    if (sql.includes('from stream_recordings where file_name')) return this.data.recordings.find(row => row.file_name === args[0] || (row.file_path && row.file_path.endsWith(args[0])));
-    if (sql.includes('from stream_recordings where file_path')) return this.data.recordings.find(row => row.file_path === args[0]);
-    if (sql.includes('count(*)') && sql.includes('stream_recordings')) return { total: this.data.recordings.length, bytes: this.data.recordings.reduce((sum,row) => sum + Number(row.size || 0), 0) };
-    if (sql.includes('count(*)') && sql.includes('stream_sessions')) return { total: this.data.sessions.length, incoming_bytes: this.data.sessions.reduce((sum,row) => sum + Number(row.total_bytes || 0), 0), outgoing_bytes: this.data.sessions.reduce((sum,row) => sum + Number(row.outgoing_bytes || 0), 0), viewers: this.data.sessions.reduce((sum,row) => sum + Number(row.max_viewers || 0), 0) };
-    return undefined;
+  async getChannels() {
+    const rows = await this.prisma.transcodeChannel.findMany();
+    this.data.channels = rows.map(row => ({ id: row.id, name: row.name, data: row.data }));
+    return rows.map(row => {
+      try { return JSON.parse(row.data); } catch (_) { return { id: row.id, name: row.name }; }
+    });
   }
 
-  run(sql, args) {
-    if (sql.startsWith('insert into users')) {
-      const [username, password_hash, role] = args;
-      const id = Math.max(0, ...this.data.users.map(r => Number(r.id) || 0)) + 1;
-      const normalizedRole = normalizeUserRole(role);
-      const newUser = { id, username, password_hash, role: normalizedRole, created_at: new Date() };
-      this.data.users.push(newUser);
-      this.persist(() => this.prisma.user.create({
-        data: { id, username, email: `${username}@kashtrix.local`, passwordHash: password_hash, role: toPrismaRole(normalizedRole) }
-      }));
-      return { lastInsertRowid: id };
-    }
+  async saveChannel(channel) {
+    if (!channel?.id) throw new Error('Channel id is required');
+    const id = String(channel.id), name = String(channel.name || id), data = JSON.stringify(channel);
+    await this.prisma.transcodeChannel.upsert({ where: { id }, update: { name, data }, create: { id, name, data } });
+    const row = this.data.channels.find(item => item.id === id);
+    if (row) Object.assign(row, { name, data }); else this.data.channels.push({ id, name, data });
+  }
 
-    if (sql.startsWith('update users set')) {
-      let row = null;
-      if (sql.includes('where username =')) {
-        const targetUsername = args[args.length - 1];
-        row = this.data.users.find(r => r.username === targetUsername);
-        if (row) {
-          if (args.length >= 2) row.username = args[0];
-          if (args.length >= 3) row.password_hash = args[1];
-        }
-      } else {
-        const targetId = Number(args[args.length - 1]);
-        row = this.data.users.find(r => Number(r.id) === targetId);
-        if (row) {
-          if (args.length >= 2) row.username = args[0];
-          if (args.length >= 3) row.password_hash = args[1];
-          if (args.length >= 4) row.role = normalizeUserRole(args[2]);
-        }
-      }
-      if (row) {
-        this.persist(() => this.prisma.user.update({
-          where: { id: row.id },
-          data: { username: row.username, passwordHash: row.password_hash, role: toPrismaRole(row.role) }
-        }).catch(e => console.error('[Prisma] update user error:', e.message)));
-      }
-      return {};
-    }
+  async deleteChannel(id) {
+    await this.prisma.transcodeChannel.delete({ where: { id: String(id) } }).catch(() => {});
+    this.data.channels = this.data.channels.filter(row => row.id !== String(id));
+  }
 
-    if (sql.startsWith('delete from users')) {
-      const targetId = Number(args[0]);
-      this.data.users = this.data.users.filter(r => Number(r.id) !== targetId);
-      this.persist(() => this.prisma.user.delete({ where: { id: targetId } }).catch(e => console.error('[Prisma] delete user error:', e.message)));
-      return {};
-    }
+  async getProfiles() {
+    const rows = await this.prisma.transcodeProfile.findMany();
+    this.data.profiles = rows.map(row => ({ id: row.id, name: row.name, data: row.data }));
+    return rows.map(row => {
+      try { return JSON.parse(row.data); } catch (_) { return { id: row.id, name: row.name }; }
+    });
+  }
 
-    if (sql.startsWith('insert into kv_store')) {
-      const [key, value] = args;
-      const row = this.data.kv.find(r => r.key === key);
-      row ? row.value = value : this.data.kv.push({ key, value });
-      this.persist(() => this.prisma.kvStore.upsert({ where: { key }, update: { value }, create: { key, value } }));
-      return {};
-    }
+  async seedProfiles(profiles) {
+    if (await this.prisma.transcodeProfile.count()) return;
+    await this.prisma.$transaction(profiles.map(profile => this.prisma.transcodeProfile.create({
+      data: { id: String(profile.id), name: String(profile.name || profile.id), data: JSON.stringify(profile) },
+    })));
+    await this.getProfiles();
+  }
 
-    if (sql.startsWith('insert into profiles')) {
-      const [id, data] = args;
-      const row = this.data.profiles.find(r => r.id === id);
-      row ? row.data = data : this.data.profiles.push({ id, data });
-      let name = id; try { name = JSON.parse(data).name || id; } catch {}
-      this.persist(() => this.prisma.transcodeProfile.upsert({ where: { id }, update: { name, data }, create: { id, name, data } }));
-      return {};
-    }
+  async saveProfile(profile) {
+    if (!profile?.id) throw new Error('Profile id is required');
+    const id = String(profile.id), name = String(profile.name || id), data = JSON.stringify(profile);
+    await this.prisma.transcodeProfile.upsert({ where: { id }, update: { name, data }, create: { id, name, data } });
+    const row = this.data.profiles.find(item => item.id === id);
+    if (row) Object.assign(row, { name, data }); else this.data.profiles.push({ id, name, data });
+  }
 
-    if (sql.startsWith('delete from profiles')) {
-      const id = args[0];
-      this.data.profiles = this.data.profiles.filter(r => r.id !== id);
-      this.persist(() => this.prisma.transcodeProfile.delete({ where: { id } }).catch(() => {}));
-      return {};
-    }
+  async deleteProfile(id) {
+    await this.prisma.transcodeProfile.delete({ where: { id: String(id) } }).catch(() => {});
+    this.data.profiles = this.data.profiles.filter(row => row.id !== String(id));
+  }
 
-    if (sql.startsWith('insert into channels')) {
-      const [id, data] = args;
-      const row = this.data.channels.find(r => r.id === id);
-      row ? row.data = data : this.data.channels.push({ id, data });
-      let name = id; try { name = JSON.parse(data).name || id; } catch {}
-      this.persist(() => this.prisma.transcodeChannel.upsert({ where: { id }, update: { name, data }, create: { id, name, data } }));
-      return {};
-    }
+  async getKv(key) {
+    const row = await this.prisma.kvStore.findUnique({ where: { key } });
+    return row?.value ?? this.data.kv.find(item => item.key === key)?.value ?? null;
+  }
 
-    if (sql.startsWith('delete from channels where')) {
-      const id = args[0];
-      this.data.channels = this.data.channels.filter(r => r.id !== id);
-      this.persist(() => this.prisma.transcodeChannel.delete({ where: { id } }).catch(() => {}));
-      return {};
-    }
+  async setKv(key, value) {
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    await this.prisma.kvStore.upsert({ where: { key }, update: { value: stringValue }, create: { key, value: stringValue } });
+    const row = this.data.kv.find(item => item.key === key);
+    if (row) row.value = stringValue; else this.data.kv.push({ key, value: stringValue });
+  }
 
-    if (sql === 'delete from channels') {
-      this.data.channels = [];
-      this.persist(() => this.prisma.transcodeChannel.deleteMany().catch(() => {}));
-      return {};
-    }
+  listRecordings(limit = 100) {
+    return [...this.data.recordings].sort((a, b) => new Date(b.start_time || 0) - new Date(a.start_time || 0)).slice(0, limit);
+  }
+  findRecordingById(id) { return this.data.recordings.find(row => Number(row.id) === Number(id)); }
+  findRecordingByFileName(fileName) { return [...this.data.recordings].reverse().find(row => row.file_name === fileName); }
+  findRecordingByPath(filePath) { return this.data.recordings.find(row => row.file_path === filePath); }
 
-    if (sql.startsWith('insert into stream_recordings')) {
-      const isAutoInsert = sql.includes('end_time') && sql.includes('size');
-      let app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, duration, settings_json;
-      if (isAutoInsert) {
-        if (sql.includes('duration')) {
-          [app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, duration, settings_json] = args;
-        } else {
-          [app, stream, file_path, file_name, start_time, end_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, size, settings_json] = args;
-        }
-      } else {
-        [app, stream, file_path, file_name, start_time, format, video_bitrate, audio_bitrate, encoder, resolution, continuous, source_type, settings_json] = args;
-        end_time = null;
-        size = 0;
-        duration = 0;
-      }
-      const existing = this.data.recordings.find(r => r.file_name === file_name || (file_path && r.file_path === file_path));
-      if (existing) return { lastInsertRowid: existing.id };
+  async createRecording(input) {
+    const existing = this.findRecordingByFileName(input.fileName) || this.findRecordingByPath(input.filePath);
+    if (existing) return existing;
+    const created = await this.prisma.streamRecording.create({
+      data: {
+        app: input.app, stream: input.stream, filePath: input.filePath, fileName: input.fileName,
+        startTime: new Date(input.startTime), endTime: input.endTime ? new Date(input.endTime) : null,
+        size: BigInt(input.size || 0), duration: Number(input.duration) || 0, format: input.format || 'mp4',
+        videoBitrate: Number(input.videoBitrate) || 0, audioBitrate: Number(input.audioBitrate) || 0,
+        encoder: input.encoder || 'copy', resolution: input.resolution || null, continuous: !!input.continuous,
+        sourceType: input.sourceType || 'ingest', settingsJson: input.settingsJson || null,
+      },
+    });
+    const row = snakeRecording(created);
+    this.data.recordings.push(row);
+    return row;
+  }
 
-      const id = Math.max(0, ...this.data.recordings.map(r => Number(r.id) || 0)) + 1;
-      const row = { id, app, stream, file_path, file_name, start_time, end_time: end_time || null, size: Number(size) || 0, duration: Number(duration) || 0, format, video_bitrate: Number(video_bitrate) || 50000, audio_bitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: continuous ? 1 : 0, source_type: source_type || 'device', settings_json };
-      this.data.recordings.push(row);
-      this.persist(() => this.prisma.streamRecording.create({
-        data: { id, app, stream, filePath: file_path, fileName: file_name, startTime: new Date(start_time), endTime: end_time ? new Date(end_time) : null, size: BigInt(size || 0), duration: Number(duration) || 0, format, videoBitrate: Number(video_bitrate) || 50000, audioBitrate: Number(audio_bitrate) || 192, encoder: encoder || 'nvidia', resolution: resolution || 'source', continuous: !!continuous, sourceType: source_type || 'device', settingsJson: settings_json }
-      }).catch(() => {}));
-      return { lastInsertRowid: id };
-    }
+  async updateRecording(id, updates, options = {}) {
+    const existing = this.findRecordingById(id);
+    if (!existing || (options.onlyIfOpen && existing.end_time)) return existing || null;
+    const data = {};
+    if (updates.endTime !== undefined) data.endTime = updates.endTime ? new Date(updates.endTime) : null;
+    if (updates.size !== undefined) data.size = BigInt(updates.size || 0);
+    if (updates.duration !== undefined) data.duration = Number(updates.duration) || 0;
+    const updated = await this.prisma.streamRecording.update({ where: { id: Number(id) }, data });
+    const row = snakeRecording(updated);
+    this.data.recordings = this.data.recordings.map(item => Number(item.id) === Number(id) ? row : item);
+    return row;
+  }
 
-    if (sql.startsWith('delete from stream_recordings')) {
-      const id = Number(args[0]);
-      this.data.recordings = this.data.recordings.filter(r => Number(r.id) !== id);
-      this.persist(() => this.prisma.streamRecording.delete({ where: { id } }).catch(() => {}));
-      return {};
-    }
+  async deleteRecording(id) {
+    await this.prisma.streamRecording.delete({ where: { id: Number(id) } }).catch(() => {});
+    this.data.recordings = this.data.recordings.filter(row => Number(row.id) !== Number(id));
+  }
 
-    if (sql.startsWith('update stream_recordings set end_time = null')) {
-      const id = Number(args[0]);
-      const row = this.data.recordings.find(r => Number(r.id) === id);
-      if (row) row.end_time = null;
-      this.persist(() => this.prisma.streamRecording.update({ where: { id }, data: { endTime: null } }).catch(() => {}));
-      return {};
-    }
+  listSessions(limit = 100) {
+    return [...this.data.sessions].sort((a, b) => new Date(b.start_time || 0) - new Date(a.start_time || 0)).slice(0, limit);
+  }
 
-    if (sql.startsWith('update stream_recordings set end_time')) {
-      const hasCoalesce = sql.includes('coalesce');
-      const updatesSize = sql.includes('size =');
-      const updatesDuration = sql.includes('duration =');
-      const [end, size, duration, idValue] = updatesSize && updatesDuration
-        ? args
-        : updatesSize
-          ? [args[0], args[1], undefined, args[2]]
-          : [args[0], undefined, undefined, args[1]];
-      const id = Number(idValue);
-      const row = this.data.recordings.find(r => Number(r.id) === id);
-      if (row) {
-        if (!hasCoalesce || !row.end_time) row.end_time = end;
-        if (updatesSize) row.size = Number(size);
-        if (updatesDuration) row.duration = Number(duration) || 0;
-      }
-      const updateData = { endTime: new Date(end) };
-      if (updatesSize) updateData.size = BigInt(size);
-      if (updatesDuration) updateData.duration = Number(duration) || 0;
-      this.persist(() => this.prisma.streamRecording.update({
-        where: { id },
-        data: updateData
-      }).catch(() => {}));
-      return {};
-    }
+  async createSession({ app, stream, startTime }) {
+    const created = await this.prisma.streamSession.create({ data: { app, stream, startTime: new Date(startTime) } });
+    const row = snakeSession(created);
+    this.data.sessions.push(row);
+    return row;
+  }
 
-    if (sql.startsWith('update stream_recordings set duration')) {
-      const [duration, size, idValue] = sql.includes('size =') ? args : [args[0], undefined, args[1]];
-      const id = Number(idValue);
-      const row = this.data.recordings.find(r => Number(r.id) === id);
-      if (row) {
-        row.duration = Number(duration) || 0;
-        if (size !== undefined) row.size = Number(size) || 0;
-      }
-      const data = { duration: Number(duration) || 0 };
-      if (size !== undefined) data.size = BigInt(size || 0);
-      this.persist(() => this.prisma.streamRecording.update({ where: { id }, data }).catch(() => {}));
-      return {};
-    }
+  async updateSession(id, updates) {
+    const existing = this.data.sessions.find(row => Number(row.id) === Number(id));
+    if (!existing) return null;
+    const data = {};
+    if (updates.endTime !== undefined) data.endTime = updates.endTime ? new Date(updates.endTime) : null;
+    if (updates.maxViewers !== undefined) data.maxViewers = Math.max(Number(existing.max_viewers) || 0, Number(updates.maxViewers) || 0);
+    if (updates.totalBytes !== undefined) data.totalBytes = BigInt(updates.totalBytes || 0);
+    if (updates.outgoingBytes !== undefined) data.outgoingBytes = BigInt(updates.outgoingBytes || 0);
+    if (updates.videoInfo != null) data.videoInfo = updates.videoInfo;
+    if (updates.audioInfo != null) data.audioInfo = updates.audioInfo;
+    const updated = await this.prisma.streamSession.update({ where: { id: Number(id) }, data });
+    const row = snakeSession(updated);
+    this.data.sessions = this.data.sessions.map(item => Number(item.id) === Number(id) ? row : item);
+    return row;
+  }
 
-    if (sql.startsWith('insert into stream_sessions')) {
-      const [app, stream, start_time] = args;
-      const id = Math.max(0, ...this.data.sessions.map(r => Number(r.id) || 0)) + 1;
-      this.data.sessions.push({ id, app, stream, start_time, end_time: null, max_viewers: 0, total_bytes: 0, outgoing_bytes: 0, video_info: null, audio_info: null });
-      this.persist(() => this.prisma.streamSession.create({ data: { id, app, stream, startTime: new Date(start_time) } }));
-      return { lastInsertRowid: id };
-    }
-
-    if (sql.startsWith('update stream_sessions set max_viewers')) {
-      const [viewers, total, outgoing, video, audio, idValue] = args;
-      const id = Number(idValue);
-      const row = this.data.sessions.find(r => Number(r.id) === id);
-      if (row) Object.assign(row, { max_viewers: Math.max(row.max_viewers || 0, Number(viewers)), total_bytes: Number(total), outgoing_bytes: Number(outgoing), video_info: video, audio_info: audio });
-      this.persist(() => this.prisma.streamSession.update({ where: { id }, data: { maxViewers: row.max_viewers, totalBytes: BigInt(total), outgoingBytes: BigInt(outgoing), videoInfo: video, audioInfo: audio } }).catch(() => {}));
-      return {};
-    }
-
-    if (sql.startsWith('update stream_sessions set end_time')) {
-      const [end, idValue] = args;
-      if (sql.includes('where id')) {
-        const id = Number(idValue);
-        const row = this.data.sessions.find(r => Number(r.id) === id);
-        if (row) row.end_time = end;
-        this.persist(() => this.prisma.streamSession.update({ where: { id }, data: { endTime: new Date(end) } }).catch(() => {}));
-      } else {
-        this.data.sessions.filter(r => !r.end_time).forEach(r => r.end_time = end);
-        this.persist(() => this.prisma.streamSession.updateMany({ where: { endTime: null }, data: { endTime: new Date(end) } }).catch(() => {}));
-      }
-      return {};
-    }
-
-    console.warn(`[PrismaStore] Unhandled SQL query (fallback executed): ${sql}`);
-    return {};
+  async closeSessionsByStream(app, stream, endTime) {
+    await this.prisma.streamSession.updateMany({ where: { app, stream, endTime: null }, data: { endTime: new Date(endTime) } });
+    this.data.sessions.filter(row => row.app === app && row.stream === stream && !row.end_time)
+      .forEach(row => { row.end_time = endTime; });
   }
 }
 

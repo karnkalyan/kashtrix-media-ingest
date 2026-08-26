@@ -10,9 +10,13 @@
     "db:generate": "npm --prefix backend run prisma:generate",
     "db:push": "npm --prefix backend run db:push",
     "db:migrate-sqlite": "npm --prefix backend run db:migrate-sqlite",
+    "update": "node scripts/kashtrix-streamops-update.cjs",
     "build": "vite build",
     "preview": "vite preview",
     "start": "node backend/server.js"
+  },
+  "bin": {
+    "kashtrix-streamops": "./scripts/kashtrix-streamops-update.cjs"
   },
   "dependencies": {
     "@google/genai": "^1.20.0",
