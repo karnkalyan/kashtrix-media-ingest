@@ -698,8 +698,8 @@ const AccountView: React.FC<{
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (newPassword && newPassword.length < 12)
-      return toast.error("New password must be at least 12 characters");
+    if (newPassword && newPassword.length < 4)
+      return toast.error("New password must be at least 4 characters");
     setSaving(true);
     try {
       await onSave({

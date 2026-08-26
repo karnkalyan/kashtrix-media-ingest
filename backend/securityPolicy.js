@@ -64,7 +64,7 @@ const createTokenCodec = secret => {
 };
 
 const legacyPasswordHash = password => crypto.createHash('sha256').update(`kte:${password}`).digest('hex');
-const isStrongPassword = password => String(password || '').length >= 12;
+const isStrongPassword = password => String(password || '').trim().length >= 4;
 const passwordNeedsUpgrade = hash => !/^\$2[aby]\$/.test(String(hash || ''));
 const hashPassword = password => bcrypt.hashSync(String(password || ''), 12);
 const verifyPassword = (password, storedHash) => {

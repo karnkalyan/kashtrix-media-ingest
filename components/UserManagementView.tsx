@@ -88,7 +88,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
   const saveUser = async () => {
     if (!formUsername.trim()) return toast.error('Username is required');
     if (!editingUser && !formPassword) return toast.error('Password is required for new users');
-    if (formPassword && formPassword.length < 12) return toast.error('Password must be at least 12 characters');
+    if (formPassword && formPassword.length < 4) return toast.error('Password must be at least 4 characters');
 
     setSubmitting(true);
     try {
@@ -349,7 +349,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
               type="password"
               value={formPassword}
               onChange={e => setFormPassword(e.target.value)}
-              minLength={12}
+              minLength={4}
               placeholder={editingUser ? '••••••••' : 'Enter account password'}
               className="h-9 w-full rounded-md border border-[#E8DFF0] bg-white px-3 font-sans text-[12px] text-[#1B1024] outline-none focus:border-[#4A1B7A] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
             />

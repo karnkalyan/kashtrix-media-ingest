@@ -1153,7 +1153,7 @@ app.put('/api/auth/account', authMiddleware, (req, res) => {
     }
     const nextUsername = String(username || currentUser.username).trim();
     if (!nextUsername) return res.status(400).json({ error: 'Username is required' });
-    if (newPassword && !isStrongPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 12 characters' });
+    if (newPassword && !isStrongPassword(newPassword)) return res.status(400).json({ error: 'New password must be at least 4 characters' });
     const nextHash = newPassword
         ? hashPassword(newPassword)
         : (passwordNeedsUpgrade(currentUser.password_hash) ? hashPassword(currentPassword) : currentUser.password_hash);
@@ -3014,6 +3014,18 @@ const probeRecordedMediaSync = (filePath, stat) => {
     }
 };
 
+let captureDeviceCache = { devices: [] };
+const resolveFriendlyDeviceName = (deviceList, rawDevice) => {
+    if (!rawDevice) return '';
+    if (!Array.isArray(deviceList) || deviceList.length === 0) return String(rawDevice);
+    const found = deviceList.find(d => 
+        (typeof d === 'string' && d === rawDevice) ||
+        (d && (d.id === rawDevice || d.name === rawDevice || d.deviceName === rawDevice || d.device_name === rawDevice))
+    );
+    if (!found) return String(rawDevice);
+    return typeof found === 'string' ? found : (found.name || found.deviceName || found.device_name || found.id || String(rawDevice));
+};
+
 const listRecordings = (limit = 50) => {
     const rows = db.prepare('SELECT * FROM stream_recordings ORDER BY start_time DESC LIMIT ?').all(limit);
     const now = Date.now();
@@ -3042,7 +3054,6 @@ const listRecordings = (limit = 50) => {
         const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id));
         if (session && output) {
             let size = 0;
-            try { if (fs.existsSync(output.filePath)) size = fs.statSync(output.filePath).size; } catch (e) { }
             const startTimeMs = new Date(row.start_time || session.startTime || now).getTime();
             const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
             return {
@@ -3783,6 +3794,8 @@ app.get(['/api/system/stats', '/api/systeminfo', '/api/diagnostics/system'], asy
 });
 
 // === USER MANAGEMENT ENDPOINTS ===
+const canManageUsers = requireRole('admin');
+
 const handleGetUsers = (req, res) => {
     try {
         const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
@@ -3796,7 +3809,7 @@ const handleCreateUser = (req, res) => {
     try {
         const { username, password, role } = req.body || {};
         if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-        if (!isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 12 characters' });
+        if (!isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 4 characters' });
         const nextRole = parseManagedRole(role);
         if (!nextRole) {
             return res.status(400).json({ error: 'Role must be admin, operator, archive, or user' });
@@ -3811,12 +3824,6 @@ const handleCreateUser = (req, res) => {
     }
 };
 
-const canManageUsers = requireRole('admin');
-app.get('/api/users', authMiddleware, canManageUsers, handleGetUsers);
-app.get('/api/users/', authMiddleware, canManageUsers, handleGetUsers);
-app.post('/api/users', authMiddleware, canManageUsers, handleCreateUser);
-app.post('/api/users/', authMiddleware, canManageUsers, handleCreateUser);
-
 const handleUpdateUser = (req, res) => {
     try {
         const { id } = req.params;
@@ -3826,7 +3833,7 @@ const handleUpdateUser = (req, res) => {
         if (normalizeUserRole(user.role) === 'superadmin') {
             return res.status(403).json({ error: 'Superadmin credentials must be changed from the account profile' });
         }
-        if (password && !isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 12 characters' });
+        if (password && !isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 4 characters' });
         const nextUsername = username || user.username;
         const nextHash = password ? hashPassword(password) : user.password_hash;
         const nextRole = parseManagedRole(role || user.role);
@@ -3838,6 +3845,10 @@ const handleUpdateUser = (req, res) => {
     }
 };
 
+app.get('/api/users', authMiddleware, canManageUsers, handleGetUsers);
+app.get('/api/users/', authMiddleware, canManageUsers, handleGetUsers);
+app.post('/api/users', authMiddleware, canManageUsers, handleCreateUser);
+app.post('/api/users/', authMiddleware, canManageUsers, handleCreateUser);
 app.put('/api/users/:id', authMiddleware, canManageUsers, handleUpdateUser);
 app.put('/api/users/:id/', authMiddleware, canManageUsers, handleUpdateUser);
 

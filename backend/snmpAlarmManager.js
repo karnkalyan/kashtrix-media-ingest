@@ -5,13 +5,15 @@ const dgram = require('dgram');
  */
 const initSnmpAlarmStorage = (db) => {
     try {
-        db.exec(`
-            CREATE TABLE IF NOT EXISTS system_alarms_config (
-                key TEXT PRIMARY KEY,
-                data TEXT NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+        if (db && typeof db.exec === 'function') {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS system_alarms_config (
+                    key TEXT PRIMARY KEY,
+                    data TEXT NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+        }
     } catch (e) {
         console.warn('[SnmpAlarmManager] DB Init warn:', e.message);
     }

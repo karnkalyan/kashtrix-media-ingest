@@ -25,13 +25,15 @@ const runCommand = (cmd, timeout = 4000) => {
  */
 const initNetworkStorage = (db) => {
     try {
-        db.exec(`
-            CREATE TABLE IF NOT EXISTS system_network_config (
-                key TEXT PRIMARY KEY,
-                data TEXT NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+        if (db && typeof db.exec === 'function') {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS system_network_config (
+                    key TEXT PRIMARY KEY,
+                    data TEXT NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+        }
     } catch (e) {
         console.warn('[NetworkManager] DB Init warn:', e.message);
     }
