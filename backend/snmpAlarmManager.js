@@ -45,9 +45,33 @@ const setStoredConfig = (db, key, value) => {
 };
 
 /**
+ * Get SNMP & Alarms configuration.
+ */
+const getSnmpAlarmSettings = (db) => {
+    const snmp = getStoredConfig(db, 'snmp_config', {
+        readCommunity: 'public',
+        writeCommunity: 'private',
+        enableTraps: true,
+        trapReceivers: ['172.18.100.200:162', '', '']
+    });
+
+    const defaultAlarms = [
+        { id: 'alarm_loss_of_signal', name: 'Loss of Input Signal', severity: 'Critical', snmpTrap: true, emailAlert: false, enabled: true },
+        { id: 'alarm_high_cpu', name: 'High CPU Usage (>90%)', severity: 'Major', snmpTrap: true, emailAlert: false, enabled: true },
+        { id: 'alarm_storage_full', name: 'Disk Storage Low (<10%)', severity: 'Major', snmpTrap: true, emailAlert: false, enabled: true },
+        { id: 'alarm_pid_drop', name: 'MPEG-TS PID Continuity Error', severity: 'Minor', snmpTrap: true, emailAlert: false, enabled: true },
+        { id: 'alarm_mux_overcapacity', name: 'MPTS MUX Overcapacity', severity: 'Critical', snmpTrap: true, emailAlert: false, enabled: true }
+    ];
+
+    const alarms = getStoredConfig(db, 'alarm_rules', defaultAlarms);
+
+    return { snmp, alarms };
+};
+
+/**
  * Save SNMP & Alarms configuration.
  */
-const saveSnmpAlarmSettings = (db, payload) => {
+const saveSnmpAlarmSettings = (db, payload = {}) => {
     if (payload.snmp) {
         const snmp = {
             readCommunity: (payload.snmp.readCommunity || 'public').trim(),
