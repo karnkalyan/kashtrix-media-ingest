@@ -394,7 +394,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               System Administration & Broadcast Architecture
             </h1>
             <span className="rounded-md bg-purple-100 border border-purple-200 px-2 py-0.5 text-[10px] font-bold text-[#7C3AED] dark:bg-[#311754] dark:border-[#522588] dark:text-[#E2D1F9]">
-              Titan Live / Mux Architecture
+              Enterprise StreamOps Architecture
             </span>
           </div>
           <p className="text-xs text-[#6F6078] dark:text-[#B9A5CD]">
@@ -422,7 +422,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
         </div>
       </div>
 
-      {/* 9 Sub-Navigation Tabs matching Titan Live UI */}
+      {/* Sub-Navigation Tabs */}
       <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[#E8DFF0] bg-white p-1.5 shadow-2xs dark:bg-[#190E28] dark:border-[#311B4E]">
         {[
           { id: 'physical', label: 'Physical Interfaces', icon: Network },

@@ -424,7 +424,7 @@ export interface ConversionJob {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   NETWORK & SYSTEM MANAGEMENT (TITAN ARCHITECTURE)
+   NETWORK & SYSTEM MANAGEMENT
    ══════════════════════════════════════════════════════════════════════ */
 
 export interface PhysicalInterface {

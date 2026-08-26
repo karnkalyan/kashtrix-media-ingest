@@ -1222,7 +1222,7 @@ const navItems: NavItem[] = [
     group: "System & Admin",
     iconColor: "text-[#0284C7]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(2,132,199,0.45)]",
-    badge: "NIC/TITAN",
+    badge: "NET/SYS",
     badgeColor: "bg-[#0284C7]",
     allowedRoles: ["superadmin", "admin"],
   },

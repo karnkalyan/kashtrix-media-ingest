@@ -555,7 +555,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
         </div>
       )}
 
-      {/* Active Broadcast Services & Channels Multiviewer (Titan Live / Mux Style) */}
+      {/* Active Broadcast Services & Channels Multiviewer */}
       <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs space-y-3 dark:bg-[#190E28] dark:border-[#311B4E]">
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
           <div>
@@ -623,7 +623,7 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
             </div>
           </div>
         ) : servicesViewMode === 'thumbnails' ? (
-          /* Multiviewer Thumbnail Grid (Titan Live Look) */
+          /* Multiviewer Thumbnail Grid */
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {activeServices.map(svc => (
               <div
