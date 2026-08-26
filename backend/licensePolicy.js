@@ -6,6 +6,8 @@ const MODULES = Object.freeze({
   VOD_PLAYOUT: 'VOD_PLAYOUT',
   RECORDING_DEVICES: 'RECORDING_DEVICES',
   TRANSCODE_QUEUE_ITEMS: 'TRANSCODE_QUEUE_ITEMS',
+  MUX: 'MUX',
+  MPTS_MUX: 'MPTS_MUX',
 });
 
 const canonicalModule = value => String(value || '')
@@ -40,6 +42,7 @@ const toUiFeatures = modules => {
   if (normalized.includes(MODULES.STREAMOPS)) features.push('streamops');
   if (normalized.includes(MODULES.VOD_PLAYOUT)) features.push('vod-playout');
   if (normalized.includes(MODULES.TRANSCODE_QUEUE_ITEMS)) features.push('transcode');
+  if (normalized.includes(MODULES.MUX) || normalized.includes(MODULES.MPTS_MUX) || normalized.includes(MODULES.STREAMOPS)) features.push('mux');
   return features;
 };
 

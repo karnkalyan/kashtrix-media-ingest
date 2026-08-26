@@ -115,12 +115,6 @@ const isUncompressedMaster = (recording: any): boolean => {
 
 const getRecordingUrl = (item: any): string => {
   if (!item) return '';
-  const fmt = getRecordingFormat(item);
-  if (fmt === 'mp4' || fmt === 'webm') {
-    if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
-    const fileName = item.file_name || item.stream;
-    if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
-  }
   if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
   const fileName = item.file_name || item.stream;
   return `/recording-preview/${encodeURIComponent(fileName || '')}`;

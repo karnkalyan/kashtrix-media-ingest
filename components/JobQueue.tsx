@@ -402,6 +402,16 @@ export const ChannelDashboard: React.FC<Props> = ({
                           >
                             <Eye size={13} />
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toast.success(`Channel "${channel.name}" available in MPTS MUX module.`, { icon: '📡' });
+                            }}
+                            className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#F4EEFF] hover:text-[#6D32D9] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#E2D1F9] dark:hover:bg-[#2D1A45]"
+                            title="Multiplex into MPTS MUX"
+                          >
+                            <Layers size={13} />
+                          </button>
                           {canViewTerminal && (
                             <button
                               type="button"

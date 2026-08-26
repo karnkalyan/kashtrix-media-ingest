@@ -177,8 +177,8 @@ export const Configurator: React.FC<Props> = ({
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [videoDevice, setVideoDevice] = useState('');
   const [audioDevice, setAudioDevice] = useState('');
-  const [videoInput, setVideoInput] = useState('hdmi');
-  const [formatCode, setFormatCode] = useState('');
+  const [videoInput, setVideoInput] = useState('sdi');
+  const [formatCode, setFormatCode] = useState('Hi50');
   const [liveStreams, setLiveStreams] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [decklinkDevicesList, setDecklinkDevicesList] = useState<{id: string; name: string}[]>([]);
@@ -208,8 +208,8 @@ export const Configurator: React.FC<Props> = ({
         const [rawBase, rawQuery] = cleanInputUrl.replace('device://', '').split('?');
         if (rawQuery) {
           const params = new URLSearchParams(rawQuery);
-          if (params.get('video_input')) setVideoInput(params.get('video_input') || 'hdmi');
-          if (params.get('format_code')) setFormatCode(params.get('format_code') || '');
+          if (params.get('video_input')) setVideoInput(params.get('video_input') || 'sdi');
+          if (params.get('format_code')) setFormatCode(params.get('format_code') || 'Hi50');
         }
         if (rawBase.includes('+')) {
           const parts = rawBase.split('+');
@@ -817,6 +817,142 @@ export const Configurator: React.FC<Props> = ({
                     readOnly={false}
                     onChange={url => setDestination(dest.id, { url })}
                   />
+                )}
+
+                {(dest.protocol === Protocol.UDP || dest.protocol === Protocol.HTTP_TS) && (
+                  <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 space-y-2.5 dark:bg-[#1A0F26] dark:border-[#371F59]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C3AED] dark:text-[#C4B5FD]">
+                        DVB Standard MPEG-TS Parameters
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-[#7C3AED] dark:bg-[#311754] dark:text-[#E2D1F9]">
+                        ETSI EN 300 468
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px]">
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Program / Service ID</label>
+                        <input
+                          type="number"
+                          value={dest.dvbServiceId ?? 1}
+                          onChange={e => setDestination(dest.id, { dvbServiceId: Number(e.target.value) || 1 })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Service Name (SDT)</label>
+                        <input
+                          type="text"
+                          value={dest.dvbServiceName ?? (channelName || 'Kashtrix HD')}
+                          onChange={e => setDestination(dest.id, { dvbServiceName: e.target.value })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="Kashtrix HD"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Service Provider</label>
+                        <input
+                          type="text"
+                          value={dest.dvbServiceProvider ?? 'Kashtrix Media'}
+                          onChange={e => setDestination(dest.id, { dvbServiceProvider: e.target.value })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="Kashtrix Media"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Video PID</label>
+                        <input
+                          type="number"
+                          value={dest.dvbVideoPid ?? 256}
+                          onChange={e => setDestination(dest.id, { dvbVideoPid: Number(e.target.value) || 256 })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="256"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Audio PID</label>
+                        <input
+                          type="number"
+                          value={dest.dvbAudioPid ?? 257}
+                          onChange={e => setDestination(dest.id, { dvbAudioPid: Number(e.target.value) || 257 })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="257"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">PMT PID</label>
+                        <input
+                          type="number"
+                          value={dest.dvbPmtPid ?? 4096}
+                          onChange={e => setDestination(dest.id, { dvbPmtPid: Number(e.target.value) || 4096 })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="4096"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">TS ID / ON ID</label>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            value={dest.dvbTsid ?? 1}
+                            onChange={e => setDestination(dest.id, { dvbTsid: Number(e.target.value) || 1 })}
+                            className="h-7 flex-1 rounded border border-[#E8DFF0] bg-white px-1.5 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="TSID 1"
+                            title="Transport Stream ID"
+                          />
+                          <input
+                            type="number"
+                            value={dest.dvbOnid ?? 1}
+                            onChange={e => setDestination(dest.id, { dvbOnid: Number(e.target.value) || 1 })}
+                            className="h-7 flex-1 rounded border border-[#E8DFF0] bg-white px-1.5 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="ONID 1"
+                            title="Original Network ID"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">CBR Muxrate (kbps)</label>
+                        <input
+                          type="number"
+                          value={dest.dvbMuxrate || ''}
+                          onChange={e => setDestination(dest.id, { dvbMuxrate: Number(e.target.value) || undefined })}
+                          className="h-7 w-full rounded border border-[#E8DFF0] bg-white px-2 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          placeholder="e.g. 8000 (Null Stuffing)"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-[#1B1024] dark:text-white mb-0.5">Packet Size / TTL</label>
+                        <div className="flex gap-1">
+                          <select
+                            value={dest.dvbPacketSize ?? 1316}
+                            onChange={e => setDestination(dest.id, { dvbPacketSize: Number(e.target.value) || 1316 })}
+                            className="h-7 flex-1 rounded border border-[#E8DFF0] bg-white px-1 text-[11px] font-semibold text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                          >
+                            <option value={1316}>1316 B (7 TS)</option>
+                            <option value={188}>188 B (1 TS)</option>
+                          </select>
+                          <input
+                            type="number"
+                            value={dest.dvbTtl ?? 64}
+                            onChange={e => setDestination(dest.id, { dvbTtl: Number(e.target.value) || 64 })}
+                            className="h-7 w-12 rounded border border-[#E8DFF0] bg-white px-1 font-mono text-[11px] text-[#1B1024] dark:bg-[#211335] dark:border-[#371F59] dark:text-white"
+                            placeholder="TTL"
+                            title="Multicast TTL"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {dest.protocol === Protocol.RECORDING && (() => {

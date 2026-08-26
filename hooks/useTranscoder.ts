@@ -109,6 +109,7 @@ const buildVideoFlags = (
   if (profile.videoCodec === VideoCodec.Copy) return "-c:v copy";
 
   const encoder = normalizeVideoEncoder(profile.videoCodec);
+  const isH264 = [VideoCodec.H264, VideoCodec.H264_NVENC, VideoCodec.H264_AMF, VideoCodec.H264_VIDEOTOOLBOX, "libx264", "h264_nvenc", "h264_amf"].includes(profile.videoCodec as any);
   const bitrate =
     destination?.recording?.videoBitrate || profile.videoBitrate || 2000;
   const rawResolution =
@@ -121,35 +122,76 @@ const buildVideoFlags = (
   const rawFramerate = destination?.recording?.framerate ?? profile.framerate;
   const framerate =
     rawFramerate && Number(rawFramerate) > 0 ? Number(rawFramerate) : 0;
-  const qualityFlags =
-    profile.videoQualityMode === "crf" && profile.crf
-      ? `-crf ${profile.crf}`
-      : [
-          `-b:v ${bitrate}k`,
-          profile.maxrate ? `-maxrate ${profile.maxrate}k` : "",
-          profile.bufsize ? `-bufsize ${profile.bufsize}k` : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
+
+  // Rate Control Mode
+  const rateControl = profile.rateControl || (profile.videoQualityMode === "crf" ? "crf" : "cbr");
+  let qualityFlags = "";
+  if (rateControl === "crf") {
+    qualityFlags = `-crf ${profile.crf || 23}`;
+  } else if (rateControl === "cqp") {
+    qualityFlags = `-cqp ${profile.crf || 23}`;
+  } else if (rateControl === "vbr") {
+    const max = profile.maxrate || Math.round(bitrate * 1.5);
+    const buf = profile.bufsize || bitrate * 2;
+    qualityFlags = `-b:v ${bitrate}k -maxrate ${max}k -bufsize ${buf}k`;
+  } else {
+    // Strict CBR (default for broadcast/DVB)
+    const min = profile.minrate || bitrate;
+    const max = profile.maxrate || bitrate;
+    const buf = profile.bufsize || bitrate * 2;
+    qualityFlags = `-b:v ${bitrate}k -minrate ${min}k -maxrate ${max}k -bufsize ${buf}k`;
+  }
+
+  // MPEG-4 AVC Advanced Parameters (Profile, Level, B-Frames, CABAC)
+  const avcFlags: string[] = [];
+  if (isH264) {
+    if (profile.avcProfile) {
+      avcFlags.push(`-profile:v ${profile.avcProfile}`);
+    } else {
+      avcFlags.push("-profile:v high");
+    }
+    if (profile.avcLevel) {
+      avcFlags.push(`-level:v ${profile.avcLevel}`);
+    }
+    if (profile.bFrames !== undefined && profile.bFrames >= 0) {
+      avcFlags.push(`-bf ${profile.bFrames}`);
+    } else {
+      avcFlags.push("-bf 2");
+    }
+    if (profile.cabac === false) {
+      avcFlags.push("-coder 0"); // CAVLC
+    } else {
+      avcFlags.push("-coder 1"); // CABAC
+    }
+  }
 
   const isAmdAmf = [VideoCodec.H264_AMF, VideoCodec.HEVC_AMF].includes(
     profile.videoCodec as VideoCodec,
   );
 
   const filters: string[] = [];
-  filters.push("yadif=0:-1:1");
+  if (profile.interlaced) {
+    filters.push("tinterlace=mode=interleave_top");
+  } else {
+    filters.push("yadif=0:-1:1");
+  }
   if (resolution) {
     filters.push(`scale=${resolution.replace("x", ":")}`);
   }
 
+  const gop = profile.gopSize || 50;
+  const keyintMin = Math.max(1, Math.floor(gop / 2));
+
   return [
     `-c:v ${encoder}`,
+    ...avcFlags,
     qualityFlags,
     filters.length ? `-vf ${quote(filters.join(","))}` : "",
     framerate > 0 ? `-r ${framerate}` : "",
     !isAmdAmf && profile.preset ? `-preset ${profile.preset}` : "",
     profile.tune ? `-tune ${profile.tune}` : "",
-    `-g ${profile.gopSize || 60}`,
+    `-g ${gop}`,
+    `-keyint_min ${keyintMin}`,
     profile.pixelFormat
       ? `-pix_fmt ${profile.pixelFormat}`
       : "-pix_fmt yuv420p",
@@ -164,6 +206,7 @@ const buildAudioFlags = (profile: TranscodingProfile) => {
     `-c:a ${profile.audioCodec}`,
     profile.audioBitrate ? `-b:a ${profile.audioBitrate}k` : "",
     profile.sampleRate ? `-ar ${profile.sampleRate}` : "",
+    profile.audioChannels ? `-ac ${profile.audioChannels}` : "-ac 2",
   ]
     .filter(Boolean)
     .join(" ");
@@ -228,11 +271,39 @@ const teeDestination = (
     case Protocol.SRT:
       url = url.includes("?") ? url : `${url}?mode=caller`;
       return [`[f=mpegts]${teeEscape(url)}`];
-    case Protocol.UDP:
-      url = url.includes("?") ? url : `${url}?pkt_size=1316`;
-      return [`[f=mpegts]${teeEscape(url)}`];
-    case Protocol.HTTP_TS:
-      return [`[f=mpegts]${teeEscape(url)}`];
+    case Protocol.UDP: {
+      const pktSize = destination.dvbPacketSize || 1316;
+      const ttl = destination.dvbTtl || 64;
+      const buf = destination.dvbBufferSize || 65535;
+      const local = destination.dvbLocalAddr ? `&localaddr=${encodeURIComponent(destination.dvbLocalAddr)}` : "";
+      const udpParams = `pkt_size=${pktSize}&ttl=${ttl}&buffer_size=${buf}${local}`;
+      const destUrl = destination.url.includes("?")
+        ? `${destination.url}&${udpParams}`
+        : `${destination.url}?${udpParams}`;
+
+      // Build DVB Standard MPEG-TS muxing options
+      const sId = destination.dvbServiceId || 1;
+      const sName = destination.dvbServiceName || channelName || "Kashtrix TV";
+      const sProvider = destination.dvbServiceProvider || "Kashtrix Media";
+      const pmtPid = destination.dvbPmtPid || 4096;
+      const vidPid = destination.dvbVideoPid || 256;
+      const tsId = destination.dvbTsid || 1;
+      const onId = destination.dvbOnid || 1;
+      const muxrateFlag = destination.dvbMuxrate ? `:muxrate=${destination.dvbMuxrate}k` : "";
+
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=digital_tv:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:metadata=service_name=${teeEscape(sName)}:metadata=service_provider=${teeEscape(sProvider)}${muxrateFlag}`;
+
+      return [`[${dvbMuxer}]${teeEscape(destUrl)}`];
+    }
+    case Protocol.HTTP_TS: {
+      const sId = destination.dvbServiceId || 1;
+      const sName = destination.dvbServiceName || channelName || "Kashtrix TV";
+      const sProvider = destination.dvbServiceProvider || "Kashtrix Media";
+      const pmtPid = destination.dvbPmtPid || 4096;
+      const vidPid = destination.dvbVideoPid || 256;
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:metadata=service_name=${teeEscape(sName)}:metadata=service_provider=${teeEscape(sProvider)}`;
+      return [`[${dvbMuxer}]${teeEscape(url)}`];
+    }
     case Protocol.DECKLINK: {
       return [];
     }
@@ -420,8 +491,16 @@ export const generateCommand = (
     const parts = rawBase.split("+");
     const vDev = (parts[0] || "").replace(/^video=/i, "").trim();
     const aDev = (parts[1] || vDev).replace(/^audio=/i, "").trim();
-
     const dev = vDev || aDev;
+
+    const isDeckLink = /decklink|intensity|blackmagic/i.test(dev);
+    const resolvedVideoInput = videoInput && videoInput !== "unset" && videoInput !== "auto"
+      ? videoInput
+      : (isDeckLink ? "sdi" : "");
+    const resolvedFormatCode = formatCode && formatCode !== "unset" && formatCode !== "auto"
+      ? formatCode
+      : (isDeckLink ? "Hi50" : "");
+
     if (!dev) {
       inputFlags = "-i pipe:0"; // placeholder — server will resolve actual device
     } else if (isWindows) {
@@ -430,14 +509,8 @@ export const generateCommand = (
       const srcSpec = aSpec && aSpec !== vSpec ? `${vSpec}:${aSpec}` : vSpec;
       inputFlags = `-thread_queue_size 2048 -f dshow -rtbufsize 2048M -i ${quote(srcSpec)}`;
     } else {
-      const formatFlag =
-        formatCode && formatCode !== "auto" && formatCode !== "unset"
-          ? `-format_code ${formatCode} `
-          : "";
-      const vInputFlag =
-        videoInput && videoInput !== "unset" && videoInput !== "auto"
-          ? `-video_input ${videoInput} `
-          : "";
+      const formatFlag = resolvedFormatCode ? `-format_code ${resolvedFormatCode} ` : "";
+      const vInputFlag = resolvedVideoInput ? `-video_input ${resolvedVideoInput} ` : "";
       inputFlags = `-thread_queue_size 2048 -f decklink ${formatFlag}${vInputFlag}-i ${quote(dev)}`;
     }
   } else if (channel.inputType === InputType.VOD) {
@@ -1329,6 +1402,7 @@ const useEngine = () => {
     startRecording,
     stopRecording,
     deleteRecording,
+    api,
     ingestStreams: state.ingestStreams,
     ingestHistory: state.ingestHistory,
     recordings: state.recordings,

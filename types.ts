@@ -57,7 +57,7 @@ export enum ChannelStatus {
   Error = 'Error',
 }
 
-export type VideoQualityMode = 'bitrate' | 'crf';
+export type VideoQualityMode = 'bitrate' | 'crf' | 'cbr' | 'vbr' | 'cqp';
 
 export interface TranscodingProfile {
   id: string;
@@ -70,19 +70,29 @@ export interface TranscodingProfile {
   videoQualityMode: VideoQualityMode;
   videoBitrate?: number; // in kbps
   crf?: number; // Constant Rate Factor (0-51)
-  framerate?: number; // e.g., 24, 25, 30, 60
+  framerate?: number; // e.g., 24, 25, 30, 50, 59.94, 60
+  
+  // MPEG-4 AVC (H.264) Advanced Parameters
+  avcProfile?: 'baseline' | 'main' | 'high' | 'high10' | 'high422' | 'high444';
+  avcLevel?: '3.0' | '3.1' | '3.2' | '4.0' | '4.1' | '4.2' | '5.0' | '5.1' | '5.2';
+  rateControl?: 'cbr' | 'vbr' | 'cqp' | 'crf';
+  bFrames?: number; // 0-16 B-frames
+  cabac?: boolean;  // Context-adaptive binary arithmetic coding
+  minrate?: number; // in kbps
+  maxrate?: number; // in kbps
+  bufsize?: number; // in kbps (VBV buffer)
+  gopSize?: number; // Keyframe interval
+  interlaced?: boolean; // Interlaced output mode
   
   // Audio Settings
   audioCodec: AudioCodec;
   audioBitrate?: number; // in kbps
   sampleRate?: number; // e.g., 44100, 48000
+  audioChannels?: number; // 1, 2, 6
 
   // Advanced Settings
-  preset?: string; // e.g., ultrafast, medium, slow
-  gopSize?: number; // Keyframe interval
-  pixelFormat?: string; // e.g., yuv420p
-  maxrate?: number;
-  bufsize?: number;
+  preset?: string; // e.g., ultrafast, fast, medium, slow, p1-p7
+  pixelFormat?: string; // e.g., yuv420p, yuv422p, uyvy422
   tune?: string;
 }
 
@@ -243,6 +253,23 @@ export interface ChannelDestination {
   decklinkDeviceId?: string;      // Device handle ID (e.g. '75:05326625:00000000')
   decklinkDeviceName?: string;    // Friendly name for UI display
   decklinkFormatCode?: string;    // Output format code (e.g. 'Hi50')
+  
+  // DVB Standard MPEG-TS over UDP / RTP Parameters
+  dvbServiceId?: number;          // MPEG-TS Program / Service ID (default 1)
+  dvbServiceName?: string;        // SDT Service Name (e.g. "Kashtrix TV")
+  dvbServiceProvider?: string;    // SDT Service Provider (e.g. "Kashtrix Media")
+  dvbVideoPid?: number;           // Video Element PID (default 256 / 0x100)
+  dvbAudioPid?: number;           // Audio Element PID (default 257 / 0x101)
+  dvbPcrPid?: number;             // PCR PID (default 256 / 0x100)
+  dvbPmtPid?: number;             // PMT Table PID (default 4096 / 0x1000)
+  dvbTsid?: number;               // Transport Stream ID (default 1)
+  dvbOnid?: number;               // Original Network ID (default 1)
+  dvbMuxrate?: number;            // CBR Muxrate in kbps (e.g. 6000, 8000, 10000 for null stuffing)
+  dvbPacketSize?: number;         // 1316 (7 TS packets per UDP payload) or 188
+  dvbTtl?: number;                // Multicast TTL (default 64)
+  dvbLocalAddr?: string;          // Multicast interface IP / localaddr
+  dvbBufferSize?: number;         // UDP buffer size in bytes (e.g. 65535, 1048576)
+  dvbCbrMuxing?: boolean;         // Enable CBR Constant Bitrate DVB Muxing
 }
 
 export type Destination = ChannelDestination;
@@ -395,3 +422,385 @@ export interface ConversionJob {
   error?: string;
   options: TranscodeJobOptions;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   NETWORK & SYSTEM MANAGEMENT (TITAN ARCHITECTURE)
+   ══════════════════════════════════════════════════════════════════════ */
+
+export interface PhysicalInterface {
+  interface: string;            // e.g. 'eth0', 'Ethernet 1'
+  macAddress: string;           // e.g. '00:25:90:fd:ef:e0'
+  igmp: 'V2' | 'V3';            // IGMP version
+  negotiatedSpeed: string;      // e.g. '1000Mb/s Full', '10Gb/s Full'
+  state: 'Up' | 'Down';         // Interface state
+  method: 'Static' | 'DHCP';    // IP acquisition method
+  address: string;              // IPv4 Address (e.g. '172.18.100.150')
+  netmask: string;              // IPv4 Netmask (e.g. '255.255.255.0')
+  gateway?: string;             // Default Gateway
+  logicalName: string;          // Logical Interface alias (e.g. 'eth0', 'MGMT')
+  linkSpeed: 'auto' | '100' | '1000' | '10000'; // Speed configuration
+  isOnline?: boolean;
+}
+
+export interface NicBondingItem {
+  id: string;
+  interface: string;            // e.g. 'bond0'
+  mode: 'balance-rr' | 'active-backup' | 'balance-xor' | 'broadcast' | '802.3ad' | 'balance-tlb' | 'balance-alb';
+  slaves: string[];             // e.g. ['eth0', 'eth1']
+  state: 'Up' | 'Down';
+  address?: string;
+  netmask?: string;
+}
+
+export interface VlanItem {
+  id: string;
+  interface: string;            // Physical parent interface (e.g. 'eth0')
+  vlanNumber: number;           // VLAN ID (e.g. 100)
+  igmp: 'V2' | 'V3';
+  state: 'Up' | 'Down';
+  method: 'Static' | 'DHCP';
+  address: string;
+  netmask: string;
+  logicalName: string;
+}
+
+export interface NetworkRouteItem {
+  id: string;
+  interface: string;            // Interface name (e.g. 'eth0', 'bond0')
+  type: 'Default' | 'Network' | 'Host';
+  destination: string;          // e.g. '0.0.0.0' or '10.0.0.0'
+  netmask: string;              // e.g. '0.0.0.0' or '255.255.255.0'
+  gateway: string;              // e.g. '172.18.100.1'
+}
+
+export interface DnsConfiguration {
+  primaryDns: string;           // e.g. '8.8.8.8'
+  secondaryDns: string;         // e.g. '1.1.1.1'
+}
+
+export interface StatmuxConfiguration {
+  multicastAddress: string;     // e.g. '239.100.1.1'
+  port: number;                 // e.g. 1234
+  interface0: string;           // e.g. 'eth0'
+  interface1: string;           // e.g. 'eth1'
+  activateIgmpV3: boolean;      // Activate IGMPv3 Source Filtering
+  interface0Source1: string;    // e.g. '0.0.0.0'
+  interface0Source2: string;    // e.g. '0.0.0.0'
+  interface1Source1: string;    // e.g. '0.0.0.0'
+  interface1Source2: string;    // e.g. '0.0.0.0'
+}
+
+export interface SnmpConfiguration {
+  readCommunity: string;        // e.g. 'public'
+  writeCommunity: string;       // e.g. 'private'
+  enableTraps: boolean;
+  trapReceivers: string[];      // e.g. ['192.168.1.50', '', '']
+}
+
+export interface AlarmConfigurationItem {
+  id: string;
+  name: string;
+  enabled: boolean;
+  sendTrap: boolean;
+  severity: 'critical' | 'warning' | 'minor' | 'info';
+  timeoutMs?: number;
+}
+
+export interface SystemHardwareExtended {
+  productName?: string;
+  serverTime?: string;
+  systemTime?: string;
+  uptimeSeconds?: number;
+  ntpStatus?: 'synchronized' | 'not synchronised';
+  ntpServer?: string;
+  ntpSynchronized?: boolean;
+  cpuModel?: string;
+  virtualization?: string;
+  cpuFrequency?: string;
+  coresCount?: number;
+  cpuRealUsage?: number;
+  cpuEstimatedUsage?: number;
+  cpuRealLoad?: number;
+  cpuEstLoad?: number;
+  ramTotalGb?: number;
+  ramUsedGb?: number;
+  ramTotalBytes?: number;
+  ramTotalFmt?: string;
+  ramUsedBytes?: number;
+  ramUsedFmt?: string;
+  temperatures?: {
+    cpu1: number | string;
+    cpu2: number | string;
+    ambient?: number | string;
+    sdiFpga?: number | string;
+  };
+  cpu1Temp?: string;
+  cpu2Temp?: string;
+  fans?: { id?: string; name: string; rpm: number | string; status?: string }[];
+  powerSupplies?: {
+    name: string;
+    status: string;
+    inputVoltage?: string;
+    wattage?: string;
+    healthy?: boolean;
+  }[];
+  ps1Status?: string;
+  ps2Status?: string;
+  sdiHardware?: {
+    boardName?: string;
+    driverVersion?: string;
+    firmwareFpga?: string;
+    genlockStatus?: string;
+    temperature?: string;
+    pcieLink?: string;
+    ports?: {
+      port: string;
+      standard: string;
+      signalDetected?: boolean;
+      active?: boolean;
+      bmdCode?: string;
+    }[];
+  };
+  sdiSerial?: string;
+  sdiBoardId?: string;
+  sdiBoardVersion?: string;
+  sdiFpgaId?: string;
+  sdiFpgaVersion?: string;
+  vcaNodes?: {
+    id: string;
+    name: string;
+    ip: string;
+    status: string;
+    role: string;
+    cpuUsage: number;
+    ramUsage: string;
+    pingMs: number;
+  }[];
+}
+
+export interface SystemUpdateInfo {
+  currentVersion?: string;
+  currentFirmwareVersion?: string;
+  currentBuild?: string;
+  buildDate?: string;
+  releaseChannel?: string;
+  availableVersion?: string;
+  hasUpdate?: boolean;
+  updaterStatus?: 'IDLE' | 'DOWNLOADING' | 'VERIFYING' | 'INSTALLING' | 'REBOOT_REQUIRED';
+  packages?: {
+    id: string;
+    name: string;
+    version: string;
+    date: string;
+    status: string;
+  }[];
+  updateLogs?: string[];
+  logs?: string[];
+}
+
+export interface VcaNodeItem {
+  id: string;
+  nodeName: string;
+  macAddress: string;
+  cpuLoad: number;
+  memoryUsage: string;
+  state: 'Online' | 'Offline' | 'Standby' | 'Degraded';
+}
+
+// =========================================================================
+// MUX (MPTS / MULTI-PROGRAM TRANSPORT STREAM) TYPES
+// =========================================================================
+
+export type MuxProcessingMode = 'copy' | 'transcode';
+
+export interface MuxAudioStreamConfig {
+  streamIndex: number;
+  audioPid: number | string; // e.g. 0x102 or 258
+  lang?: string;
+  codec?: string;
+  bitrateKbps?: number;
+  channels?: number;
+  samplerate?: number;
+  enabled?: boolean;
+}
+
+export interface MuxServiceInput {
+  id: string;
+  channelId?: string; // Reference to existing StreamOps Channel if imported
+  sourceName: string;
+  sourceType: 'channel' | 'vod' | 'udp' | 'rtmp' | 'srt' | 'custom';
+  inputUrl: string;
+  
+  // Processing Mode: Pass Through (-c copy) or Transcode
+  mode: MuxProcessingMode;
+  
+  // DVB PSI/SI Program Identification
+  serviceId: number; // Program number e.g. 101
+  serviceName: string; // e.g. 'Kantipur HD'
+  providerName: string; // e.g. 'StreamOps'
+  pmtPid: number | string; // e.g. 0x100 or 256
+  videoPid: number | string; // e.g. 0x101 or 257
+  pcrPid?: number | string;
+  
+  // Audio Streams
+  audioStreams: MuxAudioStreamConfig[];
+  includeAllAudio?: boolean;
+  
+  // Per-channel Transcode settings (when mode === 'transcode')
+  videoCodec?: 'h264' | 'hevc' | 'copy';
+  videoBitrateKbps?: number;
+  resolution?: string; // e.g. '1920x1080', '1280x720', 'source'
+  fps?: number; // e.g. 25, 50, 30, 59.94
+  gop?: number; // e.g. 50
+  encoder?: 'auto' | 'nvidia' | 'intel' | 'amd' | 'cpu';
+  preset?: string;
+  audioCodec?: 'aac' | 'mp2' | 'ac3' | 'copy';
+  audioBitrateKbps?: number;
+  
+  // Order priority
+  orderIndex?: number;
+  enabled?: boolean;
+}
+
+export interface MuxConfig {
+  id: string;
+  name: string;
+  description?: string;
+  status: 'Running' | 'Stopped' | 'Starting' | 'Error' | 'Warning';
+  
+  // Output Network Configuration
+  outputInterface?: string; // e.g. 'eth0', 'eth1', 'any'
+  outputIp: string; // e.g. '239.10.10.10'
+  outputPort: number; // e.g. 5000
+  packetSize: number; // 1316 or 188
+  ttl: number; // e.g. 16 or 64
+  
+  // Target MPTS Bitrate with CBR Null Stuffing
+  targetBitrateMbps: number; // e.g. 30, 60
+  
+  // DVB Network Identifiers
+  tsid: number; // Transport Stream ID e.g. 1
+  onid: number; // Original Network ID e.g. 1
+  nid: number; // Network ID e.g. 1
+  
+  // Services in this MPTS MUX
+  services: MuxServiceInput[];
+  
+  // Automation & Reliability
+  autoStart?: boolean;
+  autoRestart?: boolean;
+  
+  // Runtime State
+  pid?: number;
+  uptimeSeconds?: number;
+  cpuUsage?: number;
+  memoryMb?: number;
+  generatedCommand?: string;
+  lastError?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MuxInputStats {
+  serviceId: number;
+  sourceName: string;
+  inputUrl: string;
+  state: 'ONLINE' | 'NO_TRAFFIC' | 'OFFLINE' | 'ERROR' | 'RECONNECTING';
+  bitrateKbps: number;
+  videoBitrateKbps?: number;
+  audioBitrateKbps?: number;
+  packetsPerSec: number;
+  bytesReceived: number;
+  codec?: string;
+  resolution?: string;
+  fps?: number;
+  videoPid?: string | number;
+  audioPid?: string | number;
+  pmtPid?: string | number;
+  lastPacketTime?: string;
+  errorCount?: number;
+}
+
+export interface MuxTrafficHistoryPoint {
+  time: string;
+  totalInputMbps: number;
+  outputMbps: number;
+  targetMuxMbps: number;
+  stuffingMbps: number;
+}
+
+export interface MuxStats {
+  muxId: string;
+  status: 'Running' | 'Stopped' | 'Starting' | 'Error' | 'Warning';
+  uptimeSeconds: number;
+  totalInputKbps: number;
+  outputKbps: number;
+  targetMuxKbps: number;
+  stuffingKbps: number;
+  capacityPercent: number;
+  packetsPerSec: number;
+  bytesSent: number;
+  cpuPercent: number;
+  memoryMb: number;
+  isOverCapacity: boolean;
+  isCapacityWarning: boolean;
+  inputs: Record<string, MuxInputStats>;
+  history?: MuxTrafficHistoryPoint[];
+}
+
+// =========================================================================
+// LIVE SERVER / RTMP INGEST SECURITY TYPES
+// =========================================================================
+
+export interface RtmpStreamKey {
+  id: string;
+  name: string;
+  key: string;
+  allowedStreams?: string[];
+  singlePublisherOnly?: boolean;
+  expiresAt?: string | null;
+  enabled?: boolean;
+  createdAt?: string;
+  lastUsedAt?: string | null;
+}
+
+export interface RtmpPublisherAccount {
+  id: string;
+  username: string;
+  password?: string;
+  allowedStreams?: string[];
+  singlePublisherOnly?: boolean;
+  enabled?: boolean;
+  createdAt?: string;
+  lastUsedAt?: string | null;
+}
+
+export interface RtmpSecuritySettings {
+  enabled: boolean;
+  authMode: 'flexible' | 'key_only' | 'credentials_only';
+  singlePublisherPerKey: boolean;
+  keys: RtmpStreamKey[];
+  accounts: RtmpPublisherAccount[];
+}
+
+export interface RtmpActiveLock {
+  keyPrefix?: string;
+  keyId?: string;
+  username?: string;
+  accountId?: string;
+  streamPath: string;
+  sessionId: string | number;
+  startTime: number;
+}
+
+export interface RtmpSecurityResponse {
+  success: boolean;
+  settings: RtmpSecuritySettings;
+  activeLocks?: {
+    keys: RtmpActiveLock[];
+    accounts: RtmpActiveLock[];
+  };
+}
+
+
+

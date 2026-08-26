@@ -60,18 +60,22 @@ import EventsAndAlerts from "./components/EventsAndAlerts";
 import UserManagementView from "./components/UserManagementView";
 import TranscodeStudio from "./components/TranscodeStudio";
 import VodPlayoutView from "./components/VodPlayoutView";
+import SystemAdminView from "./components/SystemAdminView";
+import { MuxView } from "./components/MuxView";
 import { sendRealtime, subscribeRealtime } from "./services/realtime";
 
 type ActiveView =
   | "dashboard"
   | "channels"
   | "vod"
+  | "mux"
   | "transcode"
   | "live-server"
   | "monitor"
   | "ingest"
   | "recordings"
   | "events"
+  | "system-admin"
   | "users"
   | "settings"
   | "license"
@@ -104,6 +108,11 @@ const LICENSE_MODULE_OPTIONS = [
     id: "vod-playout",
     label: "VOD Playout",
     description: "Video-on-demand library and playout operations.",
+  },
+  {
+    id: "mux",
+    label: "MPTS Multiplexer",
+    description: "Multi-program transport stream multiplexer with DVB PSI/SI and CBR null stuffing.",
   },
   {
     id: "transcode-queue-items",
@@ -1131,6 +1140,18 @@ const navItems: NavItem[] = [
     allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
   },
   {
+    id: "mux",
+    label: "MPTS Multiplexer",
+    icon: FiLayers,
+    group: "Operations",
+    iconColor: "text-[#8B5CF6]",
+    iconShadow: "drop-shadow-[0_4px_6px_rgba(139,92,246,0.45)]",
+    badge: "MPTS",
+    badgeColor: "bg-[#8B5CF6]",
+    licenseModule: "streamops",
+    allowedRoles: ["superadmin", "admin", "user", "operator"],
+  },
+  {
     id: "transcode",
     label: "Transcode Studio",
     icon: FiZap,
@@ -1193,6 +1214,17 @@ const navItems: NavItem[] = [
     iconColor: "text-[#EA580C]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]",
     allowedRoles: ["superadmin", "admin", "user", "operator"],
+  },
+  {
+    id: "system-admin",
+    label: "System Admin",
+    icon: FiServer,
+    group: "System & Admin",
+    iconColor: "text-[#0284C7]",
+    iconShadow: "drop-shadow-[0_4px_6px_rgba(2,132,199,0.45)]",
+    badge: "NIC/TITAN",
+    badgeColor: "bg-[#0284C7]",
+    allowedRoles: ["superadmin", "admin"],
   },
   {
     id: "users",
@@ -2062,6 +2094,7 @@ const TopHeader: React.FC<{
     recordings: "Recording Library",
     "live-server": "Live Server",
     events: "Events & Alerts",
+    "system-admin": "System Administration",
     users: "User Management",
     settings: "Settings",
     license: "License",
@@ -2218,12 +2251,14 @@ const getInitialActiveView = (): ActiveView => {
       "dashboard",
       "channels",
       "vod",
+      "mux",
       "transcode",
       "live-server",
       "monitor",
       "ingest",
       "recordings",
       "events",
+      "system-admin",
       "users",
       "settings",
       "license",
@@ -2566,6 +2601,7 @@ const App: React.FC = () => {
         "ingest",
         "recordings",
         "events",
+        "system-admin",
         "users",
         "settings",
         "license",
@@ -2869,6 +2905,17 @@ const App: React.FC = () => {
               onNavigateToChannels={() => setActiveView("channels")}
             />
           )}
+          {activeView === "mux" && (
+            <MuxView
+              api={engine.api}
+              channels={engine.state.channels}
+              profiles={engine.state.profiles}
+              settings={engine.state.settings}
+              license={engine.auth.license}
+              userRole={engine.auth.user?.role}
+              ws={null}
+            />
+          )}
           {activeView === "transcode" && (
             <TranscodeStudio
               userRole={engine.auth.user?.role}
@@ -2893,6 +2940,12 @@ const App: React.FC = () => {
             />
           )}
           {activeView === "events" && <EventsAndAlerts />}
+          {activeView === "system-admin" && (
+            <SystemAdminView
+              token={engine.auth.token}
+              onNavigate={setActiveView}
+            />
+          )}
           {activeView === "users" &&
             (engine.auth.user?.role === "superadmin" ||
               engine.auth.user?.role === "admin") && (

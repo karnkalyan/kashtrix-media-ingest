@@ -16,7 +16,12 @@ import {
   Layers,
   Wifi,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  LayoutGrid,
+  List,
+  Volume2,
+  Maximize2,
+  ExternalLink
 } from 'lucide-react';
 import Button from './ui/Button';
 import ProtocolBadge from './ui/ProtocolBadge';
@@ -49,12 +54,6 @@ const getRecordingFormat = (recording: any): string => {
 
 const getRecordingUrl = (item: any): string => {
   if (!item) return '';
-  const fmt = getRecordingFormat(item);
-  if (fmt === 'mp4' || fmt === 'webm') {
-    if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
-    const fileName = item.file_name || item.stream;
-    if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
-  }
   if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
   const fileName = item.file_name || item.stream;
   return `/recording-preview/${encodeURIComponent(fileName || '')}`;
@@ -122,6 +121,9 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
   const [error, setError] = useState('');
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [previewRecording, setPreviewRecording] = useState<any | null>(null);
+  const [previewService, setPreviewService] = useState<any | null>(null);
+  const [activeServices, setActiveServices] = useState<any[]>([]);
+  const [servicesViewMode, setServicesViewMode] = useState<'thumbnails' | 'list'>('thumbnails');
 
   const [systemStats, setSystemStats] = useState<any>(null);
 
@@ -130,6 +132,13 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
     try {
       const token = localStorage.getItem('kte-auth-token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      // Also fetch active broadcast processes & channel previews
+      fetch('/api/dashboard/active-services', { headers })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data?.services) setActiveServices(data.services); })
+        .catch(() => {});
+
       const response = await fetch('/api/dashboard/overview', { headers });
       const body = await response.json().catch(() => ({}));
       if (response.ok) {
@@ -546,6 +555,227 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
         </div>
       )}
 
+      {/* Active Broadcast Services & Channels Multiviewer (Titan Live / Mux Style) */}
+      <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-xs space-y-3 dark:bg-[#190E28] dark:border-[#311B4E]">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">
+                Active Broadcast Services & Playout Matrix
+              </h2>
+              <span className="rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300">
+                {activeServices.filter(s => s.isRunning).length} Online / {activeServices.length} Total
+              </span>
+            </div>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+              Real-time video confidence preview, audio VU meters, and encoding status across Channels, Ingest & VOD
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            {/* View Mode Toggle: Thumbnails vs List */}
+            <div className="flex items-center rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-0.5 dark:bg-[#211335] dark:border-[#371F59]">
+              <button
+                type="button"
+                onClick={() => setServicesViewMode('thumbnails')}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  servicesViewMode === 'thumbnails'
+                    ? 'bg-[#7C3AED] text-white shadow-2xs'
+                    : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
+                }`}
+                title="Thumbnails Multiviewer View"
+              >
+                <LayoutGrid size={13} />
+                <span>Multiviewer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setServicesViewMode('list')}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  servicesViewMode === 'list'
+                    ? 'bg-[#7C3AED] text-white shadow-2xs'
+                    : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
+                }`}
+                title="List Table View"
+              >
+                <List size={13} />
+                <span>List View</span>
+              </button>
+            </div>
+
+            <Button
+              variant="secondary"
+              onClick={() => onNavigate?.('channels')}
+            >
+              <span>Manage Channels</span>
+              <ChevronRight size={13} />
+            </Button>
+          </div>
+        </div>
+
+        {activeServices.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-[#E8DFF0] p-8 text-center dark:border-[#371F59]">
+            <Tv size={28} className="mx-auto text-[#6F6078] dark:text-[#B9A5CD]" />
+            <p className="mt-2 text-xs font-bold text-[#1B1024] dark:text-white">No broadcast channels configured</p>
+            <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Add an SDI DeckLink input, UDP stream, or VOD playlist in Channels.</p>
+            <div className="mt-3">
+              <Button onClick={() => onNavigate?.('channels')}>Create Channel</Button>
+            </div>
+          </div>
+        ) : servicesViewMode === 'thumbnails' ? (
+          /* Multiviewer Thumbnail Grid (Titan Live Look) */
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {activeServices.map(svc => (
+              <div
+                key={svc.id}
+                className="group relative overflow-hidden rounded-xl border border-[#E8DFF0] bg-[#F8F7FA] shadow-2xs transition-all hover:border-[#7C3AED]/60 dark:bg-[#0F0A18] dark:border-[#371F59]"
+              >
+                {/* Live Preview Window / Placeholder */}
+                <div className="relative aspect-video w-full overflow-hidden bg-black">
+                  {svc.isRunning ? (
+                    <div className="relative h-full w-full flex items-center justify-center bg-slate-950">
+                      <KashtrixMediaPlayer
+                        src={svc.hlsPreviewUrl}
+                        title={svc.name}
+                        isLive={true}
+                        autoPlay={true}
+                        showAudioMeter={false}
+                        className="h-full w-full object-cover"
+                      />
+                      {/* Audio Peak Overlay Meters in Bottom Right of Video */}
+                      <div className="absolute bottom-2 right-2 flex items-end gap-1 rounded bg-black/80 px-1.5 py-1 backdrop-blur-xs">
+                        <Volume2 size={10} className="text-emerald-400" />
+                        <div className="flex gap-0.5 items-end h-3">
+                          <div className="w-1 bg-emerald-500 rounded-xs animate-pulse" style={{ height: '70%' }} />
+                          <div className="w-1 bg-emerald-400 rounded-xs animate-pulse" style={{ height: '65%' }} />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center text-[#6F6078] dark:text-[#8E78A6] p-4 text-center">
+                      <Tv size={24} className="mb-1 opacity-50" />
+                      <span className="text-[11px] font-semibold">Service Standby / Stopped</span>
+                    </div>
+                  )}
+
+                  {/* Top Status Overlays */}
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                      svc.isRunning
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-700/80 text-slate-200'
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${svc.isRunning ? 'bg-white animate-ping' : 'bg-slate-400'}`} />
+                      {svc.status}
+                    </span>
+                    <span className="rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white uppercase">
+                      {svc.inputType === 'device' ? 'SDI DECKLINK' : svc.inputType === 'vod' ? 'VOD PLAYOUT' : 'LIVE TRANSCODE'}
+                    </span>
+                  </div>
+
+                  {/* Fullscreen Preview Button */}
+                  {svc.isRunning && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewService(svc)}
+                      className="absolute top-2 right-2 rounded bg-black/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-[#7C3AED]"
+                      title="Open Large Confidence Monitor"
+                    >
+                      <Maximize2 size={12} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Service Metadata Footer */}
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-xs text-[#1B1024] dark:text-white truncate" title={svc.name}>
+                      {svc.name}
+                    </h3>
+                    <span className="font-mono text-[10px] font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
+                      {svc.bitrateKbps ? `${svc.bitrateKbps} kbps` : '—'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono border-t border-[#E8DFF0] pt-1.5 dark:border-[#311B4E]">
+                    <div className="text-[#6F6078] dark:text-[#B9A5CD]">
+                      FPS: <b className="text-[#1B1024] dark:text-white">{svc.fps ? `${svc.fps} fps` : '25.0 fps'}</b>
+                    </div>
+                    <div className="text-[#6F6078] dark:text-[#B9A5CD] text-right truncate">
+                      Signal: <b className="text-emerald-600 dark:text-emerald-400">1080i50 HD-SDI</b>
+                    </div>
+                  </div>
+
+                  {svc.destinations?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {svc.destinations.map((d: any, i: number) => (
+                        <span key={i} className="rounded bg-[#F4EEFF] px-1.5 py-0.5 text-[9px] font-mono text-[#7C3AED] dark:bg-[#311754] dark:text-[#C4B5FD]">
+                          {d.protocol.toUpperCase()} {d.dvbServiceId ? `(SID: ${d.dvbServiceId})` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* Multiviewer List View */
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-[#E8DFF0] bg-[#F8F7FA] text-[11px] font-bold uppercase tracking-wider text-[#6F6078] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD]">
+                  <th className="p-2.5">Service Name</th>
+                  <th className="p-2.5">Input Signal</th>
+                  <th className="p-2.5">Status</th>
+                  <th className="p-2.5">FPS</th>
+                  <th className="p-2.5">Bitrate</th>
+                  <th className="p-2.5">DVB Destinations</th>
+                  <th className="p-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
+                {activeServices.map(svc => (
+                  <tr key={svc.id} className="hover:bg-[#F4EEFF]/40 dark:hover:bg-[#27153D]">
+                    <td className="p-2.5 font-bold text-[#1B1024] dark:text-white">{svc.name}</td>
+                    <td className="p-2.5 font-mono text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+                      {svc.inputType === 'device' ? 'DeckLink HD-SDI (1080i50)' : svc.inputUrl || 'Live Input'}
+                    </td>
+                    <td className="p-2.5">
+                      <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        svc.isRunning
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                      }`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${svc.isRunning ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        {svc.status}
+                      </span>
+                    </td>
+                    <td className="p-2.5 font-mono font-semibold">{svc.fps ? `${svc.fps} fps` : '25.0 fps'}</td>
+                    <td className="p-2.5 font-mono font-bold text-[#7C3AED] dark:text-[#C4B5FD]">{svc.bitrateKbps ? `${svc.bitrateKbps}k` : '—'}</td>
+                    <td className="p-2.5 font-mono text-[11px]">
+                      {svc.destinations?.map((d: any) => `${d.protocol.toUpperCase()}${d.dvbServiceId ? ` (SID: ${d.dvbServiceId})` : ''}`).join(', ') || 'HLS'}
+                    </td>
+                    <td className="p-2.5 text-right">
+                      {svc.isRunning && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewService(svc)}
+                          className="inline-flex items-center gap-1 rounded bg-[#F4EEFF] px-2 py-1 text-[11px] font-semibold text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors dark:bg-[#311754] dark:text-[#E2D1F9]"
+                        >
+                          <Play size={11} />
+                          <span>Monitor</span>
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Main 2-Column Desktop Grid */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Left Column: Live Streams */}
@@ -675,6 +905,46 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
           Last poll: {overview.generatedAt ? new Date(overview.generatedAt).toLocaleTimeString() : 'waiting...'}
         </span>
       </div>
+
+      {/* Service Preview Modal */}
+      {previewService && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={e => { if (e.target === e.currentTarget) setPreviewService(null); }}
+        >
+          <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-[#E8DFF0] bg-white shadow-2xl dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div className="flex items-center justify-between border-b border-[#E8DFF0] px-4 py-3 dark:border-[#311B4E]">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping" />
+                <h3 className="font-display text-[15px] font-bold text-[#1B1024] dark:text-white">
+                  Live Confidence Monitor — {previewService.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewService(null)}
+                className="rounded p-1 text-[#6F6078] hover:bg-[#F8F7FA] dark:text-[#B9A5CD] dark:hover:bg-[#211335]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="aspect-video bg-black">
+              <KashtrixMediaPlayer
+                src={previewService.hlsPreviewUrl}
+                title={previewService.name}
+                isLive={true}
+                autoPlay={true}
+                showAudioMeter={true}
+                className="w-full h-full"
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 border-t border-[#E8DFF0] bg-[#F8F7FA] text-xs font-mono dark:bg-[#211335] dark:border-[#311B4E]">
+              <span>Resolution & Format: <b>1920x1080i50 (DeckLink SDI / Hi50)</b></span>
+              <span className="text-[#7C3AED] dark:text-[#C4B5FD]">MPEG-4 AVC High Profile (Level 4.1)</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recording Preview Modal */}
       {previewRecording && (

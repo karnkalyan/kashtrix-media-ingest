@@ -275,3 +275,59 @@ export const DEFAULT_DECKLINK_FORMATS: {
   { code: '4k23', resolution: '3840x2160', width: 3840, height: 2160, fps: '23.98', fpsNum: 24000, fpsDen: 1001, interlaced: false, description: '4K UHD 23.98 fps (3840x2160, Progressive Film)' },
 ];
 
+export const AVC_PROFILE_OPTIONS = [
+  { value: 'high', label: 'High Profile (Broadcast Standard)' },
+  { value: 'main', label: 'Main Profile (Standard)' },
+  { value: 'baseline', label: 'Baseline Profile (Compatibility)' },
+  { value: 'high10', label: 'High 10 (10-bit Color)' },
+  { value: 'high422', label: 'High 4:2:2 (Production Quality)' },
+  { value: 'high444', label: 'High 4:4:4 (Mastering RGB)' },
+];
+
+export const AVC_LEVEL_OPTIONS = [
+  { value: 'auto', label: 'Auto (Recommended)' },
+  { value: '3.0', label: 'Level 3.0 (SD / 720x480)' },
+  { value: '3.1', label: 'Level 3.1 (720p30)' },
+  { value: '3.2', label: 'Level 3.2 (720p60)' },
+  { value: '4.0', label: 'Level 4.0 (1080p30)' },
+  { value: '4.1', label: 'Level 4.1 (1080i50 / 1080i60 / 1080p30 Broadcast)' },
+  { value: '4.2', label: 'Level 4.2 (1080p60)' },
+  { value: '5.0', label: 'Level 5.0 (2K / High Bitrate)' },
+  { value: '5.1', label: 'Level 5.1 (4K UHD 30fps)' },
+  { value: '5.2', label: 'Level 5.2 (4K UHD 60fps)' },
+];
+
+export const RATE_CONTROL_OPTIONS = [
+  { value: 'cbr', label: 'CBR — Constant Bitrate (Strict Broadcast DVB)' },
+  { value: 'vbr', label: 'VBR — Variable Bitrate (Bounded Peak)' },
+  { value: 'crf', label: 'CRF — Constant Rate Factor (Quality Target)' },
+  { value: 'cqp', label: 'CQP — Constant Quantization Parameter' },
+];
+
+export const NIC_BONDING_MODES = [
+  { value: 'balance-rr', label: 'Round-Robin (balance-rr / Mode 0)' },
+  { value: 'active-backup', label: 'Active-Backup (Fault Tolerance / Mode 1)' },
+  { value: 'balance-xor', label: 'XOR Load Balancing (balance-xor / Mode 2)' },
+  { value: 'broadcast', label: 'Broadcast (Redundant / Mode 3)' },
+  { value: '802.3ad', label: 'IEEE 802.3ad LACP (Dynamic Link Aggregation / Mode 4)' },
+  { value: 'balance-tlb', label: 'Adaptive Transmit Load Balancing (balance-tlb / Mode 5)' },
+  { value: 'balance-alb', label: 'Adaptive Load Balancing (balance-alb / Mode 6)' },
+];
+
+export const DEFAULT_ALARM_RULES = [
+  { id: 'alarm-output-links-down', name: 'All Output Links Down', enabled: true, sendTrap: true, severity: 'critical', timeoutMs: 0 },
+  { id: 'alarm-audio-fallback', name: 'Audio Signal Fallback', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 0 },
+  { id: 'alarm-audio-invalid', name: 'Audio Signal Invalid', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 2000 },
+  { id: 'alarm-audio-missing', name: 'Audio Signal Missing', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 2000 },
+  { id: 'alarm-audio-silent', name: 'Audio Signal Silent', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 2000 },
+  { id: 'alarm-data-missing', name: 'Data Signal Missing', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 2000 },
+  { id: 'alarm-dolby-error', name: 'Dolby Decoding Error', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 1000 },
+  { id: 'alarm-esam-comm', name: 'ESAM Server Communication Issue', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 0 },
+  { id: 'alarm-video-freeze', name: 'Video Freeze / Loss of Input Signal', enabled: true, sendTrap: true, severity: 'critical', timeoutMs: 3000 },
+  { id: 'alarm-decklink-drop', name: 'DeckLink Frame Drop / Underflow', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 1000 },
+  { id: 'alarm-ps-redundancy', name: 'Power Supply Redundancy Lost', enabled: true, sendTrap: true, severity: 'critical', timeoutMs: 1000 },
+  { id: 'alarm-storage-critical', name: 'Master Recording Storage Space Critical', enabled: true, sendTrap: true, severity: 'critical', timeoutMs: 5000 },
+  { id: 'alarm-cpu-overheat', name: 'CPU / Transcode Engine Thermal Warning', enabled: true, sendTrap: true, severity: 'warning', timeoutMs: 10000 },
+];
+
+

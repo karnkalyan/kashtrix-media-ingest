@@ -13,6 +13,91 @@ class PrismaStore {
     this.pending = Promise.resolve();
   }
 
+  // --- First-Class Prisma Async Methods ---
+  async getChannels() {
+    try {
+      const rows = await this.prisma.transcodeChannel.findMany();
+      return rows.map(r => {
+        try { return JSON.parse(r.data); } catch (_) { return { id: r.id, name: r.name }; }
+      }).filter(Boolean);
+    } catch (_) {
+      return this.data.channels.map(r => {
+        try { return JSON.parse(r.data); } catch (_) { return { id: r.id }; }
+      }).filter(Boolean);
+    }
+  }
+
+  async saveChannel(channel) {
+    if (!channel || !channel.id) return;
+    const id = channel.id;
+    const name = channel.name || id;
+    const data = JSON.stringify(channel);
+    const existing = this.data.channels.find(r => r.id === id);
+    if (existing) existing.data = data; else this.data.channels.push({ id, data });
+    return this.prisma.transcodeChannel.upsert({
+      where: { id },
+      update: { name, data },
+      create: { id, name, data }
+    }).catch(e => console.error('[Prisma] saveChannel error:', e.message));
+  }
+
+  async deleteChannel(id) {
+    this.data.channels = this.data.channels.filter(r => r.id !== id);
+    return this.prisma.transcodeChannel.delete({ where: { id } }).catch(() => {});
+  }
+
+  async getProfiles() {
+    try {
+      const rows = await this.prisma.transcodeProfile.findMany();
+      return rows.map(r => {
+        try { return JSON.parse(r.data); } catch (_) { return { id: r.id, name: r.name }; }
+      }).filter(Boolean);
+    } catch (_) {
+      return this.data.profiles.map(r => {
+        try { return JSON.parse(r.data); } catch (_) { return { id: r.id }; }
+      }).filter(Boolean);
+    }
+  }
+
+  async saveProfile(profile) {
+    if (!profile || !profile.id) return;
+    const id = profile.id;
+    const name = profile.name || id;
+    const data = JSON.stringify(profile);
+    const existing = this.data.profiles.find(r => r.id === id);
+    if (existing) existing.data = data; else this.data.profiles.push({ id, data });
+    return this.prisma.transcodeProfile.upsert({
+      where: { id },
+      update: { name, data },
+      create: { id, name, data }
+    }).catch(e => console.error('[Prisma] saveProfile error:', e.message));
+  }
+
+  async deleteProfile(id) {
+    this.data.profiles = this.data.profiles.filter(r => r.id !== id);
+    return this.prisma.transcodeProfile.delete({ where: { id } }).catch(() => {});
+  }
+
+  async getKv(key) {
+    try {
+      const row = await this.prisma.kvStore.findUnique({ where: { key } });
+      if (row) return row.value;
+    } catch (_) {}
+    const mem = this.data.kv.find(r => r.key === key);
+    return mem ? mem.value : null;
+  }
+
+  async setKv(key, value) {
+    const strVal = typeof value === 'string' ? value : JSON.stringify(value);
+    const existing = this.data.kv.find(r => r.key === key);
+    if (existing) existing.value = strVal; else this.data.kv.push({ key, value: strVal });
+    return this.prisma.kvStore.upsert({
+      where: { key },
+      update: { value: strVal },
+      create: { key, value: strVal }
+    }).catch(e => console.error('[Prisma] setKv error:', e.message));
+  }
+
   async initialize() {
     await this.prisma.$connect();
     try {

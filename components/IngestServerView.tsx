@@ -26,7 +26,12 @@ import {
   Download,
   Film,
   HardDrive,
-  AlertCircle
+  AlertCircle,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  Key,
+  Lock
 } from 'lucide-react';
 import { AppSettings, IngestRecordingOptions, RecordingEncoderCapability, RecordingProfileSummary, TranscodingProfile, StorageStatusResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -37,6 +42,7 @@ import DetailDrawer from './ui/DetailDrawer';
 import MediaPreview from './ui/MediaPreview';
 import StatusBadge from './ui/StatusBadge';
 import ConfirmDialog from './ui/ConfirmDialog';
+import LiveServerSecurityModal from './LiveServerSecurityModal';
 import { sendRealtime, subscribeRealtime } from '../services/realtime';
 
 const getRecordingFormat = (item: any): string => {
@@ -55,12 +61,6 @@ const getRecordingFormat = (item: any): string => {
 
 const getRecordingUrl = (item: any): string => {
   if (!item) return '';
-  const fmt = getRecordingFormat(item);
-  if (fmt === 'mp4' || fmt === 'webm') {
-    if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/file`;
-    const fileName = item.file_name || item.stream;
-    if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}`;
-  }
   if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
   const fileName = item.file_name || item.stream;
   return `/recording-preview/${encodeURIComponent(fileName || '')}`;
@@ -250,6 +250,33 @@ export const IngestServerView: React.FC<Props> = ({
   const [relayDestinationUrl, setRelayDestinationUrl] = useState('');
   const [processes, setProcesses] = useState<any[]>([]);
 
+  // RTMP Ingest Security State (Live Server mode)
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [rtmpSecurityEnabled, setRtmpSecurityEnabled] = useState(false);
+  const [rtmpKeysCount, setRtmpKeysCount] = useState(0);
+
+  const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
+    const token = localStorage.getItem('kte-auth-token');
+    const headers = {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    const res = await fetch(endpoint, { ...options, headers });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Server error');
+    return data;
+  }, []);
+
+  const fetchSecurityStatus = useCallback(async () => {
+    try {
+      const data = await apiCall('/api/live-server/security');
+      if (data?.settings) {
+        setRtmpSecurityEnabled(Boolean(data.settings.enabled));
+        setRtmpKeysCount((data.settings.keys || []).length);
+      }
+    } catch (_) {}
+  }, [apiCall]);
+
   const fetchStorageStatus = useCallback(async () => {
     try {
       const token = localStorage.getItem('kte-auth-token');
@@ -270,12 +297,13 @@ export const IngestServerView: React.FC<Props> = ({
         fetchRecordings(),
         fetchIngestStreams(),
         fetchStorageStatus(),
+        fetchSecurityStatus(),
       ]);
       fetchProcesses();
     } catch (e) {
       console.error(e);
     }
-  }, [fetchIngestHistory, fetchRecordings, fetchIngestStreams, fetchStorageStatus]);
+  }, [fetchIngestHistory, fetchRecordings, fetchIngestStreams, fetchStorageStatus, fetchSecurityStatus]);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -1106,6 +1134,30 @@ export const IngestServerView: React.FC<Props> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* RTMP Ingest Security & Stream Keys Button */}
+          <button
+            type="button"
+            onClick={() => setSecurityModalOpen(true)}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold shadow-xs transition-colors cursor-pointer ${
+              rtmpSecurityEnabled
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+            }`}
+            title="Configure URL-based stream keys (?key=...) and publisher security"
+          >
+            {rtmpSecurityEnabled ? (
+              <ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <ShieldAlert size={14} className="text-amber-600 dark:text-amber-400" />
+            )}
+            <span>{rtmpSecurityEnabled ? 'Secure Ingest (Active)' : 'Open / Unsecure Ingest'}</span>
+            {rtmpKeysCount > 0 && (
+              <span className="ml-1 rounded-full bg-violet-600 px-1.5 py-0.2 text-[9px] font-extrabold text-white">
+                {rtmpKeysCount} {rtmpKeysCount === 1 ? 'Key' : 'Keys'}
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setSrtModalOpen(true)}
@@ -1416,6 +1468,17 @@ export const IngestServerView: React.FC<Props> = ({
         loading={deleteLoading}
         onConfirm={confirmDeleteRecording}
         onCancel={() => setDeletingRec(null)}
+      />
+
+      {/* Live Server RTMP Ingest Security & Keys Modal */}
+      <LiveServerSecurityModal
+        open={securityModalOpen}
+        onClose={() => {
+          setSecurityModalOpen(false);
+          fetchSecurityStatus();
+        }}
+        rtmpPort={settings.rtmpPort || 1935}
+        api={apiCall}
       />
     </div>
   );
