@@ -1647,7 +1647,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
           <div className="space-y-1.5 pt-2">
             <div className="flex items-center justify-between text-xs font-bold text-[#1B1024] dark:text-white">
               <span>System Update & Telemetry Logs</span>
-              <span className="font-mono text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">CLI: node scripts/kashtrix-streamops-update.js</span>
+              <span className="font-mono text-[10px] text-[#6F6078] dark:text-[#B9A5CD]">CLI: kashtrix-streamops update</span>
             </div>
             <div className="rounded-lg border border-slate-800 bg-[#0F0B17] p-3 font-mono text-[11px] text-emerald-400 max-h-56 overflow-y-auto space-y-1">
               {(updateInfo?.updateLogs || []).map((log, i) => (

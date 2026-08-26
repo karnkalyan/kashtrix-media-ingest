@@ -7227,11 +7227,17 @@ let lastSystemUpdateLogs = [
 
 app.get('/api/system/update/status', authMiddleware, (req, res) => {
     try {
+        let commitHash = 'latest';
+        let commitDate = new Date().toISOString();
+        try {
+            commitHash = execSync('git rev-parse --short HEAD', { cwd: path.join(__dirname, '..'), encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+            commitDate = execSync('git log -1 --format=%cd --date=iso', { cwd: path.join(__dirname, '..'), encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+        } catch (_) {}
+
         const packagePath = path.join(__dirname, '..', 'package.json');
-        const packageInfo = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
         res.json({
-            currentVersion: '2.4.0',
-            currentBuild: fs.statSync(packagePath).mtime.toISOString(),
+            currentVersion: `2.4.0 (${commitHash})`,
+            currentBuild: commitDate || new Date().toISOString(),
             releaseChannel: process.env.KTX_RELEASE_CHANNEL || 'Enterprise Broadcast Release',
             availableVersion: '2.4.0',
             hasUpdate: false,
