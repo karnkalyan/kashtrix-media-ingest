@@ -119,6 +119,55 @@ const resolveFfmpegPath = () => {
 const ffmpegPath = resolveFfmpegPath();
 const ffprobePath = process.env.FFPROBE_PATH || 'ffprobe';
 const { getFFmpegDevices } = require('./getDevices');
+
+let captureDeviceCache = null;
+let captureDeviceScan = null;
+const CAPTURE_DEVICE_CACHE_MS = 5000;
+
+const scanCaptureDevices = async ({ refresh = false } = {}) => {
+    const now = Date.now();
+    if (!refresh && captureDeviceCache && now - captureDeviceCache.updatedAt < CAPTURE_DEVICE_CACHE_MS) {
+        return captureDeviceCache.devices;
+    }
+    if (captureDeviceScan) return captureDeviceScan;
+
+    captureDeviceScan = getFFmpegDevices(ffmpegPath)
+        .then(devices => {
+            captureDeviceCache = { devices, updatedAt: Date.now() };
+            return devices;
+        })
+        .catch(err => {
+            console.warn('[Device Discovery] Error scanning devices:', err.message);
+            return { video: [], audio: [] };
+        })
+        .finally(() => { captureDeviceScan = null; });
+
+    return captureDeviceScan;
+};
+
+const resolveCaptureDevice = (devices, deviceName) => {
+    if (!deviceName) return '';
+    if (devices && devices.decklinkMap && devices.decklinkMap[deviceName]) {
+        return devices.decklinkMap[deviceName];
+    }
+    return deviceName;
+};
+
+const resolveFriendlyDeviceName = (deviceListOrObj, rawDevice) => {
+    if (!rawDevice) return '';
+    const deviceList = Array.isArray(deviceListOrObj)
+        ? deviceListOrObj
+        : (deviceListOrObj && (deviceListOrObj.video || deviceListOrObj.audio))
+            ? [...(deviceListOrObj.video || []), ...(deviceListOrObj.audio || [])]
+            : [];
+    if (deviceList.length === 0) return String(rawDevice);
+    const found = deviceList.find(d => 
+        (typeof d === 'string' && d === rawDevice) ||
+        (d && (d.id === rawDevice || d.name === rawDevice || d.deviceName === rawDevice || d.device_name === rawDevice))
+    );
+    if (!found) return String(rawDevice);
+    return typeof found === 'string' ? found : (found.name || found.deviceName || found.device_name || found.id || String(rawDevice));
+};
 const {
     SUPPORTED_RECORDING_EXTENSIONS,
     buildRecordingProfileArgs,
@@ -3012,47 +3061,6 @@ const probeRecordedMediaSync = (filePath, stat) => {
         console.warn(`[Recording] Could not inspect ${path.basename(filePath)}: ${error.message}`);
         return null;
     }
-};
-
-let captureDeviceCache = null;
-let captureDeviceScan = null;
-const CAPTURE_DEVICE_CACHE_MS = 5000;
-
-const scanCaptureDevices = async ({ refresh = false } = {}) => {
-    const now = Date.now();
-    if (!refresh && captureDeviceCache && now - captureDeviceCache.updatedAt < CAPTURE_DEVICE_CACHE_MS) {
-        return captureDeviceCache.devices;
-    }
-    if (captureDeviceScan) return captureDeviceScan;
-
-    captureDeviceScan = getFFmpegDevices(ffmpegPath)
-        .then(devices => {
-            captureDeviceCache = { devices, updatedAt: Date.now() };
-            return devices;
-        })
-        .catch(err => {
-            console.warn('[Device Discovery] Error scanning devices:', err.message);
-            return { video: [], audio: [] };
-        })
-        .finally(() => { captureDeviceScan = null; });
-
-    return captureDeviceScan;
-};
-
-const resolveFriendlyDeviceName = (deviceListOrObj, rawDevice) => {
-    if (!rawDevice) return '';
-    const deviceList = Array.isArray(deviceListOrObj)
-        ? deviceListOrObj
-        : (deviceListOrObj && (deviceListOrObj.video || deviceListOrObj.audio))
-            ? [...(deviceListOrObj.video || []), ...(deviceListOrObj.audio || [])]
-            : [];
-    if (deviceList.length === 0) return String(rawDevice);
-    const found = deviceList.find(d => 
-        (typeof d === 'string' && d === rawDevice) ||
-        (d && (d.id === rawDevice || d.name === rawDevice || d.deviceName === rawDevice || d.device_name === rawDevice))
-    );
-    if (!found) return String(rawDevice);
-    return typeof found === 'string' ? found : (found.name || found.deviceName || found.device_name || found.id || String(rawDevice));
 };
 
 const listRecordings = (limit = 50) => {
