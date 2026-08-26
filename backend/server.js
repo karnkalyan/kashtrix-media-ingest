@@ -4288,6 +4288,242 @@ app.put('/api/ingest/record/config', authMiddleware, (req, res) => {
     }
 });
 
+// --- Recording Presets Database Management ---
+const DEFAULT_RECORDING_PRESETS = [
+    {
+        id: 'preset-decklink-50mbps',
+        name: 'Broadcast Master 1080p50 (50 Mbps NVENC CBR)',
+        sourceType: 'device',
+        videoDevice: 'Intensity Pro 4K',
+        audioDevice: 'Intensity Pro 4K',
+        config: {
+            autoRecord: false,
+            fileName: '{channel}_{date}_{time}',
+            formats: ['mp4'],
+            encoder: 'nvidia',
+            videoCodec: 'h264',
+            rateControl: 'cbr',
+            resolution: 'source',
+            framerate: 50,
+            videoBitrate: 50000,
+            maxBitrate: 55000,
+            preset: 'fast',
+            gopSize: 60,
+            pixelFormat: 'yuv420p',
+            audioCodec: 'aac',
+            audioBitrate: 192,
+            sampleRate: 48000,
+            audioChannels: 2,
+            continuous: true,
+            videoInput: 'hdmi',
+            storageType: 'local',
+            storagePath: PROJECT_RECORDINGS_SETTING,
+        },
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'preset-broadcast-15mbps',
+        name: 'Broadcast HD (1080p) (15 Mbps CBR)',
+        sourceType: 'device',
+        videoDevice: 'Intensity Pro 4K',
+        audioDevice: 'Intensity Pro 4K',
+        config: {
+            autoRecord: false,
+            fileName: '{channel}_{date}_{time}',
+            formats: ['mp4'],
+            encoder: 'nvidia',
+            videoCodec: 'h264',
+            rateControl: 'cbr',
+            resolution: 'source',
+            framerate: 50,
+            videoBitrate: 15000,
+            maxBitrate: 18000,
+            preset: 'fast',
+            gopSize: 60,
+            pixelFormat: 'yuv420p',
+            audioCodec: 'aac',
+            audioBitrate: 192,
+            sampleRate: 48000,
+            audioChannels: 2,
+            continuous: true,
+            videoInput: 'hdmi',
+            storageType: 'local',
+            storagePath: PROJECT_RECORDINGS_SETTING,
+        },
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'preset-4k-master',
+        name: '4K UHD Master Archive (80 Mbps HEVC NVENC)',
+        sourceType: 'device',
+        videoDevice: 'Intensity Pro 4K',
+        audioDevice: 'Intensity Pro 4K',
+        config: {
+            autoRecord: false,
+            fileName: '{channel}_{date}_{time}',
+            formats: ['mp4', 'mov'],
+            encoder: 'nvidia',
+            videoCodec: 'hevc',
+            rateControl: 'cbr',
+            resolution: '3840x2160',
+            framerate: 50,
+            videoBitrate: 80000,
+            maxBitrate: 90000,
+            preset: 'medium',
+            gopSize: 60,
+            pixelFormat: 'yuv422p',
+            audioCodec: 'aac',
+            audioBitrate: 320,
+            sampleRate: 48000,
+            audioChannels: 2,
+            continuous: true,
+            videoInput: 'hdmi',
+            storageType: 'local',
+            storagePath: PROJECT_RECORDINGS_SETTING,
+        },
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'preset-compact-720p',
+        name: 'Compact HD 720p (4 Mbps x264)',
+        sourceType: 'device',
+        config: {
+            autoRecord: false,
+            fileName: '{channel}_{date}_{time}',
+            formats: ['mp4'],
+            encoder: 'cpu',
+            videoCodec: 'h264',
+            rateControl: 'cbr',
+            resolution: '1280x720',
+            framerate: 30,
+            videoBitrate: 4000,
+            maxBitrate: 5000,
+            preset: 'fast',
+            gopSize: 60,
+            pixelFormat: 'yuv420p',
+            audioCodec: 'aac',
+            audioBitrate: 128,
+            sampleRate: 44100,
+            audioChannels: 2,
+            continuous: true,
+            storageType: 'local',
+            storagePath: PROJECT_RECORDINGS_SETTING,
+        },
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'preset-ingest-copy',
+        name: 'Live Ingest Direct Archive (Stream Copy)',
+        sourceType: 'ingest',
+        config: {
+            autoRecord: false,
+            fileName: '{channel}_{date}_{time}',
+            formats: ['mp4'],
+            encoder: 'copy',
+            videoCodec: 'h264',
+            rateControl: 'cbr',
+            resolution: 'source',
+            framerate: 50,
+            videoBitrate: 20000,
+            maxBitrate: 25000,
+            preset: 'fast',
+            gopSize: 60,
+            pixelFormat: 'yuv420p',
+            audioCodec: 'aac',
+            audioBitrate: 192,
+            sampleRate: 48000,
+            audioChannels: 2,
+            continuous: true,
+            storageType: 'local',
+            storagePath: PROJECT_RECORDINGS_SETTING,
+        },
+        createdAt: new Date().toISOString(),
+    },
+];
+
+const getRecordingPresets = () => {
+    const raw = getJsonSetting('recording_presets', null);
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    setJsonSetting('recording_presets', DEFAULT_RECORDING_PRESETS);
+    return DEFAULT_RECORDING_PRESETS;
+};
+
+app.get(['/api/ingest/record/presets', '/api/recording/presets'], authMiddleware, (req, res) => {
+    try {
+        const presets = getRecordingPresets();
+        res.json({ success: true, presets });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post(['/api/ingest/record/presets', '/api/recording/presets'], authMiddleware, (req, res) => {
+    try {
+        const presets = Array.isArray(req.body?.presets) ? req.body.presets : Array.isArray(req.body) ? req.body : [];
+        setJsonSetting('recording_presets', presets);
+        res.json({ success: true, presets });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post(['/api/ingest/record/presets/save', '/api/recording/presets/save'], authMiddleware, (req, res) => {
+    try {
+        const payload = req.body || {};
+        const name = String(payload.name || '').trim();
+        if (!name) return res.status(400).json({ success: false, error: 'Preset name is required' });
+
+        const currentPresets = getRecordingPresets();
+        const presetId = String(payload.id || `preset-${Date.now()}`);
+        const newPreset = {
+            id: presetId,
+            name,
+            sourceType: payload.sourceType === 'ingest' ? 'ingest' : 'device',
+            videoDevice: payload.videoDevice || '',
+            audioDevice: payload.audioDevice || '',
+            selectedStreamKey: payload.selectedStreamKey || '',
+            config: payload.config || {},
+            createdAt: payload.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        const existingIndex = currentPresets.findIndex(p => p.id === presetId);
+        let updatedList;
+        if (existingIndex >= 0) {
+            updatedList = [...currentPresets];
+            updatedList[existingIndex] = newPreset;
+        } else {
+            updatedList = [newPreset, ...currentPresets];
+        }
+
+        setJsonSetting('recording_presets', updatedList);
+        res.json({ success: true, preset: newPreset, presets: updatedList });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.delete(['/api/ingest/record/presets/:id', '/api/recording/presets/:id'], authMiddleware, (req, res) => {
+    try {
+        const { id } = req.params;
+        const currentPresets = getRecordingPresets();
+        const updatedList = currentPresets.filter(p => p.id !== id);
+        setJsonSetting('recording_presets', updatedList);
+        res.json({ success: true, presets: updatedList });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post(['/api/ingest/record/presets/reset', '/api/recording/presets/reset'], authMiddleware, (req, res) => {
+    try {
+        setJsonSetting('recording_presets', DEFAULT_RECORDING_PRESETS);
+        res.json({ success: true, presets: DEFAULT_RECORDING_PRESETS });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async (req, res) => {
     const { app: appName, stream, ...requestedOptions } = req.body || {};
     if (!appName || !stream) return res.status(400).json({ error: 'app and stream are required' });

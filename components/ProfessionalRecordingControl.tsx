@@ -306,6 +306,7 @@ interface Props {
   recordingProfiles?: RecordingProfileSummary[];
   recordingEncoders?: RecordingEncoderCapability[];
   activeRecordings?: any[];
+  api?: (endpoint: string, options?: RequestInit) => Promise<any>;
 }
 
 const selectClass =
@@ -344,6 +345,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   recordingProfiles = [],
   recordingEncoders = [],
   activeRecordings = [],
+  api,
 }) => {
   // Stepper state
   const [activeStep, setActiveStep] = useState<number>(1);
@@ -361,6 +363,44 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [selectedPresetId, setSelectedPresetId] = useState<string>(
     "preset-broadcast-15mbps",
   );
+
+  // Database API helper
+  const callApi = useCallback(async (endpoint: string, options?: RequestInit) => {
+    if (typeof api === "function") {
+      return api(endpoint, options);
+    }
+    const token = localStorage.getItem("kte-auth-token");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    const res = await fetch(endpoint, {
+      ...options,
+      headers: { ...headers, ...((options?.headers as Record<string, string>) || {}) },
+    });
+    const data = await res.json();
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `Request failed: ${res.status}`);
+    }
+    return data;
+  }, [api]);
+
+  // Load Presets from Database on Mount
+  const loadPresetsFromDb = useCallback(async () => {
+    try {
+      const data = await callApi("/api/ingest/record/presets");
+      if (Array.isArray(data.presets) && data.presets.length > 0) {
+        setSavedPresets(data.presets);
+        localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(data.presets));
+      }
+    } catch (err) {
+      console.warn("[Presets] DB load fallback to local cache:", err);
+    }
+  }, [callApi]);
+
+  useEffect(() => {
+    loadPresetsFromDb();
+  }, [loadPresetsFromDb]);
 
   // Selected Profile
   const [profileId, setProfileId] = useState("source-default");
@@ -770,11 +810,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     toast.success(`Loaded preset: ${target.name}`);
   };
 
-  const handleSavePreset = () => {
+  const handleSavePreset = async () => {
     const name =
       setupNameInput.trim() ||
       `${sourceName} Setup (${new Date().toLocaleDateString()})`;
-    const newPreset: SavedRecordingPreset = {
+    const newPresetPayload = {
       id: `preset-${Date.now()}`,
       name,
       sourceType,
@@ -784,30 +824,69 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       config: activeConfig,
       createdAt: new Date().toISOString(),
     };
-    const updated = [newPreset, ...savedPresets];
-    setSavedPresets(updated);
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
-    setSelectedPresetId(newPreset.id);
-    setSaveSetupModalOpen(false);
-    setSetupNameInput("");
-    toast.success(`Preset "${name}" saved successfully!`);
-  };
 
-  const handleDeletePreset = (id: string) => {
-    const updated = savedPresets.filter((p) => p.id !== id);
-    setSavedPresets(updated);
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
-    if (selectedPresetId === id && updated.length > 0) {
-      setSelectedPresetId(updated[0].id);
+    try {
+      const res = await callApi("/api/ingest/record/presets/save", {
+        method: "POST",
+        body: JSON.stringify(newPresetPayload),
+      });
+      const updatedList = res.presets || [newPresetPayload, ...savedPresets];
+      setSavedPresets(updatedList);
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updatedList));
+      setSelectedPresetId(res.preset?.id || newPresetPayload.id);
+      setSaveSetupModalOpen(false);
+      setSetupNameInput("");
+      toast.success(`Preset "${name}" saved to database!`);
+    } catch (err: any) {
+      const updated = [newPresetPayload, ...savedPresets];
+      setSavedPresets(updated);
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
+      setSelectedPresetId(newPresetPayload.id);
+      setSaveSetupModalOpen(false);
+      setSetupNameInput("");
+      toast.success(`Preset "${name}" saved locally`);
     }
-    toast.success("Preset deleted");
   };
 
-  const handleResetPresets = () => {
-    setSavedPresets(DEFAULT_PRESETS);
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(DEFAULT_PRESETS));
-    setSelectedPresetId(DEFAULT_PRESETS[0].id);
-    toast.success("Presets reset to broadcast defaults");
+  const handleDeletePreset = async (id: string) => {
+    try {
+      const res = await callApi(`/api/ingest/record/presets/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const updated = res.presets || savedPresets.filter((p) => p.id !== id);
+      setSavedPresets(updated);
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
+      if (selectedPresetId === id && updated.length > 0) {
+        setSelectedPresetId(updated[0].id);
+      }
+      toast.success("Preset deleted from database");
+    } catch (err: any) {
+      const updated = savedPresets.filter((p) => p.id !== id);
+      setSavedPresets(updated);
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(updated));
+      if (selectedPresetId === id && updated.length > 0) {
+        setSelectedPresetId(updated[0].id);
+      }
+      toast.success("Preset deleted");
+    }
+  };
+
+  const handleResetPresets = async () => {
+    try {
+      const res = await callApi("/api/ingest/record/presets/reset", {
+        method: "POST",
+      });
+      const resetList = res.presets || DEFAULT_PRESETS;
+      setSavedPresets(resetList);
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(resetList));
+      setSelectedPresetId(resetList[0]?.id || DEFAULT_PRESETS[0].id);
+      toast.success("Presets reset to broadcast defaults in database");
+    } catch (err: any) {
+      setSavedPresets(DEFAULT_PRESETS);
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(DEFAULT_PRESETS));
+      setSelectedPresetId(DEFAULT_PRESETS[0].id);
+      toast.success("Presets reset to broadcast defaults");
+    }
   };
 
   // Profile application

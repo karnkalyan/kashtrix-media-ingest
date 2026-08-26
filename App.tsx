@@ -2873,6 +2873,7 @@ const App: React.FC = () => {
               profiles={engine.state.profiles}
               licenseStatus={engine.auth.license.status}
               mode="recording"
+              api={engine.api}
             />
           )}
           {activeView === "live-server" && (
@@ -2890,6 +2891,7 @@ const App: React.FC = () => {
               profiles={engine.state.profiles}
               licenseStatus={engine.auth.license.status}
               mode="live"
+              api={engine.api}
             />
           )}
           {activeView === "vod" && (

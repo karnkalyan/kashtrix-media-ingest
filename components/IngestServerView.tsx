@@ -103,6 +103,7 @@ interface Props {
   profiles: TranscodingProfile[];
   licenseStatus?: string;
   mode?: 'recording' | 'live';
+  api?: (endpoint: string, options?: RequestInit) => Promise<any>;
 }
 
 const formatBitrate = (kbps: number) => {
@@ -207,6 +208,7 @@ export const IngestServerView: React.FC<Props> = ({
   profiles,
   licenseStatus,
   mode = 'live',
+  api,
 }) => {
   const [selectedStreamKey, setSelectedStreamKey] = useState<string>('');
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -834,6 +836,7 @@ export const IngestServerView: React.FC<Props> = ({
           recordingProfiles={recordingProfiles}
           recordingEncoders={recordingEncoders}
           activeRecordings={recordings.filter((recording: any) => recording?.is_active)}
+          api={api}
         />
 
         {/* Recent Recordings Table */}
