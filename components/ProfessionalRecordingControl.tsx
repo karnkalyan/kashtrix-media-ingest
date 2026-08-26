@@ -74,10 +74,10 @@ const DEFAULT_PRESETS: SavedRecordingPreset[] = [
       encoder: "nvidia",
       videoCodec: "h264",
       rateControl: "cbr",
-      resolution: "source",
+      resolution: "1920x1080",
       framerate: 50,
       videoBitrate: 50000,
-      maxBitrate: 55000,
+      maxBitrate: 50000,
       preset: "fast",
       gopSize: 60,
       pixelFormat: "yuv420p",
@@ -105,10 +105,10 @@ const DEFAULT_PRESETS: SavedRecordingPreset[] = [
       encoder: "nvidia",
       videoCodec: "h264",
       rateControl: "cbr",
-      resolution: "source",
+      resolution: "1920x1080",
       framerate: 50,
       videoBitrate: 15000,
-      maxBitrate: 18000,
+      maxBitrate: 15000,
       preset: "fast",
       gopSize: 60,
       pixelFormat: "yuv420p",
@@ -139,7 +139,7 @@ const DEFAULT_PRESETS: SavedRecordingPreset[] = [
       resolution: "3840x2160",
       framerate: 50,
       videoBitrate: 80000,
-      maxBitrate: 90000,
+      maxBitrate: 80000,
       preset: "medium",
       gopSize: 60,
       pixelFormat: "yuv422p",
@@ -168,7 +168,7 @@ const DEFAULT_PRESETS: SavedRecordingPreset[] = [
       resolution: "1280x720",
       framerate: 30,
       videoBitrate: 4000,
-      maxBitrate: 5000,
+      maxBitrate: 4000,
       preset: "fast",
       gopSize: 60,
       pixelFormat: "yuv420p",
@@ -196,7 +196,7 @@ const DEFAULT_PRESETS: SavedRecordingPreset[] = [
       resolution: "source",
       framerate: 50,
       videoBitrate: 20000,
-      maxBitrate: 25000,
+      maxBitrate: 20000,
       preset: "fast",
       gopSize: 60,
       pixelFormat: "yuv420p",
@@ -797,7 +797,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   };
 
   // Preset Handlers
-  const handleLoadPreset = (targetPresetId: string) => {
+  const handleLoadPreset = async (
+    targetPresetId: string,
+    options?: { persistToDb?: boolean; notify?: boolean }
+  ) => {
+    const shouldPersist = options?.persistToDb ?? true;
+    const shouldNotify = options?.notify ?? true;
     setSelectedPresetId(targetPresetId);
     const target = savedPresets.find((p) => p.id === targetPresetId);
     if (!target) return;
@@ -825,8 +830,28 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }
     if (target.config) {
       patch(target.config);
+
+      // Persist active recording configuration directly into database
+      if (shouldPersist) {
+        try {
+          await callApi("/api/ingest/record/config", {
+            method: "PUT",
+            body: JSON.stringify({
+              autoRecord: !!target.config.autoRecord,
+              ...target.config,
+            }),
+          });
+          if (typeof save === "function") {
+            save();
+          }
+        } catch (err) {
+          console.warn("[Presets] Failed to store active config in DB on preset load:", err);
+        }
+      }
     }
-    toast.success(`Loaded preset: ${target.name}`);
+    if (shouldNotify) {
+      toast.success(`Loaded "${target.name}" and saved to active recording config in database`);
+    }
   };
 
   const handleSavePreset = async () => {
@@ -861,16 +886,23 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   };
 
   const handleDeletePreset = async (id: string) => {
+    const target = savedPresets.find((p) => p.id === id);
+    const name = target?.name || id;
     try {
       const res = await callApi(`/api/ingest/record/presets/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       const updated = res.presets || savedPresets.filter((p) => p.id !== id);
       setSavedPresets(updated);
+      if (res.defaultPresetId !== undefined) {
+        setDefaultPresetId(res.defaultPresetId);
+      } else if (defaultPresetId === id) {
+        setDefaultPresetId(null);
+      }
       if (selectedPresetId === id && updated.length > 0) {
         setSelectedPresetId(updated[0].id);
       }
-      toast.success("Preset deleted from database");
+      toast.success(`Preset "${name}" deleted from database`);
     } catch (err: any) {
       toast.error(err?.message || "Preset could not be deleted from the database");
     }
@@ -901,11 +933,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       const preset = savedPresets.find((p) => p.id === presetId);
       toast.success(
         newDefaultId
-          ? `"${preset?.name || presetId}" set as default preset`
-          : "Default preset cleared",
+          ? `"${preset?.name || presetId}" set as default recording preset in database`
+          : "Default recording preset cleared",
       );
     } catch (err: any) {
-      toast.error(err?.message || "Could not update default preset");
+      toast.error(err?.message || "Could not update default preset in database");
     }
   };
 
@@ -1153,7 +1185,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
-      {/* PRESETS TOOLBAR: Define, Load, Save, Manage Presets */}
+      {/* PRESETS TOOLBAR: Define, Load, Set Default, Delete, Save, Manage Presets */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
         <div className="flex flex-wrap items-center gap-2.5 min-w-0">
           <div className="flex items-center gap-2">
@@ -1176,7 +1208,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   .filter((p) => DEFAULT_PRESETS.some((dp) => dp.id === p.id))
                   .map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {defaultPresetId === p.id ? `★ ${p.name} (Default)` : p.name}
                     </option>
                   ))}
               </optgroup>
@@ -1190,7 +1222,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     )
                     .map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
+                        {defaultPresetId === p.id ? `★ ${p.name} (Default)` : p.name}
                       </option>
                     ))}
                 </optgroup>
@@ -1201,12 +1233,50 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </div>
           </div>
 
+          {/* Load Preset Button */}
           <button
             type="button"
             onClick={() => handleLoadPreset(selectedPresetId)}
             className="flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
+            title="Load preset and store active configuration in database"
           >
             <FiUpload size={12} /> Load Preset
+          </button>
+
+          {/* Set / Toggle Default Preset Button */}
+          <button
+            type="button"
+            onClick={() => handleSetDefaultPreset(selectedPresetId)}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold transition ${
+              defaultPresetId === selectedPresetId
+                ? "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:border-amber-700 dark:text-amber-300"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-300"
+            }`}
+            title={defaultPresetId === selectedPresetId ? "Default preset (Click to unset)" : "Set as default preset in database"}
+          >
+            <FiStar
+              size={13}
+              className={defaultPresetId === selectedPresetId ? "text-amber-500 fill-amber-500" : "text-slate-400"}
+            />
+            {defaultPresetId === selectedPresetId ? "Default" : "Set Default"}
+          </button>
+
+          {/* Delete / Remove Selected Preset Button */}
+          <button
+            type="button"
+            onClick={() => {
+              const current = savedPresets.find((p) => p.id === selectedPresetId);
+              if (
+                current &&
+                window.confirm(`Are you sure you want to delete preset "${current.name}" from database?`)
+              ) {
+                handleDeletePreset(selectedPresetId);
+              }
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300"
+            title="Remove/delete currently selected preset from database"
+          >
+            <FiTrash2 size={12} /> Delete Preset
           </button>
         </div>
 
@@ -3228,7 +3298,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         open={managePresetsOpen}
         onClose={() => setManagePresetsOpen(false)}
         title="Manage Recording Presets"
-        subtitle="View, load, delete, or reset broadcast recording presets"
+        subtitle="View, load, delete, or set default broadcast recording presets"
         width="max-w-[560px]"
         footer={
           <div className="flex items-center justify-between w-full">
@@ -3236,6 +3306,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               type="button"
               onClick={handleResetPresets}
               className="h-8 rounded-lg border border-slate-200 px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
+              title="Reset all presets back to system broadcast standards"
             >
               Reset to Defaults
             </button>
@@ -3251,7 +3322,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       >
         <div className="space-y-3">
           <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD]">
-            Click the <FiStar size={10} className="inline" /> star to set a preset as default — it will auto-load when the recording panel opens.
+            Click the <FiStar size={10} className="inline text-amber-500" /> star to set a preset as default — it will automatically load into active recording configuration when the ingest server opens.
           </p>
           {savedPresets.map((preset) => {
             const isBuiltIn = DEFAULT_PRESETS.some((dp) => dp.id === preset.id);
@@ -3273,7 +3344,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     </h5>
                     {isBuiltIn && (
                       <span className="rounded bg-slate-100 text-slate-600 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-slate-800 dark:text-slate-300">
-                        Built-in
+                        Broadcast
                       </span>
                     )}
                     {isUserDefault && (
@@ -3283,8 +3354,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     )}
                   </div>
                   <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] mt-0.5 truncate">
-                    {preset.config?.videoCodec?.toUpperCase()}{" "}
-                    {preset.config?.videoBitrate}k | Max{" "}
+                    {preset.config?.resolution || "source"} | {preset.config?.videoCodec?.toUpperCase()}{" "}
+                    {preset.config?.videoBitrate}k CBR | Max{" "}
                     {preset.config?.maxBitrate}k |{" "}
                     {preset.config?.formats?.join(", ").toUpperCase()}
                   </p>
@@ -3294,14 +3365,14 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => handleSetDefaultPreset(preset.id)}
-                    className={`p-1 transition ${
+                    className={`p-1.5 rounded-lg border transition ${
                       isUserDefault
-                        ? "text-amber-500 hover:text-amber-600"
-                        : "text-slate-300 hover:text-amber-500 dark:text-slate-600 dark:hover:text-amber-400"
+                        ? "border-amber-400 bg-amber-50 text-amber-600 hover:text-amber-700 dark:bg-amber-950/60 dark:border-amber-600 dark:text-amber-300"
+                        : "border-slate-200 bg-slate-50 text-slate-400 hover:text-amber-500 dark:bg-[#1E1130] dark:border-[#371F59] dark:text-slate-500"
                     }`}
-                    title={isUserDefault ? "Remove as default preset" : "Set as default preset"}
+                    title={isUserDefault ? "Default preset (Click to remove default)" : "Set as default preset in database"}
                   >
-                    <FiStar size={14} fill={isUserDefault ? "currentColor" : "none"} />
+                    <FiStar size={14} className={isUserDefault ? "fill-amber-500 text-amber-500" : ""} />
                   </button>
                   <button
                     type="button"
@@ -3309,21 +3380,26 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                       handleLoadPreset(preset.id);
                       setManagePresetsOpen(false);
                     }}
-                    className="rounded bg-violet-50 border border-violet-200 px-2.5 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950 dark:border-violet-800 dark:text-violet-300"
+                    className="rounded-lg bg-violet-50 border border-violet-200 px-2.5 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950 dark:border-violet-800 dark:text-violet-300"
+                    title="Load preset and persist to active recording configuration in DB"
                   >
                     Load
                   </button>
 
-                  {!isBuiltIn && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePreset(preset.id)}
-                      className="p-1 text-slate-400 hover:text-rose-600 transition"
-                      title="Delete Preset"
-                    >
-                      <FiTrash2 size={13} />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        window.confirm(`Are you sure you want to delete preset "${preset.name}" from database?`)
+                      ) {
+                        handleDeletePreset(preset.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 transition"
+                    title="Delete preset from database"
+                  >
+                    <FiTrash2 size={13} />
+                  </button>
                 </div>
               </div>
             );

@@ -4734,10 +4734,10 @@ const DEFAULT_RECORDING_PRESETS = [
             encoder: 'nvidia',
             videoCodec: 'h264',
             rateControl: 'cbr',
-            resolution: 'source',
+            resolution: '1920x1080',
             framerate: 50,
             videoBitrate: 50000,
-            maxBitrate: 55000,
+            maxBitrate: 50000,
             preset: 'fast',
             gopSize: 60,
             pixelFormat: 'yuv420p',
@@ -4765,10 +4765,10 @@ const DEFAULT_RECORDING_PRESETS = [
             encoder: 'nvidia',
             videoCodec: 'h264',
             rateControl: 'cbr',
-            resolution: 'source',
+            resolution: '1920x1080',
             framerate: 50,
             videoBitrate: 15000,
-            maxBitrate: 18000,
+            maxBitrate: 15000,
             preset: 'fast',
             gopSize: 60,
             pixelFormat: 'yuv420p',
@@ -4799,7 +4799,7 @@ const DEFAULT_RECORDING_PRESETS = [
             resolution: '3840x2160',
             framerate: 50,
             videoBitrate: 80000,
-            maxBitrate: 90000,
+            maxBitrate: 80000,
             preset: 'medium',
             gopSize: 60,
             pixelFormat: 'yuv422p',
@@ -4828,7 +4828,7 @@ const DEFAULT_RECORDING_PRESETS = [
             resolution: '1280x720',
             framerate: 30,
             videoBitrate: 4000,
-            maxBitrate: 5000,
+            maxBitrate: 4000,
             preset: 'fast',
             gopSize: 60,
             pixelFormat: 'yuv420p',
@@ -4856,7 +4856,7 @@ const DEFAULT_RECORDING_PRESETS = [
             resolution: 'source',
             framerate: 50,
             videoBitrate: 20000,
-            maxBitrate: 25000,
+            maxBitrate: 20000,
             preset: 'fast',
             gopSize: 60,
             pixelFormat: 'yuv420p',
@@ -4968,8 +4968,13 @@ app.delete(['/api/ingest/record/presets/:id', '/api/recording/presets/:id'], aut
     try {
         const { id } = req.params;
         await db.prisma.recordingPreset.delete({ where: { id } }).catch(() => {});
+        let defaultId = await getJsonSetting('default_recording_preset_id', null);
+        if (defaultId === id) {
+            await setJsonSetting('default_recording_preset_id', null);
+            defaultId = null;
+        }
         const updatedList = await getRecordingPresets();
-        res.json({ success: true, presets: updatedList });
+        res.json({ success: true, presets: updatedList, defaultPresetId: defaultId });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
