@@ -67,7 +67,7 @@ const setStoredConfig = (db, key, value) => {
 };
 
 /**
- * Get Physical Interfaces (Hardware NICs)
+ * Get Physical Interfaces (Hardware NICs) from actual system telemetry
  */
 const getPhysicalInterfaces = async (db) => {
     const storedOverrides = getStoredConfig(db, 'physical_interfaces_overrides', {});
@@ -83,20 +83,27 @@ const getPhysicalInterfaces = async (db) => {
                 .map((iface, idx) => {
                     const stats = (Array.isArray(netStats) ? netStats.find(s => s.iface === iface.iface) : null) || {};
                     const override = storedOverrides[iface.iface] || storedOverrides[iface.id] || {};
+                    const ifaceName = iface.iface || iface.ifaceName || `eth${idx}`;
+                    const isUp = iface.operstate === 'up';
 
                     return {
-                        id: iface.iface || `eth${idx}`,
-                        name: iface.ifaceName || iface.iface || `eth${idx}`,
+                        interface: ifaceName,
+                        id: ifaceName,
+                        name: iface.ifaceName || ifaceName,
                         type: iface.type || (iface.virtual ? 'Virtual' : 'Physical'),
                         macAddress: iface.mac || '00:00:00:00:00:00',
-                        state: iface.operstate === 'up' ? 'Up' : (iface.operstate === 'down' ? 'Down' : 'Unknown'),
-                        linkSpeed: iface.speed ? `${iface.speed} Mbps` : '1000 Mbps',
-                        mtu: override.mtu || iface.mtu || 1500,
-                        duplex: iface.duplex || 'Full',
+                        igmp: override.igmp || 'V3',
+                        negotiatedSpeed: iface.speed ? `${iface.speed}Mb/s Full` : '1000Mb/s Full',
+                        linkSpeed: override.linkSpeed || (iface.speed ? String(iface.speed) : 'auto'),
+                        state: isUp ? 'Up' : (iface.operstate === 'down' ? 'Down' : 'Up'),
                         method: override.method || (iface.dhcp ? 'DHCP' : 'Static'),
                         address: override.address || iface.ip4 || '0.0.0.0',
                         netmask: override.netmask || iface.ip4subnet || '255.255.255.0',
-                        gateway: override.gateway || iface.defaultGateway || '0.0.0.0',
+                        gateway: override.gateway || iface.defaultGateway || '',
+                        logicalName: override.logicalName || ifaceName,
+                        isOnline: isUp,
+                        mtu: Number(override.mtu || iface.mtu || 1500),
+                        duplex: iface.duplex || 'Full',
                         rxBytes: Number(stats.rx_bytes || 0),
                         txBytes: Number(stats.tx_bytes || 0),
                         rxSpeed: Number(stats.rx_sec || 0),
@@ -111,39 +118,35 @@ const getPhysicalInterfaces = async (db) => {
     if (interfaces.length === 0) {
         // Fallback to os.networkInterfaces()
         const osIfaces = os.networkInterfaces();
-        let idx = 0;
         for (const [name, addrs] of Object.entries(osIfaces)) {
             const v4 = Array.isArray(addrs) ? addrs.find(a => a.family === 'IPv4' && !a.internal) : null;
             if (v4) {
                 const override = storedOverrides[name] || {};
                 interfaces.push({
+                    interface: name,
                     id: name,
                     name,
                     type: 'Physical',
                     macAddress: v4.mac || '00:00:00:00:00:00',
+                    igmp: override.igmp || 'V3',
+                    negotiatedSpeed: '1000Mb/s Full',
+                    linkSpeed: override.linkSpeed || 'auto',
                     state: 'Up',
-                    linkSpeed: '1000 Mbps',
-                    mtu: override.mtu || 1500,
-                    duplex: 'Full',
                     method: override.method || 'Static',
                     address: override.address || v4.address || '192.168.1.100',
                     netmask: override.netmask || v4.netmask || '255.255.255.0',
-                    gateway: override.gateway || '192.168.1.1',
+                    gateway: override.gateway || '',
+                    logicalName: override.logicalName || name,
+                    isOnline: true,
+                    mtu: Number(override.mtu || 1500),
+                    duplex: 'Full',
                     rxBytes: 0,
                     txBytes: 0,
                     rxSpeed: 0,
                     txSpeed: 0
                 });
-                idx++;
             }
         }
-    }
-
-    if (interfaces.length === 0) {
-        interfaces = [
-            { id: 'eth0', name: 'eth0 (Management)', type: 'Physical', macAddress: '52:54:00:12:34:56', state: 'Up', linkSpeed: '10000 Mbps', mtu: 1500, duplex: 'Full', method: 'Static', address: '172.18.100.150', netmask: '255.255.255.0', gateway: '172.18.100.1', rxBytes: 0, txBytes: 0, rxSpeed: 0, txSpeed: 0 },
-            { id: 'eth1', name: 'eth1 (Playout / TS)', type: 'Physical', macAddress: '52:54:00:12:34:57', state: 'Up', linkSpeed: '10000 Mbps', mtu: 1500, duplex: 'Full', method: 'Static', address: '172.18.100.151', netmask: '255.255.255.0', gateway: '172.18.100.1', rxBytes: 0, txBytes: 0, rxSpeed: 0, txSpeed: 0 }
-        ];
     }
 
     return interfaces;
@@ -153,13 +156,17 @@ const getPhysicalInterfaces = async (db) => {
  * Update Physical Interface Configuration
  */
 const updatePhysicalInterface = async (db, ifaceData) => {
-    if (!ifaceData || !ifaceData.id) throw new Error('Interface ID required');
+    const ifaceKey = ifaceData?.interface || ifaceData?.id;
+    if (!ifaceKey) throw new Error('Interface identifier required');
     const overrides = getStoredConfig(db, 'physical_interfaces_overrides', {});
-    overrides[ifaceData.id] = {
+    overrides[ifaceKey] = {
         method: ifaceData.method || 'Static',
         address: ifaceData.address,
         netmask: ifaceData.netmask,
         gateway: ifaceData.gateway,
+        logicalName: ifaceData.logicalName || ifaceKey,
+        linkSpeed: ifaceData.linkSpeed || 'auto',
+        igmp: ifaceData.igmp || 'V3',
         mtu: Number(ifaceData.mtu) || 1500
     };
     setStoredConfig(db, 'physical_interfaces_overrides', overrides);
@@ -170,16 +177,22 @@ const updatePhysicalInterface = async (db, ifaceData) => {
  * NIC Bonds (Link Aggregation / LACP / Active-Backup)
  */
 const getNicBonds = (db) => {
-    return getStoredConfig(db, 'nic_bonds', [
-        { id: 'bond0', bondName: 'bond0', slaves: ['eth0', 'eth1'], mode: '802.3ad (LACP)', state: 'Up', address: '172.18.100.160', netmask: '255.255.255.0', gateway: '172.18.100.1' }
-    ]);
+    return getStoredConfig(db, 'nic_bonds', []);
 };
 
 const saveNicBond = (db, bond) => {
     const bonds = getNicBonds(db);
-    const id = bond.id || bond.bondName || `bond_${Date.now()}`;
-    const newBond = { ...bond, id, state: bond.state || 'Up' };
-    const idx = bonds.findIndex(b => b.id === id);
+    const id = bond.id || bond.interface || `bond_${Date.now()}`;
+    const newBond = {
+        id,
+        interface: bond.interface || id,
+        mode: bond.mode || '802.3ad',
+        slaves: Array.isArray(bond.slaves) ? bond.slaves : (bond.slaves ? String(bond.slaves).split(',').map(s => s.trim()).filter(Boolean) : []),
+        state: bond.state || 'Up',
+        address: bond.address || '',
+        netmask: bond.netmask || '255.255.255.0'
+    };
+    const idx = bonds.findIndex(b => b.id === id || b.interface === newBond.interface);
     if (idx >= 0) bonds[idx] = newBond;
     else bonds.push(newBond);
     setStoredConfig(db, 'nic_bonds', bonds);
@@ -188,30 +201,40 @@ const saveNicBond = (db, bond) => {
 
 const deleteNicBond = (db, id) => {
     const bonds = getNicBonds(db);
-    setStoredConfig(db, 'nic_bonds', bonds.filter(b => b.id !== id));
+    setStoredConfig(db, 'nic_bonds', bonds.filter(b => b.id !== id && b.interface !== id));
     return { ok: true };
 };
 
 /**
- * Get VLANs.
+ * Get VLANs (802.1Q Virtual LANs)
  */
 const getVlans = (db) => {
-    return getStoredConfig(db, 'virtual_lans', [
-        { id: 'vlan_100', interface: 'eth0', vlanNumber: 100, igmp: 'V3', state: 'Up', method: 'Static', address: '10.100.0.10', netmask: '255.255.255.0', logicalName: 'VLAN_MGMT' }
-    ]);
+    const stored = getStoredConfig(db, 'virtual_lans', []);
+    return stored;
 };
 
 const saveVlan = (db, vlan) => {
     const vlans = getVlans(db);
-    const id = vlan.id || `vlan_${Date.now()}`;
-    const newVlan = { ...vlan, id, state: vlan.state || 'Up' };
-    const idx = vlans.findIndex(v => v.id === id);
+    const id = vlan.id || `vlan_${vlan.interface}_${vlan.vlanNumber || Date.now()}`;
+    const newVlan = {
+        id,
+        interface: vlan.interface || 'eth0',
+        vlanNumber: Number(vlan.vlanNumber) || 100,
+        igmp: vlan.igmp || 'V3',
+        state: vlan.state || 'Up',
+        method: vlan.method || 'Static',
+        address: vlan.address || '',
+        netmask: vlan.netmask || '255.255.255.0',
+        logicalName: vlan.logicalName || `VLAN_${vlan.vlanNumber || 'NET'}`
+    };
+    const idx = vlans.findIndex(v => v.id === id || (v.interface === newVlan.interface && Number(v.vlanNumber) === Number(newVlan.vlanNumber)));
     if (idx >= 0) vlans[idx] = newVlan;
     else vlans.push(newVlan);
     setStoredConfig(db, 'virtual_lans', vlans);
 
-    if (process.platform === 'linux' && vlan.interface && vlan.vlanNumber) {
-        runCommand(`ip link add link ${vlan.interface} name ${vlan.interface}.${vlan.vlanNumber} type vlan id ${vlan.vlanNumber} 2>/dev/null; ip link set ${vlan.interface}.${vlan.vlanNumber} up`);
+    if (process.platform === 'linux' && newVlan.interface && newVlan.vlanNumber) {
+        const vlanSub = `${newVlan.interface}.${newVlan.vlanNumber}`;
+        runCommand(`ip link add link ${newVlan.interface} name ${vlanSub} type vlan id ${newVlan.vlanNumber} 2>/dev/null; ip link set ${vlanSub} up; ${newVlan.address ? `ip addr add ${newVlan.address}/${newVlan.netmask || '255.255.255.0'} dev ${vlanSub} 2>/dev/null` : ''}`);
     }
     return newVlan;
 };
@@ -220,33 +243,37 @@ const deleteVlan = (db, id) => {
     const vlans = getVlans(db);
     const target = vlans.find(v => v.id === id);
     if (target && process.platform === 'linux') {
-        runCommand(`ip link delete ${target.interface}.${target.vlanNumber}`);
+        runCommand(`ip link delete ${target.interface}.${target.vlanNumber} 2>/dev/null`);
     }
     setStoredConfig(db, 'virtual_lans', vlans.filter(v => v.id !== id));
     return { ok: true };
 };
 
 /**
- * Routes.
+ * IP Routes.
  */
 const getRoutes = (db) => {
-    return getStoredConfig(db, 'network_routes', [
-        { id: 'route_default', interface: 'eth0', type: 'Default', destination: '0.0.0.0', netmask: '0.0.0.0', gateway: '172.18.100.1' },
-        { id: 'route_multicast', interface: 'eth1', type: 'Network', destination: '239.0.0.0', netmask: '255.0.0.0', gateway: '172.18.100.151' }
-    ]);
+    return getStoredConfig(db, 'network_routes', []);
 };
 
 const saveRoute = (db, route) => {
     const routes = getRoutes(db);
     const id = route.id || `route_${Date.now()}`;
-    const newRoute = { ...route, id };
+    const newRoute = {
+        id,
+        interface: route.interface || 'eth0',
+        type: route.type || 'Network',
+        destination: route.destination || '0.0.0.0',
+        netmask: route.netmask || '0.0.0.0',
+        gateway: route.gateway || ''
+    };
     const idx = routes.findIndex(r => r.id === id);
     if (idx >= 0) routes[idx] = newRoute;
     else routes.push(newRoute);
     setStoredConfig(db, 'network_routes', routes);
 
-    if (process.platform === 'linux' && route.destination && route.gateway) {
-        runCommand(`ip route add ${route.destination}/24 via ${route.gateway} dev ${route.interface || 'eth0'} 2>/dev/null`);
+    if (process.platform === 'linux' && newRoute.destination && newRoute.gateway) {
+        runCommand(`ip route add ${newRoute.destination} via ${newRoute.gateway} dev ${newRoute.interface} 2>/dev/null`);
     }
     return newRoute;
 };
@@ -283,8 +310,8 @@ const getStatmuxConfig = (db) => {
     return getStoredConfig(db, 'statmux_configuration', {
         multicastAddress: '239.100.1.1',
         port: 1234,
-        interface0: 'eth0',
-        interface1: 'eth1',
+        interface0: '',
+        interface1: '',
         activateIgmpV3: true,
         interface0Source1: '0.0.0.0',
         interface0Source2: '0.0.0.0',
@@ -297,8 +324,8 @@ const saveStatmuxConfig = (db, config) => {
     const current = {
         multicastAddress: config?.multicastAddress || '239.100.1.1',
         port: Number(config?.port) || 1234,
-        interface0: config?.interface0 || 'eth0',
-        interface1: config?.interface1 || 'eth1',
+        interface0: config?.interface0 || '',
+        interface1: config?.interface1 || '',
         activateIgmpV3: !!config?.activateIgmpV3,
         interface0Source1: config?.interface0Source1 || '0.0.0.0',
         interface0Source2: config?.interface0Source2 || '0.0.0.0',

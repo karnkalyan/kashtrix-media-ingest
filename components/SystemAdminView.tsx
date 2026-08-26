@@ -273,7 +273,31 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     }
   };
 
+  const openAddVlanModal = () => {
+    const defaultIface = physicalIfaces[0]?.interface || 'eth0';
+    setNewVlan({
+      id: '',
+      interface: defaultIface,
+      vlanNumber: 100,
+      igmp: 'V3',
+      method: 'Static',
+      address: '',
+      netmask: '255.255.255.0',
+      logicalName: ''
+    });
+    setIsVlanModalOpen(true);
+  };
+
+  const openEditVlanModal = (vlan: VlanItem) => {
+    setNewVlan({ ...vlan });
+    setIsVlanModalOpen(true);
+  };
+
   const handleSaveVlan = async () => {
+    if (!newVlan.interface) return toast.error('Physical parent interface is required');
+    if (!newVlan.vlanNumber || Number(newVlan.vlanNumber) < 1 || Number(newVlan.vlanNumber) > 4094) {
+      return toast.error('VLAN ID must be between 1 and 4094');
+    }
     try {
       const res = await fetch('/api/system/network/vlan', {
         method: 'POST',
@@ -281,12 +305,15 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
         body: JSON.stringify(newVlan),
       });
       if (res.ok) {
-        toast.success('VLAN configured.');
+        toast.success(`VLAN ${newVlan.interface}.${newVlan.vlanNumber} configured.`);
         setIsVlanModalOpen(false);
         fetchNetworkData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to save VLAN.');
       }
-    } catch (e) {
-      toast.error('Failed to save VLAN.');
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to save VLAN.');
     }
   };
 
@@ -560,7 +587,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               <h2 className="text-sm font-bold text-[#1B1024] dark:text-white">VLAN Configuration (802.1Q Virtual LANs)</h2>
               <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Isolate multicast broadcast streams, control planes, and management traffic</p>
             </div>
-            <Button onClick={() => setIsVlanModalOpen(true)}>
+            <Button onClick={openAddVlanModal}>
               <Plus size={13} />
               <span>Add VLAN</span>
             </Button>
@@ -583,21 +610,37 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               </thead>
               <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
                 {vlans.length === 0 ? (
-                  <tr><td colSpan={9} className="p-6 text-center text-[#6F6078]">No VLAN interfaces created.</td></tr>
+                  <tr><td colSpan={9} className="p-6 text-center text-[#6F6078]">No VLAN interfaces created. Click &quot;Add VLAN&quot; to configure your first 802.1Q virtual network.</td></tr>
                 ) : (
                   vlans.map(vlan => (
                     <tr key={vlan.id} className="hover:bg-[#F4EEFF]/40 dark:hover:bg-[#27153D]">
-                      <td className="p-2.5 font-bold font-mono">{vlan.interface}.{vlan.vlanNumber}</td>
+                      <td className="p-2.5 font-bold font-mono text-[#7C3AED] dark:text-[#C4B5FD]">{vlan.interface}.{vlan.vlanNumber}</td>
                       <td className="p-2.5 font-bold text-[#7C3AED] dark:text-[#C4B5FD]">{vlan.vlanNumber}</td>
-                      <td className="p-2.5">{vlan.igmp}</td>
-                      <td className="p-2.5"><span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">{vlan.state}</span></td>
-                      <td className="p-2.5">{vlan.method}</td>
-                      <td className="p-2.5 font-mono font-semibold">{vlan.address}</td>
-                      <td className="p-2.5 font-mono text-[11px]">{vlan.netmask}</td>
-                      <td className="p-2.5 font-medium">{vlan.logicalName}</td>
-                      <td className="p-2.5 text-right">
-                        <button onClick={() => handleDeleteVlan(vlan.id)} className="text-rose-600 hover:text-rose-800 p-1">
-                          <Trash2 size={14} />
+                      <td className="p-2.5">{vlan.igmp || 'V3'}</td>
+                      <td className="p-2.5">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${vlan.state === 'Down' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'}`}>
+                          {vlan.state || 'Up'}
+                        </span>
+                      </td>
+                      <td className="p-2.5">{vlan.method || 'Static'}</td>
+                      <td className="p-2.5 font-mono font-semibold">{vlan.address || '—'}</td>
+                      <td className="p-2.5 font-mono text-[11px]">{vlan.netmask || '—'}</td>
+                      <td className="p-2.5 font-medium">{vlan.logicalName || `VLAN_${vlan.vlanNumber}`}</td>
+                      <td className="p-2.5 text-right space-x-1">
+                        <button
+                          onClick={() => openEditVlanModal(vlan)}
+                          className="inline-flex items-center gap-1 rounded bg-[#F4EEFF] px-2 py-1 text-[11px] font-semibold text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors dark:bg-[#311754] dark:text-[#E2D1F9]"
+                          title="Edit VLAN"
+                        >
+                          <Edit2 size={11} />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteVlan(vlan.id)}
+                          className="inline-flex items-center justify-center rounded p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/60"
+                          title="Delete VLAN"
+                        >
+                          <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>
@@ -1289,30 +1332,61 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
         </Modal>
       )}
 
-      {/* Add VLAN Modal */}
+      {/* Add / Edit VLAN Modal */}
       {isVlanModalOpen && (
         <Modal
           isOpen={isVlanModalOpen}
           onClose={() => setIsVlanModalOpen(false)}
-          title="Create 802.1Q Virtual LAN (VLAN)"
+          title={newVlan.id ? 'Edit 802.1Q Virtual LAN (VLAN)' : 'Create 802.1Q Virtual LAN (VLAN)'}
         >
           <div className="space-y-4 text-xs">
             <div className="grid grid-cols-2 gap-3">
               <Select
                 label="Physical Master Interface"
-                value={newVlan.interface || 'eth0'}
+                value={newVlan.interface || (physicalIfaces[0]?.interface || 'eth0')}
                 onChange={e => setNewVlan({ ...newVlan, interface: e.target.value })}
-                options={physicalIfaces.map(i => ({ value: i.interface, label: i.interface }))}
+                options={
+                  physicalIfaces.length > 0
+                    ? physicalIfaces.map(i => ({
+                        value: i.interface,
+                        label: i.logicalName && i.logicalName !== i.interface ? `${i.interface} (${i.logicalName})` : i.interface
+                      }))
+                    : [{ value: 'eth0', label: 'eth0' }]
+                }
               />
               <div>
                 <label className="block font-semibold mb-1">VLAN ID (1-4094)</label>
                 <input
                   type="number"
+                  min={1}
+                  max={4094}
                   value={newVlan.vlanNumber || 100}
                   onChange={e => setNewVlan({ ...newVlan, vlanNumber: Number(e.target.value) })}
                   className={inputClass}
+                  placeholder="e.g. 100"
                 />
               </div>
+
+              <Select
+                label="IGMP Version"
+                value={newVlan.igmp || 'V3'}
+                onChange={e => setNewVlan({ ...newVlan, igmp: e.target.value as 'V2' | 'V3' })}
+                options={[
+                  { value: 'V3', label: 'IGMPv3 (Source-Specific SSM)' },
+                  { value: 'V2', label: 'IGMPv2 (Any-Source ASM)' },
+                ]}
+              />
+
+              <Select
+                label="Configuration Method"
+                value={newVlan.method || 'Static'}
+                onChange={e => setNewVlan({ ...newVlan, method: e.target.value as 'Static' | 'DHCP' })}
+                options={[
+                  { value: 'Static', label: 'Static (Manual IPv4)' },
+                  { value: 'DHCP', label: 'DHCP (Automatic IP)' },
+                ]}
+              />
+
               <div>
                 <label className="block font-semibold mb-1">VLAN IP Address</label>
                 <input
@@ -1320,6 +1394,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                   value={newVlan.address || ''}
                   onChange={e => setNewVlan({ ...newVlan, address: e.target.value })}
                   className={inputClass}
+                  placeholder="10.100.0.10"
                 />
               </div>
               <div>
@@ -1329,22 +1404,34 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                   value={newVlan.netmask || '255.255.255.0'}
                   onChange={e => setNewVlan({ ...newVlan, netmask: e.target.value })}
                   className={inputClass}
+                  placeholder="255.255.255.0"
                 />
               </div>
-              <div className="col-span-2">
+
+              <Select
+                label="Interface State"
+                value={newVlan.state || 'Up'}
+                onChange={e => setNewVlan({ ...newVlan, state: e.target.value as 'Up' | 'Down' })}
+                options={[
+                  { value: 'Up', label: 'Up (Active / Enabled)' },
+                  { value: 'Down', label: 'Down (Disabled)' },
+                ]}
+              />
+
+              <div>
                 <label className="block font-semibold mb-1">Logical Name / Description</label>
                 <input
                   type="text"
                   value={newVlan.logicalName || ''}
                   onChange={e => setNewVlan({ ...newVlan, logicalName: e.target.value })}
                   className={inputClass}
-                  placeholder="VLAN_BROADCAST_PRIMARY"
+                  placeholder="e.g. VLAN_MGMT or VLAN_PLAYOUT"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-[#E8DFF0] dark:border-[#311B4E]">
               <Button variant="secondary" onClick={() => setIsVlanModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSaveVlan}>Create VLAN</Button>
+              <Button onClick={handleSaveVlan}>{newVlan.id ? 'Update VLAN' : 'Create VLAN'}</Button>
             </div>
           </div>
         </Modal>
