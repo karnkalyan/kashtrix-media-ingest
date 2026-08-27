@@ -3472,6 +3472,36 @@ const listRecordings = (limit = 50) => {
         uniqueRows.push(row);
     }
 
+    // Ensure all currently active in-memory recordings appear immediately in the list
+    for (const session of activeRecordings.values()) {
+        for (const output of session.outputs || []) {
+            const alreadyInRows = uniqueRows.some(r => Number(r.id) === Number(output.recordId) || (r.file_name && r.file_name === output.fileName));
+            if (!alreadyInRows) {
+                let size = 0;
+                try {
+                    if (output.filePath && fs.existsSync(output.filePath)) {
+                        size = fs.statSync(output.filePath).size;
+                    }
+                } catch (e) {}
+                const startTimeMs = new Date(session.startTime || now).getTime();
+                const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
+                uniqueRows.unshift({
+                    id: output.recordId || `active-${session.appName}-${session.stream}`,
+                    app: session.appName,
+                    stream: session.stream,
+                    file_name: output.fileName,
+                    file_path: output.filePath,
+                    format: output.format,
+                    size,
+                    duration,
+                    is_active: true,
+                    start_time: session.startTime,
+                    formats: session.options?.formats || [output.format]
+                });
+            }
+        }
+    }
+
     return uniqueRows.map(row => {
         let inputDevice = row.stream || '';
         try {
@@ -3484,13 +3514,24 @@ const listRecordings = (limit = 50) => {
         if (!inputDevice && row.app === 'device') inputDevice = row.stream;
         const friendlyDevice = (row.app === 'device' ? resolveFriendlyDeviceName(captureDeviceCache?.devices, inputDevice) : inputDevice) || inputDevice;
 
-        const session = activeRecordings.get(getRecordingKey(row.app, row.stream));
-        const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id));
+        let session = activeRecordings.get(getRecordingKey(row.app, row.stream)) ||
+                      activeRecordings.get(getRecordingKey(cleanStreamPart(row.app), cleanStreamPart(row.stream)));
+        if (!session) {
+            for (const active of activeRecordings.values()) {
+                if (active.outputs?.some(item => Number(item.recordId) === Number(row.id) || (item.filePath && row.file_path && item.filePath === row.file_path) || (item.fileName && row.file_name && item.fileName === row.file_name))) {
+                    session = active;
+                    break;
+                }
+            }
+        }
+        const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id) || (item.filePath && row.file_path && item.filePath === row.file_path) || (item.fileName && row.file_name && item.fileName === row.file_name)) || session?.outputs?.[0];
         if (session && output) {
             let size = row.size || 0;
             try {
                 if (output.filePath && fs.existsSync(output.filePath)) {
                     size = fs.statSync(output.filePath).size;
+                } else if (row.file_path && fs.existsSync(row.file_path)) {
+                    size = fs.statSync(row.file_path).size;
                 }
             } catch (e) {}
             const startTimeMs = new Date(row.start_time || session.startTime || now).getTime();
@@ -3502,7 +3543,7 @@ const listRecordings = (limit = 50) => {
                 size,
                 duration,
                 is_active: true,
-                formats: session.options.formats
+                formats: session.options?.formats || [output.format]
             };
         }
 
