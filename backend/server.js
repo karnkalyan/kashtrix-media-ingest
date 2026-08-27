@@ -6290,10 +6290,17 @@ app.delete('/api/ingest/processes/:id', authMiddleware, requireActiveLicense, (r
 });
 
 // --- STATIC FRONTEND SERVING ---
-app.use(express.static(path.join(__dirname, '../dist')));
+const distDir = path.join(__dirname, '../dist');
+const distIndex = path.join(distDir, 'index.html');
+if (fs.existsSync(distDir)) {
+    app.use(express.static(distDir));
+}
 app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-        return res.sendFile(path.join(__dirname, '../dist/index.html'));
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/hls') && !req.path.startsWith('/ws')) {
+        if (fs.existsSync(distIndex)) {
+            return res.sendFile(distIndex);
+        }
+        return res.status(200).send('Kashtrix StreamOps API Server is running. In development mode, access the UI at http://localhost:3000');
     }
     next();
 });
