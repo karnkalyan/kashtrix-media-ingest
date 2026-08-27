@@ -1052,7 +1052,7 @@ export const Configurator: React.FC<Props> = ({
                         DVB Standard MPEG-TS Parameters
                       </span>
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-[#7C3AED] dark:bg-[#311754] dark:text-[#E2D1F9]">
-                        ETSI EN 300 468
+                        PAT, PMT, SDT, NIT (ETSI EN 300 468)
                       </span>
                     </div>
 

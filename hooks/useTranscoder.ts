@@ -364,28 +364,30 @@ const teeDestination = (
       const local = destination.dvbLocalAddr ? `&localaddr=${encodeURIComponent(destination.dvbLocalAddr)}` : "";
       const targetBps = destination.dvbMuxrate ? destination.dvbMuxrate * 1000 : 0;
       const bitrateParam = targetBps > 0 ? `&bitrate=${targetBps}` : "";
-      const udpParams = `pkt_size=${pktSize}&ttl=${ttl}&buffer_size=${buf}${bitrateParam}&overrun_nonfatal=1${local}`;
+      const udpParams = `pkt_size=${pktSize}&ttl=${ttl}&buffer_size=${buf}${bitrateParam}${local}`;
       const destUrl = destination.url.includes("?")
         ? `${destination.url}&${udpParams}`
         : `${destination.url}?${udpParams}`;
 
-      // Build DVB Standard MPEG-TS muxing options
+      // Build DVB Standard MPEG-TS muxing options with System B (DVB) and NIT enabled
       const sId = destination.dvbServiceId || 1;
+      const sType = destination.dvbServiceType || "advanced_codec_digital_hdtv";
       const pmtPid = destination.dvbPmtPid || 4096;
       const vidPid = destination.dvbVideoPid || 256;
       const tsId = destination.dvbTsid || 1;
       const onId = destination.dvbOnid || 1;
       const muxrateFlag = destination.dvbMuxrate ? `:muxrate=${destination.dvbMuxrate * 1000}` : "";
 
-      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=digital_tv:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:pcr_period=20:pat_period=0.1:sdt_period=0.5:tables_version=1${muxrateFlag}`;
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=${sType}:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:mpegts_flags=+system_b+nit:pcr_period=20:pat_period=0.1:sdt_period=0.5:nit_period=0.5:tables_version=1${muxrateFlag}`;
 
       return [`[${dvbMuxer}]${teeEscape(destUrl)}`];
     }
     case Protocol.HTTP_TS: {
       const sId = destination.dvbServiceId || 1;
+      const sType = destination.dvbServiceType || "advanced_codec_digital_hdtv";
       const pmtPid = destination.dvbPmtPid || 4096;
       const vidPid = destination.dvbVideoPid || 256;
-      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}`;
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=${sType}:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_flags=+system_b+nit:pcr_period=20:pat_period=0.1:sdt_period=0.5:nit_period=0.5:tables_version=1`;
       return [`[${dvbMuxer}]${teeEscape(url)}`];
     }
     case Protocol.DECKLINK: {
@@ -682,6 +684,21 @@ export const generateCommand = (
   const slug = sanitizeName(channel.name);
   const hlsPreviewTee = `[f=hls:hls_time=2:hls_list_size=4:hls_flags=delete_segments]${teeEscape(`media/hls/${slug}/index.m3u8`)}`;
 
+  // Service name & provider metadata for DVB / MPEG-TS destinations
+  const dvbDest = destinations.find(
+    (d) =>
+      d.protocol === Protocol.UDP_DVB ||
+      d.protocol === Protocol.HTTP_TS ||
+      d.dvbServiceName ||
+      d.dvbServiceProvider
+  );
+  let metadataFlags = "";
+  if (dvbDest) {
+    const sName = (dvbDest.dvbServiceName || channel.name || "Kashtrix TV").trim();
+    const sProvider = (dvbDest.dvbServiceProvider || "Kashtrix Media").trim();
+    metadataFlags = `-metadata ${quote(`service_name=${sName}`)} -metadata ${quote(`service_provider=${sProvider}`)}`;
+  }
+
   // If ONLY DeckLink destinations (no other outputs)
   if (nonDecklinkDests.length === 0 && decklinkDests.length > 0) {
     const dk = decklinkDests[0];
@@ -698,7 +715,7 @@ export const generateCommand = (
     // Single HLS destination, no DeckLink — simple direct output
     const destination = nonDecklinkDests[0];
     const url = `media/hls/${slug}/index.m3u8`;
-    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(" ")} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${outputFormatOptions[destination.protocol] || ""} ${quote(url)}`;
+    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(" ")} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${metadataFlags} ${outputFormatOptions[destination.protocol] || ""} ${quote(url)}`;
   } else if (nonDecklinkDests.length > 0) {
     // Multiple non-DeckLink destinations — use tee muxer
     const teeOutputs = nonDecklinkDests
@@ -710,10 +727,10 @@ export const generateCommand = (
       teeOutputs.push(hlsPreviewTee);
     }
     const teeSpec = teeOutputs.join("|");
-    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(" ")} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f tee ${quote(teeSpec)}`;
+    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(" ")} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${metadataFlags} -f tee ${quote(teeSpec)}`;
   } else {
     // No non-DeckLink destinations, just the default HLS preview
-    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(" ")} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} -f hls -hls_time 2 -hls_list_size 4 -hls_flags delete_segments ${quote(`media/hls/${slug}/index.m3u8`)}`;
+    baseCommand = `${youtubePrefix}ffmpeg -hide_banner -ignore_unknown ${inputFlags} ${mapOptions.join(" ")} ${sharedVideoFlags} ${sharedAudioFlags} ${recordingFlags} ${metadataFlags} -f hls -hls_time 2 -hls_list_size 4 -hls_flags delete_segments ${quote(`media/hls/${slug}/index.m3u8`)}`;
   }
 
   // Append DeckLink output(s) to the command

@@ -287,6 +287,7 @@ export interface ChannelDestination {
   
   // DVB Standard MPEG-TS over UDP / RTP Parameters
   dvbServiceId?: number;          // MPEG-TS Program / Service ID (default 1)
+  dvbServiceType?: string;        // DVB Service Type (e.g. 'advanced_codec_digital_hdtv', 'digital_tv')
   dvbServiceName?: string;        // SDT Service Name (e.g. "Kashtrix TV")
   dvbServiceProvider?: string;    // SDT Service Provider (e.g. "Kashtrix Media")
   dvbVideoPid?: number;           // Video Element PID (default 256 / 0x100)
