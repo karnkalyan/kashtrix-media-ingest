@@ -24,10 +24,34 @@ test('MXF uses MPEG-2 4:2:2 50 Mbps interlaced with PCM 8-channel audio', () => 
     assert.equal(valueAfter(args, '-pix_fmt'), 'yuv422p');
     assert.equal(valueAfter(args, '-b:v'), '50M');
     assert.equal(valueAfter(args, '-flags'), '+ildct+ilme');
-    assert.equal(valueAfter(args, '-top'), '1');
+    assert.equal(args.includes('-top'), false);
+    assert.equal(valueAfter(args, '-vf'), 'fps=25:round=near,setfield=tff');
+    assert.equal(valueAfter(args, '-dc'), '10');
+    assert.equal(valueAfter(args, '-intra_vlc'), '1');
+    assert.equal(valueAfter(args, '-non_linear_quant'), '1');
+    assert.equal(valueAfter(args, '-qmax'), '12');
+    assert.equal(valueAfter(args, '-vtag'), 'xd5c');
     assert.equal(valueAfter(args, '-c:a'), 'pcm_s24le');
     assert.equal(valueAfter(args, '-ac'), '8');
     assert.equal(valueAfter(args, '-f'), 'mxf');
+});
+
+test('fractional broadcast rates use exact FFmpeg time bases', () => {
+    const args = buildRecordingProfileArgs('mxf', 'capture.mxf', {
+        unlockStandardOverride: true,
+        framerate: 29.97,
+    });
+    assert.equal(valueAfter(args, '-r'), '30000/1001');
+    assert.equal(valueAfter(args, '-vf'), 'fps=30000/1001:round=near,setfield=tff');
+});
+
+test('explicit source-native frame rate does not force output cadence', () => {
+    const args = buildRecordingProfileArgs('mxf', 'capture.mxf', {
+        unlockStandardOverride: true,
+        framerate: 0,
+    });
+    assert.equal(args.includes('-r'), false);
+    assert.equal(valueAfter(args, '-vf'), 'setfield=tff');
 });
 
 test('MOV and MKV use V210 10-bit 4:2:2 with 24-bit 8-channel PCM', () => {

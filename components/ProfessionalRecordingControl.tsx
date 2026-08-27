@@ -463,6 +463,25 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const standardProfileSelected = ['mov', 'mkv', 'mxf'].includes(selectedOutputFormat);
   const isLockedFormat = standardProfileSelected && !activeConfig.unlockStandardOverride;
   const flvSelected = selectedOutputFormat === 'flv';
+  const profileEditorConfig: IngestRecordingOptions = isLockedFormat && selectedRecordingProfile
+    ? {
+        ...activeConfig,
+        encoder: 'standard',
+        videoCodec: selectedRecordingProfile.videoCodec,
+        rateControl: 'cbr',
+        resolution: `${selectedRecordingProfile.width}x${selectedRecordingProfile.height}`,
+        framerate: selectedRecordingProfile.frameRate,
+        videoBitrate: selectedRecordingProfile.videoBitrate,
+        maxBitrate: selectedRecordingProfile.maxBitrate || selectedRecordingProfile.videoBitrate,
+        preset: (selectedRecordingProfile.preset || activeConfig.preset) as IngestRecordingOptions['preset'],
+        gopSize: selectedRecordingProfile.gop,
+        pixelFormat: selectedRecordingProfile.pixelFormat,
+        audioCodec: selectedRecordingProfile.audioCodec,
+        audioBitrate: selectedRecordingProfile.audioBitrate,
+        sampleRate: selectedRecordingProfile.audioSampleRate,
+        audioChannels: selectedRecordingProfile.audioChannels,
+      }
+    : activeConfig;
 
   // Helper to patch config
   const patch = (values: Partial<IngestRecordingOptions>) => {
@@ -2598,8 +2617,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-3 text-[11px] text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <strong>{selectedRecordingProfile?.label || selectedOutputFormat.toUpperCase()} is format-standard.</strong>{' '}
-                  Default codec, pixel format, interlace, bitrate, and audio settings follow the container standard.
+                  <strong>{selectedRecordingProfile?.label || selectedOutputFormat.toUpperCase()} uses a locked production profile.</strong>{' '}
+                  Codec, pixel format, scan type, bitrate, cadence, and audio follow this broadcast preset.
                 </div>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-emerald-200/80 dark:border-emerald-900/60 flex-wrap gap-2">
@@ -2616,18 +2635,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      patch({
-                        unlockStandardOverride: false,
-                        videoCodec: selectedRecordingProfile?.videoCodec || 'mpeg2video',
-                        encoder: 'auto',
-                        videoBitrate: selectedRecordingProfile?.videoBitrate || 50000,
-                        maxBitrate: selectedRecordingProfile?.maxBitrate || 50000,
-                        pixelFormat: selectedRecordingProfile?.pixelFormat || 'yuv422p',
-                        audioCodec: (selectedRecordingProfile?.audioCodec as any) || 'pcm_s24le',
-                        audioChannels: selectedRecordingProfile?.audioChannels || 8,
-                        sampleRate: selectedRecordingProfile?.audioSampleRate || 48000,
-                        framerate: selectedRecordingProfile?.frameRate || 25,
-                        gopSize: selectedRecordingProfile?.gop || 12,
+                      setConfig?.((previous) => {
+                        const current = previous || defaultConfig;
+                        const profileOverrides = { ...(current.profileOverrides || {}) };
+                        delete profileOverrides[selectedOutputFormat];
+                        return { ...current, unlockStandardOverride: false, profileOverrides };
                       });
                       toast.success('Reset to standard broadcast profile defaults');
                     }}
@@ -2705,7 +2717,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <Label>
               Bitrate Mode
               <select
-                value={activeConfig.rateControl || "cbr"}
+                value={profileEditorConfig.rateControl || "cbr"}
                 onChange={(e) => patch({ rateControl: e.target.value as any })}
                 className={selectClass}
               >
@@ -2722,7 +2734,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 min="1000"
                 max="120000"
                 step="1000"
-                value={activeConfig.videoBitrate ?? 20000}
+                value={profileEditorConfig.videoBitrate ?? 20000}
                 onChange={(e) =>
                   patch({ videoBitrate: Number(e.target.value) })
                 }
@@ -2737,7 +2749,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 min="1000"
                 max="150000"
                 step="1000"
-                value={activeConfig.maxBitrate ?? 25000}
+                value={profileEditorConfig.maxBitrate ?? 25000}
                 onChange={(e) => patch({ maxBitrate: Number(e.target.value) })}
                 className={inputClass}
               />
@@ -2745,19 +2757,19 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           </div>
 
           {/* CRF Option (Visible when CRF mode is selected) */}
-          {activeConfig.rateControl === "crf" && (
+          {profileEditorConfig.rateControl === "crf" && (
             <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 dark:bg-[#25163C] dark:border-[#371F59]">
               <div className="flex items-center justify-between">
                 <Label>Constant Rate Factor (CRF Quality: 0 - 51)</Label>
                 <span className="font-mono text-[12px] font-bold text-violet-700 dark:text-violet-300">
-                  CRF: {activeConfig.crf ?? 20} (Lower = Higher Quality)
+                  CRF: {profileEditorConfig.crf ?? 20} (Lower = Higher Quality)
                 </span>
               </div>
               <input
                 type="range"
                 min="10"
                 max="35"
-                value={activeConfig.crf ?? 20}
+                value={profileEditorConfig.crf ?? 20}
                 onChange={(e) => patch({ crf: Number(e.target.value) })}
                 className="w-full mt-2 accent-violet-600"
               />
@@ -2769,7 +2781,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <Label>
               Resolution
               <select
-                value={activeConfig.resolution || "source"}
+                value={profileEditorConfig.resolution || "source"}
                 onChange={(e) => patch({ resolution: e.target.value })}
                 className={selectClass}
               >
@@ -2785,7 +2797,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <Label>
               Frame Rate (FPS)
               <select
-                value={activeConfig.framerate || 50}
+                value={profileEditorConfig.framerate ?? 50}
                 onChange={(e) => patch({ framerate: Number(e.target.value) })}
                 className={selectClass}
               >
@@ -2804,7 +2816,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <Label>
               Encoding Preset
               <select
-                value={activeConfig.preset || "fast"}
+                value={profileEditorConfig.preset || "fast"}
                 onChange={(e) => patch({ preset: e.target.value as any })}
                 className={selectClass}
               >
@@ -2822,7 +2834,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 type="number"
                 min="1"
                 max="300"
-                value={activeConfig.gopSize || 60}
+                value={profileEditorConfig.gopSize || 60}
                 onChange={(e) => patch({ gopSize: Number(e.target.value) })}
                 className={inputClass}
               />
@@ -2831,7 +2843,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <Label>
               Pixel Format
               <select
-                value={activeConfig.pixelFormat || "yuv420p"}
+                value={profileEditorConfig.pixelFormat || "yuv420p"}
                 onChange={(e) => patch({ pixelFormat: e.target.value as any })}
                 className={selectClass}
               >
@@ -2854,7 +2866,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               <Label>
                 Audio Codec
                 <select
-                  value={activeConfig.audioCodec || "aac"}
+                  value={profileEditorConfig.audioCodec || "aac"}
                   onChange={(e) => patch({ audioCodec: e.target.value as any })}
                   className={selectClass}
                 >
@@ -2869,7 +2881,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               <Label>
                 Sample Rate
                 <select
-                  value={activeConfig.sampleRate || 48000}
+                  value={profileEditorConfig.sampleRate || 48000}
                   onChange={(e) =>
                     patch({ sampleRate: Number(e.target.value) })
                   }
@@ -2885,7 +2897,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               <Label>
                 Audio Bitrate (Kbps)
                 <select
-                  value={activeConfig.audioBitrate ?? 192}
+                  value={profileEditorConfig.audioBitrate ?? 192}
                   onChange={(e) =>
                     patch({ audioBitrate: Number(e.target.value) })
                   }
@@ -2903,7 +2915,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               <Label>
                 Audio Channels
                 <select
-                  value={activeConfig.audioChannels || 2}
+                  value={profileEditorConfig.audioChannels || 2}
                   onChange={(e) =>
                     patch({ audioChannels: Number(e.target.value) })
                   }

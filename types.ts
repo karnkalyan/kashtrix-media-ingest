@@ -238,6 +238,8 @@ export interface RecordingProfileSummary {
   videoCodec: 'v210' | 'mpeg2video' | 'h264' | 'hevc';
   pixelFormat: 'yuv422p10le' | 'yuv422p' | 'yuv420p';
   capturePixelFormat: string;
+  width: number;
+  height: number;
   videoBitrate: number;
   maxBitrate: number;
   frameRate: number;
@@ -882,4 +884,3 @@ export interface RtmpSecurityResponse {
     accounts: RtmpActiveLock[];
   };
 }
-

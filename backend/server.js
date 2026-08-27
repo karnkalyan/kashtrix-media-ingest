@@ -2701,6 +2701,7 @@ const activeIngestProcesses = new Map();
 const getRecordingKey = (appName, streamName) => `${appName}/${streamName}`;
 
 const RECORDING_FORMATS = new Set(SUPPORTED_RECORDING_EXTENSIONS);
+const STANDARD_RECORDING_FORMATS = new Set(['mov', 'mkv', 'mxf']);
 const RECORDING_ENCODERS = {
     copy: { h264: 'copy', hevc: 'copy' },
     cpu: { h264: 'libx264', hevc: 'libx265' },
@@ -2781,7 +2782,9 @@ const normalizeRecordingOptions = (input = {}) => {
         videoBitrate: Math.min(100000, Math.max(0, Number.isFinite(configuredVideoBitrate) ? configuredVideoBitrate : 20000)),
         audioBitrate: Math.min(1024, Math.max(0, Number.isFinite(configuredAudioBitrate) ? configuredAudioBitrate : 256)),
         resolution: /^(source|\d{2,5}x\d{2,5})$/.test(String(input.resolution || 'source')) ? String(input.resolution || 'source') : 'source',
-        framerate: Math.min(120, Math.max(1, Number(input.framerate) || 25)),
+        framerate: input.framerate === 0 || input.framerate === '0'
+            ? 0
+            : Math.min(120, Math.max(1, Number(input.framerate) || 25)),
         preset: ['ultrafast', 'fast', 'medium', 'slow', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'].includes(input.preset) ? input.preset : 'p4',
         continuous: input.continuous !== false,
         sourceType: input.sourceType === 'device' ? 'device' : 'ingest',
@@ -2794,7 +2797,6 @@ const normalizeRecordingOptions = (input = {}) => {
         gopSize: Math.min(600, Math.max(1, Number(input.gopSize) || 60)),
         pixelFormat: ['yuv420p', 'yuv422p', 'yuv422p10le', 'yuv444p'].includes(input.pixelFormat) ? input.pixelFormat : 'yuv420p',
         audioCodec: ['aac', 'mp3', 'opus', 'pcm_s16le', 'pcm_s24le'].includes(input.audioCodec) ? input.audioCodec : 'aac',
-        sampleRate: [32000, 44100, 48000, 96000].includes(Number(input.sampleRate)) ? Number(input.sampleRate) : 48000,
         sampleRate: [32000, 44100, 48000, 96000].includes(Number(input.sampleRate)) ? Number(input.sampleRate) : 48000,
         audioChannels: [1, 2, 6, 8].includes(Number(input.audioChannels)) ? Number(input.audioChannels) : 2,
         formatCode: String(input.formatCode || '').trim().slice(0, 16),
@@ -2818,7 +2820,9 @@ const normalizeRecordingOptions = (input = {}) => {
                     gop: Number(value.gop) || undefined,
                     preset: String(value.preset || '').slice(0, 16) || undefined,
                     pixelFormat: ['yuv420p', 'yuv422p', 'yuv422p10le', 'yuv444p'].includes(value.pixelFormat) ? value.pixelFormat : undefined,
-                    framerate: Number(value.framerate) || undefined,
+                    framerate: value.framerate === 0 || value.framerate === '0'
+                        ? 0
+                        : (Number(value.framerate) || undefined),
                     resolution: String(value.resolution || '').trim() || undefined,
                 }]))
             : {},
@@ -2899,17 +2903,22 @@ const recordingInputArgs = (inputUrl, options) => {
 const buildSingleOutputArgs = (output, options, isDeviceDirect, nvencInterlacedSupported) => {
     const { filePath, format } = output;
     const mode = options.nvencInterlaceMode || 'auto';
-    const isCompressed = getRecordingProfile(format).compressed === true;
+    const recordingProfile = getRecordingProfile(format);
+    const isCompressed = recordingProfile.compressed === true;
+    const standardLocked = STANDARD_RECORDING_FORMATS.has(format) && !options.unlockStandardOverride;
+    const profileOverrides = standardLocked ? undefined : options.profileOverrides?.[format];
     const resolvedEncoder = options.resolvedEncoder || 'cpu';
-    const requestedCodec = format === 'flv' ? 'h264' : (options.profileOverrides?.[format]?.videoCodec || options.videoCodec);
+    const requestedCodec = format === 'flv' ? 'h264' : (profileOverrides?.videoCodec || options.videoCodec);
     const useNativeInterlace = mode === 'native';
     const outArgs = buildRecordingProfileArgs(format, filePath, {
         encoder: resolvedEncoder,
         videoCodec: requestedCodec,
         deinterlaceCompressed: isCompressed && !useNativeInterlace,
-        profileOverrides: options.profileOverrides?.[format],
+        profileOverrides,
         unlockStandardOverride: options.unlockStandardOverride,
-        resolution: options.resolution,
+        resolution: standardLocked
+            ? `${recordingProfile.width}x${recordingProfile.height}`
+            : (profileOverrides?.resolution || options.resolution),
         framerate: options.framerate,
         rateControl: options.rateControl,
         crf: options.crf,

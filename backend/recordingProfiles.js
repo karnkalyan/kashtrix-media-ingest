@@ -168,6 +168,15 @@ const bitrateToKbps = (value) => {
     return Math.round(amount * (String(match[2] || '').toLowerCase() === 'm' ? 1000 : 1));
 };
 
+const toFfmpegFrameRate = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    if (Math.abs(numeric - 23.976) < 0.01) return '24000/1001';
+    if (Math.abs(numeric - 29.97) < 0.01) return '30000/1001';
+    if (Math.abs(numeric - 59.94) < 0.01) return '60000/1001';
+    return String(numeric);
+};
+
 const getRecordingProfileSummaries = () => SUPPORTED_RECORDING_EXTENSIONS.map((extension) => {
     const profile = RECORDING_PROFILES[extension];
     return {
@@ -178,6 +187,8 @@ const getRecordingProfileSummaries = () => SUPPORTED_RECORDING_EXTENSIONS.map((e
         videoCodec: profile.videoCodec,
         pixelFormat: profile.pixelFormat,
         capturePixelFormat: profile.capturePixelFormat,
+        width: profile.width,
+        height: profile.height,
         videoBitrate: bitrateToKbps(profile.videoBitrate),
         maxBitrate: bitrateToKbps(profile.maxRate),
         frameRate: profile.frameRate,
@@ -211,8 +222,14 @@ const resolveProfile = (extension, options = {}) => {
     const numericVideoOverride = Number(overrides.videoBitrate || (options.unlockStandardOverride ? options.videoBitrate : null));
     const videoCodec = overrides.videoCodec || (options.unlockStandardOverride && options.videoCodec ? options.videoCodec : profile.videoCodec);
     const pixelFormat = overrides.pixelFormat || (options.unlockStandardOverride && options.pixelFormat ? options.pixelFormat : profile.pixelFormat);
-    const rawFps = Number(overrides.framerate || overrides.frameRate || (options.unlockStandardOverride ? (options.framerate || options.frameRate) : 0));
-    const frameRate = Number.isFinite(rawFps) && rawFps > 0 ? rawFps : profile.frameRate;
+    const configuredFps = overrides.framerate ?? overrides.frameRate
+        ?? (options.unlockStandardOverride ? (options.framerate ?? options.frameRate) : undefined);
+    const rawFps = configuredFps === undefined || configuredFps === null || configuredFps === ''
+        ? NaN
+        : Number(configuredFps);
+    const frameRate = rawFps === 0
+        ? null
+        : (Number.isFinite(rawFps) && rawFps > 0 ? rawFps : profile.frameRate);
     const audioCodec = overrides.audioCodec || (options.unlockStandardOverride && options.audioCodec ? options.audioCodec : profile.audioCodec);
     const audioBitrate = profile.audioBitrate || overrides.audioBitrate || (options.unlockStandardOverride && options.audioBitrate)
         ? normalizeBitrateOverride(overrides.audioBitrate || (options.unlockStandardOverride ? options.audioBitrate : null), profile.audioBitrate)
@@ -271,11 +288,19 @@ const buildRecordingProfileArgs = (extension, filePath, options = {}) => {
     const videoEncoder = isCompressed ? compressedEncoder.videoEncoder : profile.videoCodec;
     const deinterlaceCompressed = isCompressed && options.deinterlaceCompressed === true;
     const frameRate = deinterlaceCompressed ? profile.fallbackFrameRate : profile.frameRate;
+    const ffmpegFrameRate = toFfmpegFrameRate(frameRate);
     const gop = deinterlaceCompressed && profile.gop ? profile.gop * 2 : profile.gop;
     const args = ['-map', '0:v:0?', '-map', '0:a:0?'];
 
     if (deinterlaceCompressed && profile.fallbackVideoFilter) {
         args.push('-vf', profile.fallbackVideoFilter);
+    } else if (videoEncoder === 'mpeg2video' && profile.interlaced) {
+        // Normalize cadence in the filter graph instead of relying on the
+        // output muxer to discard frames (reported by FFmpeg as drop=N).
+        const filters = [];
+        if (ffmpegFrameRate) filters.push(`fps=${ffmpegFrameRate}:round=near`);
+        filters.push('setfield=tff');
+        args.push('-vf', filters.join(','));
     }
 
     args.push('-c:v', videoEncoder);
@@ -296,18 +321,24 @@ const buildRecordingProfileArgs = (extension, filePath, options = {}) => {
         if (profile.profile) args.push('-profile:v', profile.profile);
     }
     const pixelFormat = isCompressed && ['intel', 'amd'].includes(compressedEncoder.engine) ? 'nv12' : profile.pixelFormat;
-    args.push('-pix_fmt', pixelFormat, '-r', String(frameRate));
+    args.push('-pix_fmt', pixelFormat);
+    if (ffmpegFrameRate) args.push('-r', ffmpegFrameRate);
 
     if (options.resolution && options.resolution !== 'source' && /^\d{2,5}x\d{2,5}$/.test(String(options.resolution))) {
         args.push('-s', String(options.resolution));
     }
 
     if (profile.interlaced && !deinterlaceCompressed) {
-        if (profile.videoCodec === 'mpeg2video') args.push('-flags', '+ildct+ilme');
-        else if (isCompressed) args.push('-flags', '+ildct');
-        args.push('-top', '1');
-        if (isCompressed && compressedEncoder.engine === 'cpu' && requestedCodec === 'h264') {
-            args.push('-x264-params', 'tff=1');
+        if (videoEncoder === 'mpeg2video') {
+            // setfield=tff above is the supported replacement for deprecated
+            // -top and prevents FFmpeg 8 from writing a swapped field order.
+            args.push('-flags', '+ildct+ilme');
+        } else {
+            if (isCompressed) args.push('-flags', '+ildct');
+            args.push('-top', '1');
+            if (isCompressed && compressedEncoder.engine === 'cpu' && requestedCodec === 'h264') {
+                args.push('-x264-params', 'tff=1');
+            }
         }
     }
     if (profile.videoCodec === 'v210') args.push('-field_order', 'tt');
@@ -323,6 +354,21 @@ const buildRecordingProfileArgs = (extension, filePath, options = {}) => {
     if (profile.bufferSize) args.push('-bufsize', profile.bufferSize);
     if (gop) args.push('-g', String(gop));
     if (profile.bf !== undefined) args.push('-bf', String(profile.bf));
+    if (profile.extension === 'mxf' && videoEncoder === 'mpeg2video') {
+        args.push(
+            '-dc', '10',
+            '-intra_vlc', '1',
+            '-non_linear_quant', '1',
+            '-qmin', '1',
+            '-qmax', '12',
+            '-sc_threshold', '1000000000',
+            '-rc_init_occupancy', profile.bufferSize || '17825792',
+            '-rc_min_vbv_use', '1',
+            '-rc_max_vbv_use', '1',
+            '-vtag', 'xd5c',
+            '-aspect', '16:9',
+        );
+    }
     if (Array.isArray(profile.additionalArgs)) args.push(...profile.additionalArgs);
 
     args.push(
