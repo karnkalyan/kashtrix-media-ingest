@@ -329,6 +329,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [saveSetupModalOpen, setSaveSetupModalOpen] = useState(false);
   const [managePresetsOpen, setManagePresetsOpen] = useState(false);
   const [setupNameInput, setSetupNameInput] = useState("");
+  const [stopping, setStopping] = useState(false);
 
   // Presets & Active Selection
   const [savedPresets, setSavedPresets] =
@@ -2305,11 +2306,31 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
               <button
                 type="button"
-                onClick={stopRecording}
-                className="flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 text-[12px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 transition-colors"
+                disabled={stopping}
+                onClick={async () => {
+                  if (stopping) return;
+                  setStopping(true);
+                  try {
+                    if (typeof stopRecording === "function") {
+                      await stopRecording();
+                    }
+                  } finally {
+                    setStopping(false);
+                  }
+                }}
+                className="flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 text-[12px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 transition-colors"
               >
-                <FiSquare size={14} className="fill-current" />
-                <span>Stop Recording</span>
+                {stopping ? (
+                  <>
+                    <FiRefreshCw size={14} className="animate-spin" />
+                    <span>Stopping...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiSquare size={14} className="fill-current" />
+                    <span>Stop Recording</span>
+                  </>
+                )}
               </button>
             </div>
           ) : (

@@ -3685,9 +3685,8 @@ const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) =
     data.stopPromise = (async () => {
         const proc = data.outputs[0]?.proc;
         if (proc) {
-            // Give large MP4/MOV masters enough time to flush their trailer and
-            // indexes. Killing during that write produces a non-seekable file.
-            await stopChildAndWait(proc, { signal, timeoutMs: 15000, gracefulStdin: true });
+            // Give large MP4/MOV masters up to 3s to flush their trailer and indexes
+            await stopChildAndWait(proc, { signal, timeoutMs: 3000, gracefulStdin: true });
         }
 
         const startTime = new Date(data.startTime).getTime();
@@ -3699,7 +3698,7 @@ const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) =
 
         if (forceComplete || durationMs >= minDurationMs) {
             const endTime = new Date().toISOString();
-            for (const output of data.outputs) {
+            const outputResults = await Promise.all(data.outputs.map(async (output) => {
                 let size = 0;
                 try {
                     if (fs.existsSync(output.filePath)) {
@@ -3709,6 +3708,10 @@ const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) =
                 const probe = size > 0
                     ? await probeRecordedMedia(output.filePath)
                     : { valid: false, error: 'Recording output file is empty or missing' };
+                return { output, size, probe };
+            }));
+
+            for (const { output, size, probe } of outputResults) {
                 if (size > 0 && probe.valid) {
                     const actualDuration = Number(probe.duration) || 0;
                     const elapsedDuration = durationMs / 1000;
