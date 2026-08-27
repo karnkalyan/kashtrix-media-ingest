@@ -832,21 +832,47 @@ const serveChannelHlsHandler = async (req, res) => {
     const sanitizedFile = path.basename(file || 'index.m3u8');
     if (!sanitizedStream) return res.status(400).json({ error: 'Stream identifier required' });
 
-    const candidateFiles = [
-        path.join(HLS_DIR, sanitizedStream, sanitizedFile),
-        path.join(MEDIA_ROOT, 'hls', sanitizedStream, sanitizedFile),
-        path.join(PROJECT_ROOT, 'media', 'hls', sanitizedStream, sanitizedFile),
-        path.join(__dirname, 'media', 'hls', sanitizedStream, sanitizedFile),
-        path.join(LIVE_DIR, sanitizedStream, sanitizedFile),
-        path.join(HLS_DIR, sanitizedFile),
-    ];
+    const resolveStreamCandidates = () => {
+        const streamLower = sanitizedStream.toLowerCase();
+        const baseDirs = [
+            HLS_DIR,
+            path.join(MEDIA_ROOT, 'hls'),
+            path.join(PROJECT_ROOT, 'media', 'hls'),
+            path.join(__dirname, 'media', 'hls'),
+            '/app/media/hls',
+            '/media/hls',
+            LIVE_DIR,
+        ];
+        const files = [];
 
+        for (const base of baseDirs) {
+            if (!base || !fs.existsSync(base)) continue;
+            // 1. Exact match and common casings
+            files.push(path.join(base, sanitizedStream, sanitizedFile));
+            files.push(path.join(base, sanitizedStream.toLowerCase(), sanitizedFile));
+            files.push(path.join(base, sanitizedStream.toUpperCase(), sanitizedFile));
+
+            // 2. Case-insensitive directory lookup on Linux
+            try {
+                const entries = fs.readdirSync(base, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory() && entry.name.toLowerCase() === streamLower) {
+                        files.push(path.join(base, entry.name, sanitizedFile));
+                    }
+                }
+            } catch (_) {}
+        }
+        return Array.from(new Set(files));
+    };
+
+    let candidateFiles = resolveStreamCandidates();
     let foundFile = candidateFiles.find(f => fs.existsSync(f));
 
     // If manifest is requested while channel/device stream is initializing, wait up to 4s for first file creation
     if (!foundFile && sanitizedFile.endsWith('.m3u8')) {
         for (let i = 0; i < 40; i++) {
             await new Promise(r => setTimeout(r, 100));
+            candidateFiles = resolveStreamCandidates();
             foundFile = candidateFiles.find(f => fs.existsSync(f));
             if (foundFile) break;
         }
@@ -7776,8 +7802,8 @@ app.get('/api/dashboard/active-services', authMiddleware, async (req, res) => {
 
         const services = rawChannels.map(channel => {
             const isRunning = !!runningProcesses[channel.id];
-            const slug = channel.name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-            const hlsUrl = `/media/hls/${slug}/index.m3u8`;
+            const cleanSlug = (channel.name || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const hlsUrl = `/hls/${cleanSlug}/index.m3u8`;
             const destinations = channel.destinations || [];
 
             return {

@@ -26,8 +26,11 @@ import {
 import Button from './ui/Button';
 import ProtocolBadge from './ui/ProtocolBadge';
 import KashtrixMediaPlayer from './ui/KashtrixMediaPlayer';
+import { MediaPreview } from './ui/MediaPreview';
 import { subscribeRealtime } from '../services/realtime';
 import RecordingElapsedTimer from './RecordingElapsedTimer';
+
+const sanitizeName = (name: string) => (name || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
 const formatSpeedRate = (bytesPerSec: number): string => {
   if (!bytesPerSec || isNaN(bytesPerSec)) return '0 B/s';
@@ -634,8 +637,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
                 <div className="relative aspect-video w-full overflow-hidden bg-black">
                   {svc.isRunning ? (
                     <div className="relative h-full w-full flex items-center justify-center bg-slate-950">
-                      <KashtrixMediaPlayer
-                        src={svc.hlsPreviewUrl}
+                      <MediaPreview
+                        url={svc.hlsPreviewUrl || `/hls/${sanitizeName(svc.name)}/index.m3u8`}
                         title={svc.name}
                         isLive={true}
                         autoPlay={true}
@@ -929,8 +932,8 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
               </button>
             </div>
             <div className="aspect-video bg-black">
-              <KashtrixMediaPlayer
-                src={previewService.hlsPreviewUrl}
+              <MediaPreview
+                url={previewService.hlsPreviewUrl || `/hls/${sanitizeName(previewService.name)}/index.m3u8`}
                 title={previewService.name}
                 isLive={true}
                 autoPlay={true}
