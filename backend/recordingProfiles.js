@@ -293,7 +293,7 @@ const buildRecordingProfileArgs = (extension, filePath, options = {}) => {
         }
         args.push('-profile:v', requestedCodec === 'hevc' ? 'main' : 'high');
     } else {
-        if (profile.preset) args.push('-preset', profile.preset);
+        if (profile.preset && videoEncoder !== 'mpeg2video' && videoEncoder !== 'v210') args.push('-preset', profile.preset);
         if (profile.tune) args.push('-tune', profile.tune);
         if (profile.profile) args.push('-profile:v', profile.profile);
     }

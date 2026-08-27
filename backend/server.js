@@ -647,6 +647,22 @@ app.get('/hls/device-preview/:previewId/:file', async (req, res) => {
         }
         return res.sendFile(targetFile);
     }
+
+    // If requested previewId has stopped but an active preview or recording preview is running, seamlessly redirect
+    if (activeDevicePreviewState?.active && activeDevicePreviewState.previewId && activeDevicePreviewState.previewId !== sanitizedPreviewId) {
+        return res.redirect(302, `/hls/device-preview/${encodeURIComponent(activeDevicePreviewState.previewId)}/${sanitizedFile}`);
+    }
+    for (const [pId, prev] of devicePreviewProcesses.entries()) {
+        if (!prev.closed && pId !== sanitizedPreviewId) {
+            return res.redirect(302, `/hls/device-preview/${encodeURIComponent(pId)}/${sanitizedFile}`);
+        }
+    }
+    for (const rec of activeRecordings.values()) {
+        if (rec.previewConfig?.previewId && rec.previewConfig.previewId !== sanitizedPreviewId) {
+            return res.redirect(302, `/hls/device-preview/${encodeURIComponent(rec.previewConfig.previewId)}/${sanitizedFile}`);
+        }
+    }
+
     return res.status(404).end();
 });
 
@@ -2178,7 +2194,7 @@ const scheduleDevicePreviewCleanup = (outputDir) => {
         const resolvedOutput = path.resolve(outputDir);
         if (path.dirname(resolvedOutput) !== resolvedRoot) return;
         try { fs.rmSync(resolvedOutput, { recursive: true, force: true }); } catch (error) { }
-    }, 2000).unref?.();
+    }, 60000).unref?.();
 };
 
 const stopDevicePreview = (previewId, force = false) => {
