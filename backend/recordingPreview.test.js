@@ -19,7 +19,8 @@ test('MXF MPEG-2 preview becomes segmented browser HLS with deinterlacing', () =
     }, { baseUrl: '/recording-preview/895/session/' });
     assert.equal(isInterlacedVideo({ fieldOrder: 'tt' }), true);
     assert.equal(valueAfter(args, '-c:v'), 'libx264');
-    assert.match(valueAfter(args, '-vf'), /^scale=w=1280:h=-2:flags=fast_bilinear:interl=1,setfield=tff,yadif=mode=send_frame_nospatial:parity=tff/);
+    assert.match(valueAfter(args, '-vf'), /^scale=trunc\(iw\/2\)\*2:trunc\(ih\/2\)\*2,setfield=tff,yadif=mode=send_frame_nospatial:parity=tff/);
+    assert.equal(valueAfter(args, '-crf'), '20');
     assert.equal(valueAfter(args, '-f'), 'hls');
     assert.equal(valueAfter(args, '-hls_time'), '1');
     assert.equal(valueAfter(args, '-hls_playlist_type'), 'event');
@@ -34,7 +35,7 @@ test('progressive sources are encoded with deterministic HLS keyframes', () => {
     assert.equal(valueAfter(args, '-g'), '30');
     assert.equal(valueAfter(args, '-keyint_min'), '30');
     assert.equal(valueAfter(args, '-fps_mode'), 'passthrough');
-    assert.equal(valueAfter(args, '-vf'), 'setsar=1');
+    assert.equal(valueAfter(args, '-vf'), 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1');
 });
 
 test('bottom-field-first recordings preserve bottom parity', () => {

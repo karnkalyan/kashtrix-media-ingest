@@ -25,11 +25,10 @@ const buildRecordingHlsArgs = (filePath, playlistPath, segmentPattern, mediaInfo
     const segmentSeconds = Math.max(1, Math.min(6, Number(options.segmentSeconds) || 1));
     const filters = [];
 
-    if (Number(mediaInfo.width || 0) > 1280) {
-        // Scaling fields before deinterlacing reduces preview CPU without
-        // changing the cadence or touching the archive master.
-        filters.push(`scale=w=1280:h=-2:flags=fast_bilinear${interlaced ? ':interl=1' : ''}`);
-    }
+    // Preserve full native source resolution (1080p, 4K, etc.) without downscaling.
+    // Ensure even width/height dimensions for standard YUV420p pixel format compliance.
+    filters.push('scale=trunc(iw/2)*2:trunc(ih/2)*2');
+
     if (interlaced) {
         const fieldOrder = String(mediaInfo.fieldOrder || mediaInfo.field_order || '').toLowerCase();
         const parity = fieldOrder.startsWith('b') ? 'bff' : 'tff';
@@ -49,7 +48,7 @@ const buildRecordingHlsArgs = (filePath, playlistPath, segmentPattern, mediaInfo
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
-        '-crf', '27',
+        '-crf', '20',
         '-pix_fmt', 'yuv420p',
         '-g', String(gop),
         '-keyint_min', String(gop),
@@ -58,7 +57,7 @@ const buildRecordingHlsArgs = (filePath, playlistPath, segmentPattern, mediaInfo
         '-fps_mode', 'passthrough',
         '-threads', '0',
         '-c:a', 'aac',
-        '-b:a', '128k',
+        '-b:a', '192k',
         '-ar', '48000',
         '-ac', '2',
         '-af', 'aresample=async=1:first_pts=0',
