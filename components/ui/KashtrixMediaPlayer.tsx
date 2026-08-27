@@ -325,13 +325,14 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
           backBufferLength: 0,
           lowLatencyMode: true,
           nudgeOffset: 0.1,
-          nudgeMaxRetry: 10,
+          nudgeMaxRetry: 15,
           maxFragLookUpTolerance: 0.25,
-          manifestLoadingTimeOut: 8000,
-          manifestLoadingMaxRetry: 8,
-          levelLoadingTimeOut: 8000,
-          fragLoadingTimeOut: 8000,
-          fragLoadingMaxRetry: 8,
+          manifestLoadingTimeOut: 15000,
+          manifestLoadingMaxRetry: 30,
+          levelLoadingTimeOut: 15000,
+          levelLoadingMaxRetry: 30,
+          fragLoadingTimeOut: 15000,
+          fragLoadingMaxRetry: 30,
         } : {
           enableWorker: true,
           lowLatencyMode: false,
@@ -351,11 +352,27 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         hls.attachMedia(video);
         hlsRef.current = hls;
 
+        const onPlayingOrCanPlay = () => {
+          setLoading(false);
+          setError(null);
+        };
+        video.addEventListener('playing', onPlayingOrCanPlay);
+        video.addEventListener('canplay', onPlayingOrCanPlay);
+        video.addEventListener('loadeddata', onPlayingOrCanPlay);
+        video.addEventListener('timeupdate', onPlayingOrCanPlay);
+
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setLoading(false);
           initAudioAnalyser();
           if (autoPlayRef.current) {
             video.muted = true;
+            video.play().catch(() => {});
+          }
+        });
+
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          setLoading(false);
+          if (autoPlayRef.current && video.paused) {
             video.play().catch(() => {});
           }
         });
@@ -388,18 +405,16 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
                   hlsRef.current.loadSource(src);
                   hlsRef.current.startLoad();
                 }
-              }, 800);
+              }, 1000);
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
               hls.recoverMediaError();
             } else {
-              setLoading(false);
-              setError('Stream initializing or reconnecting…');
               setTimeout(() => {
                 if (hlsRef.current && videoRef.current) {
                   hlsRef.current.loadSource(src);
                   hlsRef.current.attachMedia(videoRef.current);
                 }
-              }, 800);
+              }, 1000);
             }
           } else if (
             data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||

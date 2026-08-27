@@ -671,6 +671,54 @@ const serveDevicePreviewHandler = async (req, res) => {
 
 app.get('/hls/device-preview/:previewId/:file', serveDevicePreviewHandler);
 
+const serveChannelHlsHandler = async (req, res) => {
+    const stream = req.params.stream;
+    const file = req.params.file || 'index.m3u8';
+    const sanitizedStream = path.basename(stream || '');
+    const sanitizedFile = path.basename(file || 'index.m3u8');
+    if (!sanitizedStream) return res.status(400).json({ error: 'Stream identifier required' });
+
+    const candidateFiles = [
+        path.join(HLS_DIR, sanitizedStream, sanitizedFile),
+        path.join(MEDIA_ROOT, 'hls', sanitizedStream, sanitizedFile),
+        path.join(PROJECT_ROOT, 'media', 'hls', sanitizedStream, sanitizedFile),
+        path.join(__dirname, 'media', 'hls', sanitizedStream, sanitizedFile),
+        path.join(LIVE_DIR, sanitizedStream, sanitizedFile),
+        path.join(HLS_DIR, sanitizedFile),
+    ];
+
+    let foundFile = candidateFiles.find(f => fs.existsSync(f));
+
+    // If manifest is requested while channel/device stream is initializing, wait up to 4s for first file creation
+    if (!foundFile && sanitizedFile.endsWith('.m3u8')) {
+        for (let i = 0; i < 40; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            foundFile = candidateFiles.find(f => fs.existsSync(f));
+            if (foundFile) break;
+        }
+    }
+
+    if (foundFile && fs.existsSync(foundFile)) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        if (sanitizedFile.endsWith('.m3u8')) {
+            res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        } else if (sanitizedFile.endsWith('.ts')) {
+            res.setHeader('Content-Type', 'video/mp2t');
+        }
+        return res.sendFile(path.resolve(foundFile));
+    }
+
+    return res.status(404).json({ error: `HLS playlist not found for stream "${sanitizedStream}"` });
+};
+
+app.get('/hls/:stream/index.m3u8', serveChannelHlsHandler);
+app.get('/hls/:stream/:file', serveChannelHlsHandler);
+app.get('/media/hls/:stream/index.m3u8', serveChannelHlsHandler);
+app.get('/media/hls/:stream/:file', serveChannelHlsHandler);
+
 app.use('/live', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/live', express.static(LIVE_DIR, hlsStaticOptions));
 app.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
@@ -1934,7 +1982,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             }
         }
 
-        const proc = spawn(bin, args, { windowsHide: true });
+        const proc = spawn(bin, args, { cwd: PROJECT_ROOT, windowsHide: true });
         runningProcesses[channelId] = proc;
 
         let startTime = Date.now();
@@ -6931,6 +6979,10 @@ mediaApp.get('/recording-preview/:id/index.m3u8', sendRecordingHlsManifest);
 mediaApp.get('/recording-preview/:id/:sessionId/:segmentName', sendRecordingHlsSegment);
 mediaApp.get('/recording-preview/:id', redirectRecordingPreviewToHls);
 mediaApp.get('/hls/device-preview/:previewId/:file', serveDevicePreviewHandler);
+mediaApp.get('/hls/:stream/index.m3u8', serveChannelHlsHandler);
+mediaApp.get('/hls/:stream/:file', serveChannelHlsHandler);
+mediaApp.get('/media/hls/:stream/index.m3u8', serveChannelHlsHandler);
+mediaApp.get('/media/hls/:stream/:file', serveChannelHlsHandler);
 mediaApp.use('/vod', express.static(VOD_DIR));
 
 // Explicit route for /live/<stream>/index.m3u8 with fallback path search
