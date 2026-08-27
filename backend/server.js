@@ -2902,10 +2902,7 @@ const buildSingleOutputArgs = (output, options, isDeviceDirect, nvencInterlacedS
     const isCompressed = getRecordingProfile(format).compressed === true;
     const resolvedEncoder = options.resolvedEncoder || 'cpu';
     const requestedCodec = format === 'flv' ? 'h264' : (options.profileOverrides?.[format]?.videoCodec || options.videoCodec);
-    const useNativeInterlace = mode === 'native' || (mode === 'auto' && (
-        (resolvedEncoder === 'nvidia' && nvencInterlacedSupported) ||
-        (resolvedEncoder === 'cpu' && requestedCodec === 'h264')
-    ));
+    const useNativeInterlace = mode === 'native';
     const outArgs = buildRecordingProfileArgs(format, filePath, {
         encoder: resolvedEncoder,
         videoCodec: requestedCodec,
