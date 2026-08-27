@@ -1982,6 +1982,16 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
             }
         }
 
+        // If channel captures from a physical hardware device, release any standalone preview on that device
+        if (channel.inputType === 'device' || (channel.inputUrl || '').startsWith('device://') || cmd.includes('-f decklink') || cmd.includes('-f dshow')) {
+            for (const [pId, prev] of devicePreviewProcesses) {
+                if (!prev.isRecording) {
+                    try { stopDevicePreview(pId, true); } catch (_) {}
+                }
+            }
+            await new Promise(r => setTimeout(r, 120));
+        }
+
         const proc = spawn(bin, args, { cwd: PROJECT_ROOT, windowsHide: true });
         runningProcesses[channelId] = proc;
 

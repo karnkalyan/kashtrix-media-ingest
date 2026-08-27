@@ -371,25 +371,21 @@ const teeDestination = (
 
       // Build DVB Standard MPEG-TS muxing options
       const sId = destination.dvbServiceId || 1;
-      const sName = destination.dvbServiceName || channelName || "Kashtrix TV";
-      const sProvider = destination.dvbServiceProvider || "Kashtrix Media";
       const pmtPid = destination.dvbPmtPid || 4096;
       const vidPid = destination.dvbVideoPid || 256;
       const tsId = destination.dvbTsid || 1;
       const onId = destination.dvbOnid || 1;
       const muxrateFlag = destination.dvbMuxrate ? `:muxrate=${destination.dvbMuxrate * 1000}` : "";
 
-      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=digital_tv:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:pcr_period=20:pat_period=0.1:sdt_period=0.5:tables_version=1:metadata=service_name=${teeEscape(sName)}:metadata=service_provider=${teeEscape(sProvider)}${muxrateFlag}`;
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_service_type=digital_tv:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:mpegts_transport_stream_id=${tsId}:mpegts_original_network_id=${onId}:pcr_period=20:pat_period=0.1:sdt_period=0.5:tables_version=1${muxrateFlag}`;
 
       return [`[${dvbMuxer}]${teeEscape(destUrl)}`];
     }
     case Protocol.HTTP_TS: {
       const sId = destination.dvbServiceId || 1;
-      const sName = destination.dvbServiceName || channelName || "Kashtrix TV";
-      const sProvider = destination.dvbServiceProvider || "Kashtrix Media";
       const pmtPid = destination.dvbPmtPid || 4096;
       const vidPid = destination.dvbVideoPid || 256;
-      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}:metadata=service_name=${teeEscape(sName)}:metadata=service_provider=${teeEscape(sProvider)}`;
+      const dvbMuxer = `f=mpegts:mpegts_service_id=${sId}:mpegts_pmt_start_pid=${pmtPid}:mpegts_start_pid=${vidPid}`;
       return [`[${dvbMuxer}]${teeEscape(url)}`];
     }
     case Protocol.DECKLINK: {
