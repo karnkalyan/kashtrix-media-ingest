@@ -46,6 +46,7 @@ services:
       - "8080"
     volumes:
       - recording-data:/app/media
+      - recording-data:/media
       - ./certs/production/ca-cert.pem:/run/secrets/license-ca.pem:ro
       - ./certs/production/client-cert.pem:/run/secrets/license-client-cert.pem:ro
       - ./certs/production/client-key.pem:/run/secrets/license-client-key.pem:ro

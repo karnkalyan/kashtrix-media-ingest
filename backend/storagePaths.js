@@ -1,8 +1,13 @@
 const path = require('path');
+const fs = require('fs');
 
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+const PROJECT_ROOT = process.env.PROJECT_ROOT || (
+    fs.existsSync(path.join(__dirname, '..', 'backend'))
+        ? path.resolve(__dirname, '..')
+        : __dirname
+);
 const PROJECT_RECORDINGS_SETTING = 'media/recordings';
-const MEDIA_ROOT = path.join(PROJECT_ROOT, 'media');
+const MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(PROJECT_ROOT, 'media');
 const RECORDINGS_DIR = path.join(MEDIA_ROOT, 'recordings');
 
 const toForwardSlashes = value => String(value || '').replace(/\\/g, '/');

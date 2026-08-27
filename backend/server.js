@@ -322,15 +322,139 @@ const normalizeStoredChannels = async () => {
 };
 await normalizeStoredChannels();
 
+const resolvePhysicalRecordingFile = (target) => {
+    if (!target) return null;
+    let rec = null;
+    let fileName = null;
+    let rawPath = null;
+
+    if (typeof target === 'object') {
+        rec = target;
+        fileName = rec.file_name || (rec.file_path ? path.basename(rec.file_path) : null);
+        rawPath = rec.file_path;
+    } else {
+        const rawStr = String(target).trim();
+        const decoded = decodeURIComponent(rawStr);
+        rec = db.findRecordingById(rawStr) || db.findRecordingByFileName(decoded) || db.findRecordingByFileName(rawStr);
+        if (rec) {
+            fileName = rec.file_name || (rec.file_path ? path.basename(rec.file_path) : null);
+            rawPath = rec.file_path;
+        } else {
+            fileName = path.basename(decoded);
+            rawPath = decoded;
+        }
+    }
+
+    // 1. Direct path check if rawPath exists
+    if (rawPath) {
+        const checkPaths = [
+            rawPath,
+            path.resolve(rawPath),
+            path.join(PROJECT_ROOT, rawPath),
+            path.join(MEDIA_ROOT, rawPath),
+        ];
+        for (const p of checkPaths) {
+            try {
+                if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+                    if (rec && rec.file_path !== path.resolve(p)) {
+                        rec.file_path = path.resolve(p);
+                    }
+                    return {
+                        filePath: path.resolve(p),
+                        fileName: fileName || path.basename(p),
+                        recording: rec,
+                    };
+                }
+            } catch (_) {}
+        }
+    }
+
+    // 2. Candidate directory roots check using filename
+    const candidateDirs = [
+        RECORDINGS_DIR,
+        path.join(MEDIA_ROOT, 'recordings'),
+        path.join(PROJECT_ROOT, 'media', 'recordings'),
+        path.join(PROJECT_ROOT, 'recorded'),
+        '/app/media/recordings',
+        '/media/recordings',
+        path.join(__dirname, 'media', 'recordings'),
+        MEDIA_ROOT,
+        PROJECT_ROOT,
+    ];
+
+    if (fileName) {
+        for (const dir of candidateDirs) {
+            if (!dir) continue;
+            try {
+                if (!fs.existsSync(dir)) continue;
+                const fullCandidate = path.join(dir, fileName);
+                if (fs.existsSync(fullCandidate) && fs.statSync(fullCandidate).isFile()) {
+                    if (rec && rec.file_path !== path.resolve(fullCandidate)) {
+                        rec.file_path = path.resolve(fullCandidate);
+                    }
+                    return {
+                        filePath: path.resolve(fullCandidate),
+                        fileName,
+                        recording: rec,
+                    };
+                }
+            } catch (_) {}
+        }
+
+        // Recursive search in primary recording directories (up to 3 levels deep)
+        const findRecursive = (dir, targetName, maxDepth = 3, currentDepth = 0) => {
+            if (!dir || currentDepth >= maxDepth) return null;
+            try {
+                if (!fs.existsSync(dir)) return null;
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const full = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                        const found = findRecursive(full, targetName, maxDepth, currentDepth + 1);
+                        if (found) return found;
+                    } else if (entry.name === targetName) {
+                        return full;
+                    }
+                }
+            } catch (_) {}
+            return null;
+        };
+
+        const searchRoots = [
+            RECORDINGS_DIR,
+            '/app/media/recordings',
+            '/media/recordings',
+            path.join(MEDIA_ROOT, 'recordings'),
+            RECORDED_DIR,
+        ];
+        for (const dir of searchRoots) {
+            const found = findRecursive(dir, fileName);
+            if (found && fs.existsSync(found)) {
+                if (rec && rec.file_path !== path.resolve(found)) {
+                    rec.file_path = path.resolve(found);
+                }
+                return {
+                    filePath: path.resolve(found),
+                    fileName,
+                    recording: rec,
+                };
+            }
+        }
+    }
+
+    return null;
+};
+
 // Fix any unclosed or dangling recordings and clean up duplicates on startup
 try {
     const unclosedRecordings = db.listRecordings(Number.MAX_SAFE_INTEGER).filter(recording => !recording.end_time);
     for (const rec of unclosedRecordings) {
         let endTime = rec.start_time;
         let size = rec.size || 0;
-        if (rec.file_path && fs.existsSync(rec.file_path)) {
+        const resolved = resolvePhysicalRecordingFile(rec);
+        if (resolved && fs.existsSync(resolved.filePath)) {
             try {
-                const stat = fs.statSync(rec.file_path);
+                const stat = fs.statSync(resolved.filePath);
                 endTime = stat.mtime.toISOString();
                 size = stat.size || size;
             } catch (e) { }
@@ -346,43 +470,73 @@ try {
             await db.deleteRecording(rec.id);
         } else if (key) {
             seenRecFiles.add(key);
+            // Refresh physical path binding for existing records
+            const resolved = resolvePhysicalRecordingFile(rec);
+            if (resolved && resolved.filePath && rec.file_path !== resolved.filePath) {
+                rec.file_path = resolved.filePath;
+                try {
+                    const stat = fs.statSync(resolved.filePath);
+                    await db.updateRecording(rec.id, { size: stat.size, endTime: rec.end_time || stat.mtime.toISOString() });
+                } catch (_) {}
+            }
         }
     }
 
-    const syncDiskDir = async (dir) => {
-        if (!fs.existsSync(dir)) return;
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                await syncDiskDir(fullPath);
-            } else if (entry.isFile() && /\.(mp4|mkv|mov|mxf|ts|flv)$/i.test(entry.name)) {
-                try {
-                    const stat = fs.statSync(fullPath);
-                    if (stat.size <= 0) {
-                        fs.unlinkSync(fullPath);
-                        console.log(`[Startup] Deleted 0-byte recording file: ${entry.name}`);
-                        continue;
-                    }
-                    const existing = db.findRecordingByFileName(entry.name);
-                    if (!existing) {
-                        const startTime = stat.birthtime ? stat.birthtime.toISOString() : stat.mtime.toISOString();
-                        const endTime = stat.mtime ? stat.mtime.toISOString() : startTime;
-                        const ext = path.extname(entry.name).slice(1).toLowerCase();
-                        const devName = entry.name.split('_')[0] || 'device';
-                        await db.createRecording({
-                            app: 'device', stream: devName, filePath: fullPath, fileName: entry.name,
-                            startTime, endTime, format: ext, videoBitrate: 50000, audioBitrate: 192,
-                            encoder: 'nvidia', resolution: 'source', continuous: false,
-                            sourceType: 'device', size: stat.size, settingsJson: JSON.stringify({ videoDevice: devName })
-                        });
-                    }
-                } catch (e) {}
+    const syncDiskDir = async (dir, depth = 0) => {
+        if (!dir || !fs.existsSync(dir) || depth > 4) return;
+        try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    await syncDiskDir(fullPath, depth + 1);
+                } else if (entry.isFile() && /\.(mp4|mkv|mov|mxf|ts|flv)$/i.test(entry.name)) {
+                    try {
+                        const stat = fs.statSync(fullPath);
+                        if (stat.size <= 0) {
+                            fs.unlinkSync(fullPath);
+                            console.log(`[Startup] Deleted 0-byte recording file: ${entry.name}`);
+                            continue;
+                        }
+                        let existing = db.findRecordingByFileName(entry.name) || db.findRecordingByPath(fullPath);
+                        if (!existing) {
+                            const startTime = stat.birthtime ? stat.birthtime.toISOString() : stat.mtime.toISOString();
+                            const endTime = stat.mtime ? stat.mtime.toISOString() : startTime;
+                            const ext = path.extname(entry.name).slice(1).toLowerCase();
+                            const devName = entry.name.split('_')[0] || 'device';
+                            await db.createRecording({
+                                app: 'device', stream: devName, filePath: path.resolve(fullPath), fileName: entry.name,
+                                startTime, endTime, format: ext, videoBitrate: 50000, audioBitrate: 192,
+                                encoder: 'nvidia', resolution: 'source', continuous: false,
+                                sourceType: 'device', size: stat.size, settingsJson: JSON.stringify({ videoDevice: devName })
+                            });
+                            console.log(`[Startup Sync] Registered existing recording file from disk: ${entry.name} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
+                        } else {
+                            if (existing.file_path !== path.resolve(fullPath)) {
+                                existing.file_path = path.resolve(fullPath);
+                            }
+                            if (!existing.size || existing.size <= 0) {
+                                await db.updateRecording(existing.id, { size: stat.size, endTime: existing.end_time || stat.mtime.toISOString() });
+                            }
+                        }
+                    } catch (e) {}
+                }
             }
-        }
+        } catch (_) {}
     };
-    await syncDiskDir(RECORDED_DIR);
-    await syncDiskDir(RECORDINGS_DIR);
+
+    const startupScanDirs = [
+        RECORDINGS_DIR,
+        path.join(MEDIA_ROOT, 'recordings'),
+        path.join(PROJECT_ROOT, 'media', 'recordings'),
+        path.join(PROJECT_ROOT, 'recorded'),
+        '/app/media/recordings',
+        '/media/recordings',
+        path.join(__dirname, 'media', 'recordings'),
+    ];
+    for (const dir of startupScanDirs) {
+        await syncDiskDir(dir);
+    }
 } catch (e) {
     console.error('[DB] Error fixing unclosed recordings on startup:', e);
 }
@@ -875,42 +1029,12 @@ const serveRecordingFile = (req, res, next) => {
     if (!rawPath) return next();
 
     // Prevent path traversal
-    const safeBase = path.basename(rawPath);
     if (rawPath.includes('..')) return res.status(403).send('Forbidden');
 
-    const primaryPath = path.join(RECORDINGS_DIR, rawPath);
-    if (fs.existsSync(primaryPath) && fs.statSync(primaryPath).isFile()) {
-        return streamOrDownloadFile(req, res, primaryPath);
+    const resolved = resolvePhysicalRecordingFile(rawPath);
+    if (resolved && fs.existsSync(resolved.filePath)) {
+        return streamOrDownloadFile(req, res, resolved.filePath, resolved.fileName);
     }
-    const secondaryPath = path.join(RECORDED_DIR, rawPath);
-    if (fs.existsSync(secondaryPath) && fs.statSync(secondaryPath).isFile()) {
-        return streamOrDownloadFile(req, res, secondaryPath);
-    }
-    const fileName = safeBase;
-    try {
-        const row = db.findRecordingByFileName(fileName);
-        if (row && row.file_path && fs.existsSync(row.file_path)) {
-            return streamOrDownloadFile(req, res, path.resolve(row.file_path));
-        }
-    } catch (e) {}
-    try {
-        const findFile = (dir) => {
-            if (!fs.existsSync(dir)) return null;
-            const entries = fs.readdirSync(dir, { withFileTypes: true });
-            for (const entry of entries) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    const found = findFile(full);
-                    if (found) return found;
-                } else if (entry.name === fileName) {
-                    return full;
-                }
-            }
-            return null;
-        };
-        const found = findFile(RECORDINGS_DIR) || findFile(RECORDED_DIR);
-        if (found) return streamOrDownloadFile(req, res, found);
-    } catch (e) {}
     next();
 };
 
@@ -1050,50 +1174,12 @@ const streamMediaFastPreview = (req, res, targetPath, identifier = 'media') => {
 
 const resolveRecordingPreviewTarget = (rawId) => {
     if (!rawId) return null;
-    let targetPath = null;
-    let fileName = null;
-    let recording = null;
-
-    try {
-        recording = db.findRecordingById(rawId);
-        if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
-            targetPath = recording.file_path;
-            fileName = recording.file_name;
-        }
-    } catch (e) {}
-
-    if (!targetPath) {
-        try {
-            const decoded = decodeURIComponent(rawId);
-            recording = db.findRecordingByFileName(decoded);
-            if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
-                targetPath = recording.file_path;
-                fileName = recording.file_name;
-            }
-        } catch (e) {}
-    }
-
-    if (!targetPath) {
-        const decoded = decodeURIComponent(rawId);
-        const candidates = [
-            path.join(RECORDINGS_DIR, decoded),
-            path.join(RECORDED_DIR, decoded),
-            path.join(MEDIA_ROOT, decoded),
-        ];
-        for (const c of candidates) {
-            if (fs.existsSync(c) && fs.statSync(c).isFile()) {
-                targetPath = c;
-                fileName = path.basename(c);
-                break;
-            }
-        }
-    }
-
-    if (!targetPath || !fs.existsSync(targetPath)) return null;
+    const resolved = resolvePhysicalRecordingFile(rawId);
+    if (!resolved || !fs.existsSync(resolved.filePath)) return null;
     return {
-        targetPath: path.resolve(targetPath),
-        fileName: fileName || path.basename(targetPath),
-        identifier: recording?.id || rawId,
+        targetPath: resolved.filePath,
+        fileName: resolved.fileName,
+        identifier: resolved.recording?.id || rawId,
     };
 };
 
@@ -1254,60 +1340,16 @@ app.get('/api/ingest/recordings/file/:fileName/preview', redirectRecordingPrevie
 
 app.get(['/api/ingest/recordings/:id/file', '/api/ingest/recordings/:id/download'], (req, res) => {
     const { id } = req.params;
-    let targetPath = null;
-    let fileName = null;
-    try {
-        const recording = db.findRecordingById(id);
-        if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
-            targetPath = recording.file_path;
-            fileName = recording.file_name;
-        }
-    } catch (e) {}
-
-    if (!targetPath) {
-        const decoded = decodeURIComponent(id);
-        const candidates = [
-            path.join(RECORDINGS_DIR, decoded),
-            path.join(RECORDED_DIR, decoded),
-        ];
-        for (const c of candidates) {
-            if (fs.existsSync(c) && fs.statSync(c).isFile()) {
-                targetPath = c;
-                fileName = path.basename(c);
-                break;
-            }
-        }
-    }
-
-    if (!targetPath) return res.status(404).send('Recording not found');
-    streamOrDownloadFile(req, res, targetPath, fileName);
+    const resolved = resolvePhysicalRecordingFile(id);
+    if (!resolved || !fs.existsSync(resolved.filePath)) return res.status(404).send('Recording not found');
+    streamOrDownloadFile(req, res, resolved.filePath, resolved.fileName);
 });
 
 app.get('/api/ingest/recordings/file/:fileName', (req, res) => {
-    const fileName = decodeURIComponent(req.params.fileName || '');
-    let targetPath = null;
-    try {
-        const recording = db.findRecordingByFileName(fileName);
-        if (recording && recording.file_path && fs.existsSync(recording.file_path)) {
-            targetPath = recording.file_path;
-        }
-    } catch (e) {}
-
-    if (!targetPath) {
-        const candidates = [
-            path.join(RECORDINGS_DIR, fileName),
-            path.join(RECORDED_DIR, fileName),
-        ];
-        for (const c of candidates) {
-            if (fs.existsSync(c) && fs.statSync(c).isFile()) {
-                targetPath = c;
-                break;
-            }
-        }
-    }
-
-    if (!targetPath) return res.status(404).send('Recording not found');
-    streamOrDownloadFile(req, res, targetPath, fileName);
+    const { fileName } = req.params;
+    const resolved = resolvePhysicalRecordingFile(fileName);
+    if (!resolved || !fs.existsSync(resolved.filePath)) return res.status(404).send('Recording not found');
+    streamOrDownloadFile(req, res, resolved.filePath, resolved.fileName);
 });
 
 const publicPaths = new Set([
@@ -5598,14 +5640,16 @@ app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, a
         console.log(`[RecordingDelete] all readers closed for recording ${id}`);
 
         // 5. Unlink recording file
-        if (normalizedFilePath && fs.existsSync(normalizedFilePath)) {
-            console.log(`[RecordingDelete] unlinking ${normalizedFilePath}`);
-            await fs.promises.unlink(normalizedFilePath);
+        const resolved = resolvePhysicalRecordingFile(recording);
+        const physicalPath = resolved?.filePath || normalizedFilePath;
+        if (physicalPath && fs.existsSync(physicalPath)) {
+            console.log(`[RecordingDelete] unlinking ${physicalPath}`);
+            await fs.promises.unlink(physicalPath);
         }
 
         // Also check counterpart MKV/MP4 if exists
-        if (normalizedFilePath && normalizedFilePath.endsWith('.mp4')) {
-            const counterpartMkv = normalizedFilePath.replace(/\.mp4$/i, '.mkv');
+        if (physicalPath && physicalPath.endsWith('.mp4')) {
+            const counterpartMkv = physicalPath.replace(/\.mp4$/i, '.mkv');
             if (fs.existsSync(counterpartMkv)) {
                 try {
                     await closeRecordingHttpReaders(counterpartMkv);
