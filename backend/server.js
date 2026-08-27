@@ -619,11 +619,22 @@ const hlsStaticOptions = {
 };
 
 // Serve static media, live HLS, DASH, and recordings on main API server
-app.get('/hls/device-preview/:previewId/:file', (req, res) => {
+app.get('/hls/device-preview/:previewId/:file', async (req, res) => {
     const { previewId, file } = req.params;
     const sanitizedPreviewId = path.basename(previewId);
     const sanitizedFile = path.basename(file);
     const targetFile = path.join(DEVICE_PREVIEW_DIR, sanitizedPreviewId, sanitizedFile);
+
+    // If manifest is requested right as recording/preview spawns, wait up to 3s for first file creation
+    if (!fs.existsSync(targetFile) && sanitizedFile.endsWith('.m3u8')) {
+        const preview = devicePreviewProcesses.get(sanitizedPreviewId);
+        if (preview && !preview.closed) {
+            for (let i = 0; i < 30; i++) {
+                await new Promise(r => setTimeout(r, 100));
+                if (fs.existsSync(targetFile)) break;
+            }
+        }
+    }
 
     if (fs.existsSync(targetFile)) {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -2898,10 +2909,6 @@ const buildSingleOutputArgs = (output, options, isDeviceDirect, nvencInterlacedS
         gopSize: options.gopSize,
         preset: options.preset,
     });
-    if (isDeviceDirect) {
-        const outputIndex = outArgs.indexOf('-c:a');
-        outArgs.splice(outputIndex, 0, '-af', 'asetpts=PTS-STARTPTS,aresample=async=1000:first_pts=0');
-    }
     return outArgs;
 };
 
@@ -3467,7 +3474,12 @@ const listRecordings = (limit = 50) => {
         const session = activeRecordings.get(getRecordingKey(row.app, row.stream));
         const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id));
         if (session && output) {
-            let size = 0;
+            let size = row.size || 0;
+            try {
+                if (output.filePath && fs.existsSync(output.filePath)) {
+                    size = fs.statSync(output.filePath).size;
+                }
+            } catch (e) {}
             const startTimeMs = new Date(row.start_time || session.startTime || now).getTime();
             const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
             return {

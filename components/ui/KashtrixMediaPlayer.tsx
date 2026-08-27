@@ -368,7 +368,12 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              hls.startLoad();
+              setTimeout(() => {
+                if (hlsRef.current) {
+                  hlsRef.current.loadSource(src);
+                  hlsRef.current.startLoad();
+                }
+              }, 800);
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
               hls.recoverMediaError();
             } else {
@@ -376,8 +381,8 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
               setError('Stream initializing or reconnecting…');
               setTimeout(() => {
                 if (hlsRef.current && videoRef.current) {
-                  hls.loadSource(src);
-                  hls.attachMedia(videoRef.current);
+                  hlsRef.current.loadSource(src);
+                  hlsRef.current.attachMedia(videoRef.current);
                 }
               }, 800);
             }

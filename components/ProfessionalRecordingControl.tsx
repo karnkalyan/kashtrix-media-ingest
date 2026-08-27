@@ -1806,7 +1806,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 {/* Confidence Player */}
                 <KashtrixMediaPlayer
                   src={
-                    previewing
+                    previewing || isRecordingActive
                       ? activeHlsUrl ||
                         (devicePreviewIdRef.current
                           ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8`
@@ -1817,7 +1817,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   isLive={true}
                   isRecording={isRecordingActive}
                   showAudioMeter={true}
-                  hasSignal={previewing && signalDetected && !previewError}
+                  hasSignal={(previewing || isRecordingActive) && signalDetected && !previewError}
                   signalLabel={
                     sourceType === "device"
                       ? "Hardware Input Feed"
