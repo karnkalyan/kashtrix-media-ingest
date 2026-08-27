@@ -260,7 +260,7 @@ const getCompressedVideoEncoder = (encoder, videoCodec) => {
     return { engine, codec, videoEncoder: COMPRESSED_VIDEO_ENCODERS[engine][codec] };
 };
 
-const cpuPreset = (value) => ['ultrafast', 'fast', 'medium', 'slow'].includes(value) ? value : 'medium';
+const cpuPreset = (value) => ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow'].includes(value) ? value : 'veryfast';
 const nvencPreset = (value) => /^p[1-7]$/.test(value) ? value : ({ ultrafast: 'p1', fast: 'p3', medium: 'p4', slow: 'p6' }[value] || 'p4');
 
 const buildRecordingProfileArgs = (extension, filePath, options = {}) => {

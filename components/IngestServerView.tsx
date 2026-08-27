@@ -394,8 +394,6 @@ export const IngestServerView: React.FC<Props> = ({
     refreshDevices();
     fetchStorageStatus();
 
-    const storageTimer = setInterval(fetchStorageStatus, 5000);
-
     const unsubscribe = subscribeRealtime(
       msg => {
         if ((msg.type === 'capture_devices' || msg.type === 'capture_devices_response') && msg.payload) {
@@ -419,7 +417,6 @@ export const IngestServerView: React.FC<Props> = ({
     );
 
     return () => {
-      clearInterval(storageTimer);
       unsubscribe();
     };
   }, [fetchData, fetchConfig, fetchRecordingProfiles, refreshDevices, fetchStorageStatus]);

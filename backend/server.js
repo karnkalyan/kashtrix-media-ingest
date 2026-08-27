@@ -123,11 +123,11 @@ const { getFFmpegDevices } = require('./getDevices');
 
 let captureDeviceCache = null;
 let captureDeviceScan = null;
-const CAPTURE_DEVICE_CACHE_MS = 5000;
+const CAPTURE_DEVICE_CACHE_MS = 60000;
 
 const scanCaptureDevices = async ({ refresh = false } = {}) => {
     const now = Date.now();
-    if (!refresh && captureDeviceCache && now - captureDeviceCache.updatedAt < CAPTURE_DEVICE_CACHE_MS) {
+    if (!refresh && captureDeviceCache && (now - captureDeviceCache.updatedAt < CAPTURE_DEVICE_CACHE_MS || activeRecordings.size > 0 || (activeDevicePreviewState && activeDevicePreviewState.active))) {
         return captureDeviceCache.devices;
     }
     if (captureDeviceScan) return captureDeviceScan;
@@ -139,7 +139,7 @@ const scanCaptureDevices = async ({ refresh = false } = {}) => {
         })
         .catch(err => {
             console.warn('[Device Discovery] Error scanning devices:', err.message);
-            return { video: [], audio: [] };
+            return captureDeviceCache?.devices || { video: [], audio: [] };
         })
         .finally(() => { captureDeviceScan = null; });
 

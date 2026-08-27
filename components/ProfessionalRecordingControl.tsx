@@ -425,6 +425,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const deviceSetupRef = useRef<HTMLDivElement | null>(null);
   const workflowWorkspaceRef = useRef<HTMLDivElement | null>(null);
   const workflowInlinePanelRef = useRef<HTMLDivElement | null>(null);
+  const devicePreviewIdRef = useRef<string | null>(null);
 
   // Destination test connection
   const [testingConnection, setTestingConnection] = useState(false);
@@ -557,7 +558,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, [isRecordingActive, activeRecordingStartTime]);
 
-  // Fetch disk storage status
+  // Fetch disk storage status on mount
   const fetchStorageStatus = useCallback(async () => {
     try {
       const token = localStorage.getItem("kte-auth-token");
@@ -573,11 +574,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   useEffect(() => {
     fetchStorageStatus();
-    const timer = setInterval(fetchStorageStatus, 5000);
-    return () => clearInterval(timer);
   }, [fetchStorageStatus]);
 
-  // Check active preview status on mount, device changes, and sync with recording state
+  // Check active preview status once on mount or device switch
   useEffect(() => {
     let isMounted = true;
     const checkPreviewStatus = async () => {
@@ -618,16 +617,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       } catch {}
     };
     checkPreviewStatus();
-    const interval = setInterval(checkPreviewStatus, 3000);
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
-  }, [sourceType, isRecordingActive, videoDevice, audioDevice]);
+  }, [sourceType, videoDevice, audioDevice]);
 
-  // Subscribe to real-time WebSocket state broadcasts for preview & recording handoff
+  // Subscribe to real-time WebSocket state broadcasts for preview, storage & recording handoff
   useEffect(() => {
     const unsubscribe = subscribeRealtime((msg: any) => {
+      if (msg.type === "system_stats" && msg.payload?.storageDetails) {
+        setStorageStatus((prev: any) => ({ ...(prev || {}), ...msg.payload.storageDetails, success: true }));
+      }
       if (msg.type === "device_preview_state" && msg.payload) {
         const p = msg.payload;
         if (sourceType === "device") {
@@ -649,7 +649,6 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             devicePreviewIdRef.current = null;
             setActiveHlsUrl("");
             setPreviewing(false);
-            setSignalDetected(false);
           }
         }
       }
@@ -664,13 +663,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         }
       }
     });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [sourceType, isRecordingActive, videoDevice, audioDevice]);
-
-  const devicePreviewIdRef = useRef<string | null>(null);
+    return () => unsubscribe();
+  }, [sourceType, videoDevice, audioDevice, isRecordingActive]);
 
   // Start Device Preview
   const startSourcePreview = useCallback(async () => {

@@ -341,6 +341,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
           setLoading(false);
           initAudioAnalyser();
           if (autoPlayRef.current) {
+            video.muted = true;
             video.play().catch(() => {});
           }
         });
@@ -538,6 +539,8 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         ref={videoRef}
         poster={poster}
         playsInline
+        muted={muted}
+        autoPlay={autoPlay}
         crossOrigin="anonymous"
         onLoadedMetadata={e => {
           setLoading(false);
