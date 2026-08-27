@@ -2131,10 +2131,14 @@ const TopHeader: React.FC<{
   const viewLabels: Record<string, string> = {
     dashboard: "Dashboard",
     channels: "Channels",
+    vod: "VOD Playout",
+    mux: "Multiplexer",
+    profiles: "Transcoding Profiles",
+    transcode: "Transcode Studio",
+    "live-server": "Live Server",
     monitor: "System Monitor",
     ingest: "Ingest Server",
     recordings: "Recording Library",
-    "live-server": "Live Server",
     events: "Events & Alerts",
     "system-admin": "System Administration",
     users: "User Management",
@@ -2294,6 +2298,7 @@ const getInitialActiveView = (): ActiveView => {
       "channels",
       "vod",
       "mux",
+      "profiles",
       "transcode",
       "live-server",
       "monitor",
@@ -2702,13 +2707,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!engine.auth.token || !engine.auth.user) return;
-    const role = engine.auth.user?.role;
+    const role = (engine.auth.user?.role || "").toLowerCase().trim();
     const item = navItems.find((navItem) => navItem.id === activeView);
-    const isSuperadmin = role === "superadmin";
     const defaultView = "dashboard";
 
     // Role-based view guard: if the current nav item has allowedRoles and user's role is not in it, redirect
-    if (item?.allowedRoles && role && !item.allowedRoles.includes(role)) {
+    if (
+      item?.allowedRoles &&
+      role &&
+      !item.allowedRoles.map((r) => r.toLowerCase().trim()).includes(role)
+    ) {
       setActiveView(defaultView as ActiveView);
       return;
     }
@@ -2717,8 +2725,6 @@ const App: React.FC = () => {
       item?.licenseModule &&
       !hasLicenseModule(engine.auth.license, item.licenseModule)
     ) {
-      setActiveView(defaultView as ActiveView);
-    } else if (item?.id === "users" && !isSuperadmin) {
       setActiveView(defaultView as ActiveView);
     }
   }, [activeView, engine.auth.token, engine.auth.user, engine.auth.license]);
@@ -3001,11 +3007,9 @@ const App: React.FC = () => {
               onNavigate={setActiveView}
             />
           )}
-          {activeView === "users" &&
-            (engine.auth.user?.role === "superadmin" ||
-              engine.auth.user?.role === "admin") && (
-              <UserManagementView currentUser={engine.auth.user?.username} />
-            )}
+          {activeView === "users" && (
+            <UserManagementView currentUser={engine.auth.user?.username} />
+          )}
           {activeView === "settings" && (
             <SettingsView
               settings={engine.state.settings}

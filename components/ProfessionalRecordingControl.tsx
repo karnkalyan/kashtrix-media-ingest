@@ -45,6 +45,7 @@ import DetailDrawer from "./ui/DetailDrawer";
 import KashtrixMediaPlayer from "./ui/KashtrixMediaPlayer";
 import RecordingElapsedTimer from "./RecordingElapsedTimer";
 import { toast } from "react-hot-toast";
+import { subscribeRealtime } from "../services/realtime";
 
 type Format = IngestRecordingOptions["formats"][number];
 const PROJECT_RECORDINGS_PATH = "media/recordings";
@@ -575,21 +576,29 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return () => clearInterval(timer);
   }, [fetchStorageStatus]);
 
-  // Check active preview status on mount and sync with recording state
+  // Check active preview status on mount, device changes, and sync with recording state
   useEffect(() => {
     let isMounted = true;
     const checkPreviewStatus = async () => {
       if (sourceType !== "device") return;
       const token = localStorage.getItem("kte-auth-token");
       try {
-        const res = await fetch("/api/ingest/device-preview/status", {
+        const queryParams = new URLSearchParams();
+        if (videoDevice) queryParams.set("videoDevice", videoDevice);
+        if (audioDevice) queryParams.set("audioDevice", audioDevice);
+        const url = `/api/ingest/device-preview/status${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+        const res = await fetch(url, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json().catch(() => ({}));
         if (isMounted && data.active && data.previewId) {
           devicePreviewIdRef.current = data.previewId;
-          if (data.videoDevice) setVideoDevice(data.videoDevice);
-          if (data.audioDevice) setAudioDevice(data.audioDevice);
+          if (data.videoDevice && !videoDevice && typeof setVideoDevice === "function") {
+            setVideoDevice(data.videoDevice);
+          }
+          if (data.audioDevice && !audioDevice && typeof setAudioDevice === "function") {
+            setAudioDevice(data.audioDevice);
+          }
           setActiveHlsUrl(
             data.hlsUrl || `/hls/device-preview/${data.previewId}/index.m3u8`,
           );
@@ -603,7 +612,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           setDetectedAudioSampleRate(
             Number(data.detectedAudioSampleRate) || 0,
           );
-          setSignalDetected(Boolean(data.hasSignal));
+          setSignalDetected(data.hasSignal !== false);
         }
       } catch {}
     };
@@ -613,7 +622,52 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       isMounted = false;
       clearInterval(interval);
     };
-  }, [sourceType, isRecordingActive]);
+  }, [sourceType, isRecordingActive, videoDevice, audioDevice]);
+
+  // Subscribe to real-time WebSocket state broadcasts for preview & recording handoff
+  useEffect(() => {
+    const unsubscribe = subscribeRealtime((msg: any) => {
+      if (msg.type === "device_preview_state" && msg.payload) {
+        const p = msg.payload;
+        if (sourceType === "device") {
+          if (p.active) {
+            const matchesVideo = !videoDevice || p.videoDevice === videoDevice || (p.videoDevice && (p.videoDevice.includes(videoDevice) || videoDevice.includes(p.videoDevice)));
+            const matchesAudio = !audioDevice || p.audioDevice === audioDevice || (p.audioDevice && (p.audioDevice.includes(audioDevice) || audioDevice.includes(p.audioDevice)));
+            if (matchesVideo || matchesAudio || !videoDevice) {
+              devicePreviewIdRef.current = p.previewId;
+              setActiveHlsUrl(p.hlsUrl || `/hls/device-preview/${p.previewId}/index.m3u8`);
+              setPreviewing(true);
+              setSignalDetected(p.hasSignal !== false);
+              if (p.detectedResolution || p.resolution) setDetectedResolution(p.detectedResolution || p.resolution);
+              if (p.detectedFramerate || p.framerate) setDetectedFramerate(p.detectedFramerate || (p.framerate ? `${p.framerate} fps` : ""));
+              if (p.detectedPixelFormat) setDetectedPixelFormat(p.detectedPixelFormat);
+              if (p.detectedAudioChannels) setDetectedAudioChannels(p.detectedAudioChannels);
+              if (p.detectedAudioSampleRate) setDetectedAudioSampleRate(Number(p.detectedAudioSampleRate) || 0);
+            }
+          } else if (!p.isRecording && !isRecordingActive) {
+            devicePreviewIdRef.current = null;
+            setActiveHlsUrl("");
+            setPreviewing(false);
+            setSignalDetected(false);
+          }
+        }
+      }
+
+      if (msg.type === "recording_started" && msg.payload) {
+        const p = msg.payload;
+        if (sourceType === "device" && (p.previewId || p.hlsUrl)) {
+          devicePreviewIdRef.current = p.previewId;
+          setActiveHlsUrl(p.hlsUrl || `/hls/device-preview/${p.previewId}/index.m3u8`);
+          setPreviewing(true);
+          setSignalDetected(true);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [sourceType, isRecordingActive, videoDevice, audioDevice]);
 
   const devicePreviewIdRef = useRef<string | null>(null);
 
@@ -666,7 +720,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         setDetectedAudioSampleRate(
           Number(data.detectedAudioSampleRate) || 0,
         );
-        setSignalDetected(Boolean(data.hasSignal));
+        setSignalDetected(data.hasSignal !== false);
         toast.success(`Preview started for ${videoDevice || audioDevice}`);
       } catch (err: any) {
         setPreviewError(err.message || "Device preview error");
@@ -707,6 +761,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const stopPreview = useCallback(
     async (notifyServer = true) => {
       if (previewStopping) return;
+      if (isRecordingActive) {
+        toast.error("Cannot stop device preview while recording is actively capturing");
+        return;
+      }
       setPreviewStopping(true);
       const currentId = devicePreviewIdRef.current;
       let serverError = "";
@@ -722,7 +780,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             body: JSON.stringify({
               previewId: currentId || "current",
               videoDevice: videoDevice || undefined,
-              force: true,
+              force: false,
             }),
           });
           const body = await response.json().catch(() => ({}));
@@ -749,7 +807,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       if (serverError) toast.error(`Preview closed locally: ${serverError}`);
       else toast.success("Preview stopped and capture device released");
     },
-    [previewStopping, sourceType, videoDevice],
+    [previewStopping, sourceType, videoDevice, isRecordingActive],
   );
 
   // Test Storage Connection
