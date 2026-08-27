@@ -3514,17 +3514,20 @@ const listRecordings = (limit = 50) => {
         if (!inputDevice && row.app === 'device') inputDevice = row.stream;
         const friendlyDevice = (row.app === 'device' ? resolveFriendlyDeviceName(captureDeviceCache?.devices, inputDevice) : inputDevice) || inputDevice;
 
-        let session = activeRecordings.get(getRecordingKey(row.app, row.stream)) ||
-                      activeRecordings.get(getRecordingKey(cleanStreamPart(row.app), cleanStreamPart(row.stream)));
-        if (!session) {
-            for (const active of activeRecordings.values()) {
-                if (active.outputs?.some(item => Number(item.recordId) === Number(row.id) || (item.filePath && row.file_path && item.filePath === row.file_path) || (item.fileName && row.file_name && item.fileName === row.file_name))) {
-                    session = active;
-                    break;
-                }
+        let session = null;
+        let output = null;
+        for (const active of activeRecordings.values()) {
+            const matched = active.outputs?.find(item =>
+                (item.recordId && Number(item.recordId) === Number(row.id)) ||
+                (item.filePath && row.file_path && path.resolve(item.filePath) === path.resolve(row.file_path)) ||
+                (item.fileName && row.file_name && item.fileName === row.file_name && active.startTime === row.start_time)
+            );
+            if (matched) {
+                session = active;
+                output = matched;
+                break;
             }
         }
-        const output = session?.outputs.find(item => Number(item.recordId) === Number(row.id) || (item.filePath && row.file_path && item.filePath === row.file_path) || (item.fileName && row.file_name && item.fileName === row.file_name)) || session?.outputs?.[0];
         if (session && output) {
             let size = row.size || 0;
             try {
