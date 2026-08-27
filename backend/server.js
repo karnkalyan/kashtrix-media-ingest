@@ -4382,6 +4382,9 @@ const handleCreateUser = async (req, res) => {
         const { username, password, role } = req.body || {};
         if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
         if (!isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+        if (String(username).trim().toLowerCase() === 'superadmin' || String(role).trim().toLowerCase() === 'superadmin') {
+            return res.status(400).json({ error: 'Superadmin accounts cannot be created from the UI. Superadmin is bootstrapped from backend environment.' });
+        }
         const nextRole = parseManagedRole(role);
         if (!nextRole) {
             return res.status(400).json({ error: 'Role must be admin, operator, archive, or user' });
@@ -4401,8 +4404,14 @@ const handleUpdateUser = async (req, res) => {
         const { username, password, role } = req.body || {};
         const user = db.findUserById(id);
         if (!user) return res.status(404).json({ error: 'User not found' });
-        if (normalizeUserRole(user.role) === 'superadmin') {
-            return res.status(403).json({ error: 'Superadmin credentials must be changed from the account profile' });
+        if (normalizeUserRole(user.role) === 'superadmin' || String(user.username).toLowerCase() === 'superadmin') {
+            return res.status(403).json({ error: 'Superadmin account cannot be modified from the UI' });
+        }
+        if (username && String(username).trim().toLowerCase() === 'superadmin') {
+            return res.status(400).json({ error: 'Cannot rename user to superadmin' });
+        }
+        if (role && String(role).trim().toLowerCase() === 'superadmin') {
+            return res.status(400).json({ error: 'Superadmin role cannot be assigned from the UI' });
         }
         if (password && !isStrongPassword(password)) return res.status(400).json({ error: 'Password must be at least 4 characters' });
         const nextUsername = username || user.username;

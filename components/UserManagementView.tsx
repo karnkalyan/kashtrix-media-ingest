@@ -74,7 +74,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
   };
 
   const openEditModal = (user: UserItem) => {
-    if (user.role === 'superadmin') {
+    if (user.role === 'superadmin' || user.username.toLowerCase() === 'superadmin') {
       toast.error('Superadmin accounts are managed only through the trusted backend CLI and account profile');
       return;
     }
@@ -87,6 +87,9 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
 
   const saveUser = async () => {
     if (!formUsername.trim()) return toast.error('Username is required');
+    if (formUsername.trim().toLowerCase() === 'superadmin' || formRole === 'superadmin') {
+      return toast.error('Superadmin accounts cannot be created or assigned from the UI');
+    }
     if (!editingUser && !formPassword) return toast.error('Password is required for new users');
     if (formPassword && formPassword.length < 4) return toast.error('Password must be at least 4 characters');
 
@@ -230,7 +233,7 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
             <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
               {filtered.map(user => {
                 const isCurrent = user.username === currentUser;
-                const isProtectedSuperadmin = user.role === 'superadmin';
+                const isProtectedSuperadmin = user.role === 'superadmin' || user.username.toLowerCase() === 'superadmin';
 
                 return (
                   <tr key={user.id} className="transition-colors hover:bg-[#F4EEFF]/50 dark:hover:bg-[#2B1745]">
