@@ -314,7 +314,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
 
     if (src.includes('.m3u8')) {
       if (Hls.isSupported()) {
-        const hls = new Hls({
+        const hls = new Hls(isLiveStream ? {
           enableWorker: true,
           liveSyncDurationCount: 2,
           liveMaxLatencyDurationCount: 6,
@@ -332,6 +332,20 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
           levelLoadingTimeOut: 8000,
           fragLoadingTimeOut: 8000,
           fragLoadingMaxRetry: 8,
+        } : {
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 120,
+          backBufferLength: 30,
+          highBufferWatchdogPeriod: 2,
+          nudgeOffset: 0.1,
+          nudgeMaxRetry: 5,
+          manifestLoadingTimeOut: 15000,
+          manifestLoadingMaxRetry: 6,
+          levelLoadingTimeOut: 15000,
+          fragLoadingTimeOut: 15000,
+          fragLoadingMaxRetry: 6,
         });
         hls.loadSource(src);
         hls.attachMedia(video);
@@ -393,6 +407,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
             data.details === Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE ||
             data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR
           ) {
+            if (!isLiveStream) return;
             if (video.buffered.length > 0) {
               const liveEdge = video.buffered.end(video.buffered.length - 1);
               if (Math.abs(video.currentTime - liveEdge) > 1.5) {
@@ -433,7 +448,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       video.addEventListener('error', onErr, { once: true });
       if (autoPlayRef.current) video.play().catch(() => {});
     }
-  }, [src, initAudioAnalyser]);
+  }, [src, initAudioAnalyser, isLiveStream]);
 
   useEffect(() => {
     loadStream();

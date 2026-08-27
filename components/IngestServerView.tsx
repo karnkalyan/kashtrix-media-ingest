@@ -64,9 +64,9 @@ const getRecordingFormat = (item: any): string => {
 
 const getRecordingUrl = (item: any): string => {
   if (!item) return '';
-  if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}`;
+  if (item.id) return `/recording-preview/${encodeURIComponent(item.id)}/index.m3u8`;
   const fileName = item.file_name || item.stream;
-  return `/recording-preview/${encodeURIComponent(fileName || '')}`;
+  return `/recording-preview/${encodeURIComponent(fileName || '')}/index.m3u8`;
 };
 
 const getRecordingDownloadUrl = (item: any): string => {

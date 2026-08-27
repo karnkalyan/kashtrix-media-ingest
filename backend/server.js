@@ -71,6 +71,7 @@ const {
     closeRecordingHttpReaders,
     normalizePath,
 } = require('./recordingLifecycle');
+const { buildRecordingHlsArgs } = require('./recordingPreview');
 
 const loadEnvFile = () => {
     const envFile = path.join(__dirname, '.env');
@@ -241,6 +242,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 
 const RECORDED_DIR = path.join(PROJECT_ROOT, 'recorded');
 const RECORDING_THUMBNAILS_DIR = path.join(MEDIA_ROOT, 'recording-thumbnails');
+const RECORDING_PREVIEW_HLS_DIR = path.join(MEDIA_ROOT, 'recording-preview-hls');
 
 const JWT_SECRET = requireEnv('KTE_JWT_SECRET', 32);
 const { signToken, verifyToken } = createTokenCodec(JWT_SECRET);
@@ -284,6 +286,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(MEDIA_ROOT)) fs.mkdirSync(MEDIA_ROOT, { recursive: true });
 if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
 if (!fs.existsSync(RECORDING_THUMBNAILS_DIR)) fs.mkdirSync(RECORDING_THUMBNAILS_DIR, { recursive: true });
+if (!fs.existsSync(RECORDING_PREVIEW_HLS_DIR)) fs.mkdirSync(RECORDING_PREVIEW_HLS_DIR, { recursive: true });
 if (!fs.existsSync(VOD_DIR)) fs.mkdirSync(VOD_DIR, { recursive: true });
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 if (!fs.existsSync(DEVICE_PREVIEW_DIR)) fs.mkdirSync(DEVICE_PREVIEW_DIR, { recursive: true });
@@ -869,32 +872,45 @@ app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Direct dedicated recording stream & download routes
 
-const mediaCodecCache = new Map();
-const probeVideoCodec = (filePath) => {
-    if (mediaCodecCache.has(filePath)) {
-        return mediaCodecCache.get(filePath);
+const mediaVideoInfoCache = new Map();
+const probeMediaVideoInfo = (filePath) => {
+    let cacheKey = '';
+    try {
+        const stat = fs.statSync(filePath);
+        cacheKey = `${stat.size}:${stat.mtimeMs}`;
+    } catch (_) {}
+    const cached = mediaVideoInfoCache.get(filePath);
+    if (cached && cached.cacheKey === cacheKey) {
+        return cached.info;
     }
     try {
         const out = execFileSync(ffprobePath, [
             '-v', 'error',
             '-select_streams', 'v:0',
-            '-show_entries', 'stream=codec_name',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
-            '-probesize', '1000000',
-            '-analyzeduration', '1000000',
+            '-show_entries', 'stream=codec_name,field_order,width,height,r_frame_rate,avg_frame_rate',
+            '-of', 'json',
+            '-probesize', '5000000',
+            '-analyzeduration', '5000000',
             filePath
         ], { encoding: 'utf8', timeout: 2000, windowsHide: true });
-        const codec = (out || '').trim().toLowerCase();
-        if (codec) {
-            mediaCodecCache.set(filePath, codec);
-            if (mediaCodecCache.size > 500) {
-                const firstKey = mediaCodecCache.keys().next().value;
-                mediaCodecCache.delete(firstKey);
+        const stream = JSON.parse(out || '{}')?.streams?.[0];
+        if (stream) {
+            const info = {
+                codecName: String(stream.codec_name || '').toLowerCase(),
+                fieldOrder: String(stream.field_order || '').toLowerCase(),
+                width: Number(stream.width || 0),
+                height: Number(stream.height || 0),
+                frameRate: stream.avg_frame_rate || stream.r_frame_rate || '',
+            };
+            mediaVideoInfoCache.set(filePath, { cacheKey, info });
+            if (mediaVideoInfoCache.size > 500) {
+                const firstKey = mediaVideoInfoCache.keys().next().value;
+                mediaVideoInfoCache.delete(firstKey);
             }
-            return codec;
+            return info;
         }
     } catch (_) {}
-    return null;
+    return {};
 };
 
 const streamMediaFastPreview = (req, res, targetPath, identifier = 'media') => {
@@ -915,10 +931,6 @@ const streamMediaFastPreview = (req, res, targetPath, identifier = 'media') => {
         return streamOrDownloadFile(req, res, normalizedPath, path.basename(normalizedPath));
     }
 
-    // Determine if video stream can be stream-copied (H.264) for 0ms start and 0% CPU
-    const videoCodec = probeVideoCodec(normalizedPath);
-    const isH264 = videoCodec === 'h264' || videoCodec === 'avc1';
-
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
@@ -927,21 +939,15 @@ const streamMediaFastPreview = (req, res, targetPath, identifier = 'media') => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.setHeader('Content-Disposition', `inline; filename="preview-${identifier}.mp4"`);
 
-    const videoArgs = isH264
-        ? ['-c:v', 'copy']
-        : ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '28', '-pix_fmt', 'yuv420p', '-g', '30', '-threads', '4'];
-
     const args = [
-        '-hide_banner', '-loglevel', 'error',
-        '-probesize', '1000000',
-        '-analyzeduration', '1000000',
-        '-fflags', '+nobuffer+fastseek',
-        '-flags', '+low_delay',
+        '-hide_banner', '-loglevel', 'warning',
+        '-probesize', '5000000', '-analyzeduration', '5000000',
         ...(previewStart > 0 ? ['-ss', String(previewStart)] : []),
         '-i', normalizedPath,
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        ...videoArgs,
-        '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+        '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-dn',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+        '-crf', '27', '-pix_fmt', 'yuv420p', '-threads', '0',
+        '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         '-f', 'mp4', 'pipe:1',
     ];
@@ -992,10 +998,8 @@ const streamMediaFastPreview = (req, res, targetPath, identifier = 'media') => {
     res.on('finish', cleanup);
 };
 
-const streamRecordingPreviewHandler = (req, res) => {
-    const rawId = req.params.id || req.params.fileName;
-    if (!rawId) return res.status(400).json({ error: 'Recording ID or filename required' });
-
+const resolveRecordingPreviewTarget = (rawId) => {
+    if (!rawId) return null;
     let targetPath = null;
     let fileName = null;
     let recording = null;
@@ -1035,16 +1039,167 @@ const streamRecordingPreviewHandler = (req, res) => {
         }
     }
 
-    if (!targetPath || !fs.existsSync(targetPath)) {
-        return res.status(404).json({ error: 'Recording file not found on disk' });
-    }
-
-    streamMediaFastPreview(req, res, targetPath, recording?.id || rawId);
+    if (!targetPath || !fs.existsSync(targetPath)) return null;
+    return {
+        targetPath: path.resolve(targetPath),
+        fileName: fileName || path.basename(targetPath),
+        identifier: recording?.id || rawId,
+    };
 };
 
-app.get('/recording-preview/:id', streamRecordingPreviewHandler);
-app.get('/api/ingest/recordings/:id/preview', streamRecordingPreviewHandler);
-app.get('/api/ingest/recordings/file/:fileName/preview', streamRecordingPreviewHandler);
+const recordingHlsPreviewSessions = new Map();
+const RECORDING_HLS_IDLE_MS = 60 * 60 * 1000;
+
+const recordingHlsSessionFor = (targetPath, identifier) => {
+    const stat = fs.statSync(targetPath);
+    const sourceVersion = `${path.resolve(targetPath)}:${stat.size}:${stat.mtimeMs}`;
+    const sessionId = crypto.createHash('sha256').update(sourceVersion).digest('hex').slice(0, 24);
+    const existing = recordingHlsPreviewSessions.get(sessionId);
+    if (existing) {
+        existing.lastAccess = Date.now();
+        return existing;
+    }
+
+    const outputDir = path.join(RECORDING_PREVIEW_HLS_DIR, sessionId);
+    const playlistPath = path.join(outputDir, 'index.m3u8');
+    const segmentPattern = path.join(outputDir, 'segment-%06d.ts');
+    const encodedIdentifier = encodeURIComponent(String(identifier));
+    const baseUrl = `/recording-preview/${encodedIdentifier}/${sessionId}/`;
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const session = {
+        sessionId,
+        identifier: String(identifier),
+        targetPath,
+        outputDir,
+        playlistPath,
+        lastAccess: Date.now(),
+        complete: fs.existsSync(playlistPath) && fs.readFileSync(playlistPath, 'utf8').includes('#EXT-X-ENDLIST'),
+        error: null,
+        proc: null,
+    };
+    recordingHlsPreviewSessions.set(sessionId, session);
+    if (session.complete) return session;
+
+    // A partial cache can remain after a server restart. Its deterministic
+    // session directory is safe to rebuild because it contains preview data only.
+    for (const name of fs.readdirSync(outputDir)) {
+        if (/^(?:index\.m3u8|segment-\d{6}\.ts)(?:\.tmp)?$/.test(name)) {
+            try { fs.unlinkSync(path.join(outputDir, name)); } catch (_) {}
+        }
+    }
+
+    const mediaInfo = probeMediaVideoInfo(targetPath);
+    const args = buildRecordingHlsArgs(targetPath, playlistPath, segmentPattern, mediaInfo, {
+        baseUrl,
+        segmentSeconds: 1,
+    });
+    const preview = spawn(ffmpegPath, args, { windowsHide: true });
+    session.proc = preview;
+    const unregister = registerRecordingPreview(String(identifier), {
+        id: identifier,
+        proc: preview,
+        filePath: targetPath,
+    });
+
+    let stderr = '';
+    preview.stderr.on('data', data => { stderr = `${stderr}${data}`.slice(-4000); });
+    preview.on('error', error => {
+        session.error = error;
+        unregister();
+        console.error(`[RecordingHLS] Failed to start preview ${identifier}: ${error.message}`);
+    });
+    preview.on('close', code => {
+        unregister();
+        session.proc = null;
+        session.complete = code === 0 && fs.existsSync(playlistPath);
+        if (code !== 0) {
+            session.error = new Error(stderr.trim() || `FFmpeg exited with code ${code}`);
+            console.error(`[RecordingHLS] Preview ${identifier} exited with code ${code}: ${stderr.trim()}`);
+        }
+    });
+    return session;
+};
+
+const waitForRecordingHlsPlaylist = (session, timeoutMs = 15000) => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const check = () => {
+        try {
+            if (fs.existsSync(session.playlistPath) && fs.statSync(session.playlistPath).size > 40) {
+                return resolve();
+            }
+        } catch (_) {}
+        if (session.error) return reject(session.error);
+        if (Date.now() - startedAt >= timeoutMs) return reject(new Error('Preview segments are still initializing'));
+        setTimeout(check, 100);
+    };
+    check();
+});
+
+const sendRecordingHlsManifest = async (req, res) => {
+    const rawId = req.params.id || req.params.fileName;
+    const target = resolveRecordingPreviewTarget(rawId);
+    if (!target) return res.status(404).json({ error: 'Recording file not found on disk' });
+    if (isRecordingLocked(target.identifier, target.targetPath)) {
+        return res.status(409).json({ error: 'File is currently being modified or deleted' });
+    }
+
+    try {
+        const session = recordingHlsSessionFor(target.targetPath, target.identifier);
+        await waitForRecordingHlsPlaylist(session);
+        session.lastAccess = Date.now();
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.sendFile(session.playlistPath);
+    } catch (error) {
+        console.error(`[RecordingHLS] Unable to prepare ${rawId}: ${error.message}`);
+        return res.status(503).json({ error: 'Recording preview is still initializing. Please retry.' });
+    }
+};
+
+const sendRecordingHlsSegment = (req, res) => {
+    const { sessionId, segmentName } = req.params;
+    if (!/^[a-f0-9]{24}$/.test(sessionId || '') || !/^segment-\d{6}\.ts$/.test(segmentName || '')) {
+        return res.status(404).end();
+    }
+    const session = recordingHlsPreviewSessions.get(sessionId);
+    if (!session) return res.status(404).end();
+    const segmentPath = path.join(session.outputDir, segmentName);
+    if (!fs.existsSync(segmentPath)) return res.status(404).end();
+    session.lastAccess = Date.now();
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'video/mp2t');
+    res.setHeader('Cache-Control', session.complete ? 'public, max-age=3600, immutable' : 'no-cache');
+    return res.sendFile(segmentPath);
+};
+
+const redirectRecordingPreviewToHls = (req, res) => {
+    const rawId = req.params.id || req.params.fileName;
+    if (!rawId) return res.status(400).json({ error: 'Recording ID or filename required' });
+    return res.redirect(307, `/recording-preview/${encodeURIComponent(String(rawId))}/index.m3u8`);
+};
+
+const cleanupRecordingHlsPreviews = setInterval(() => {
+    const cutoff = Date.now() - RECORDING_HLS_IDLE_MS;
+    for (const [sessionId, session] of recordingHlsPreviewSessions.entries()) {
+        if (session.proc || session.lastAccess >= cutoff) continue;
+        recordingHlsPreviewSessions.delete(sessionId);
+        try {
+            const resolvedDir = path.resolve(session.outputDir);
+            if (path.dirname(resolvedDir) === path.resolve(RECORDING_PREVIEW_HLS_DIR)) {
+                fs.rmSync(resolvedDir, { recursive: true, force: true });
+            }
+        } catch (_) {}
+    }
+}, 10 * 60 * 1000);
+if (cleanupRecordingHlsPreviews.unref) cleanupRecordingHlsPreviews.unref();
+
+app.get('/recording-preview/:id/index.m3u8', sendRecordingHlsManifest);
+app.get('/recording-preview/:id/:sessionId/:segmentName', sendRecordingHlsSegment);
+app.get('/recording-preview/:id', redirectRecordingPreviewToHls);
+app.get('/api/ingest/recordings/:id/preview', redirectRecordingPreviewToHls);
+app.get('/api/ingest/recordings/file/:fileName/preview', redirectRecordingPreviewToHls);
 
 
 app.get(['/api/ingest/recordings/:id/file', '/api/ingest/recordings/:id/download'], (req, res) => {
@@ -6770,7 +6925,9 @@ mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
     res.on('finish', cleanup);
 });
 
-mediaApp.get('/recording-preview/:id', streamRecordingPreviewHandler);
+mediaApp.get('/recording-preview/:id/index.m3u8', sendRecordingHlsManifest);
+mediaApp.get('/recording-preview/:id/:sessionId/:segmentName', sendRecordingHlsSegment);
+mediaApp.get('/recording-preview/:id', redirectRecordingPreviewToHls);
 mediaApp.use('/vod', express.static(VOD_DIR));
 
 // Explicit route for /live/<stream>/index.m3u8 with fallback path search

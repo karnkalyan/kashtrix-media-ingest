@@ -1442,7 +1442,7 @@ export const VodPlayoutView: React.FC<VodPlayoutViewProps> = ({
               </button>
             </div>
             <KashtrixMediaPlayer
-              src={previewItem.type === 'vod' ? `/api/vod/${encodeURIComponent(String(previewItem.id))}/preview` : `/recording-preview/${encodeURIComponent(String(previewItem.id))}`}
+              src={previewItem.type === 'vod' ? `/api/vod/${encodeURIComponent(String(previewItem.id))}/preview` : `/recording-preview/${encodeURIComponent(String(previewItem.id))}/index.m3u8`}
               title={previewItem.name}
               isLive={false}
               autoPlay={true}
