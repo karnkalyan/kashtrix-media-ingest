@@ -622,7 +622,7 @@ const hlsStaticOptions = {
 };
 
 // Serve static media, live HLS, DASH, and recordings on main API server
-app.get('/hls/device-preview/:previewId/:file', async (req, res) => {
+const serveDevicePreviewHandler = async (req, res) => {
     const { previewId, file } = req.params;
     const sanitizedPreviewId = path.basename(previewId);
     const sanitizedFile = path.basename(file);
@@ -667,7 +667,9 @@ app.get('/hls/device-preview/:previewId/:file', async (req, res) => {
     }
 
     return res.status(404).end();
-});
+};
+
+app.get('/hls/device-preview/:previewId/:file', serveDevicePreviewHandler);
 
 app.use('/live', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/live', express.static(LIVE_DIR, hlsStaticOptions));
@@ -6928,6 +6930,7 @@ mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
 mediaApp.get('/recording-preview/:id/index.m3u8', sendRecordingHlsManifest);
 mediaApp.get('/recording-preview/:id/:sessionId/:segmentName', sendRecordingHlsSegment);
 mediaApp.get('/recording-preview/:id', redirectRecordingPreviewToHls);
+mediaApp.get('/hls/device-preview/:previewId/:file', serveDevicePreviewHandler);
 mediaApp.use('/vod', express.static(VOD_DIR));
 
 // Explicit route for /live/<stream>/index.m3u8 with fallback path search
