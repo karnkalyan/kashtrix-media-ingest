@@ -6107,16 +6107,6 @@ const startSrtListenerProcess = (rawPort = 8890, rawStreamName = 'srt-feed', raw
     return { success: true, id, port, streamName, latency };
 };
 
-// Auto-start default SRT Ingest listener on port 8890 so OBS/field encoders can connect immediately
-setTimeout(() => {
-    try {
-        startSrtListenerProcess(8890, 'srt-feed', 200);
-        console.log('[SRT Server :8890] Initialized default listener on srt://0.0.0.0:8890');
-    } catch (e) {
-        console.warn('[SRT Server] Auto-start notice:', e.message);
-    }
-}, 2000);
-
 app.post('/api/ingest/srt/start', authMiddleware, requireActiveLicense, (req, res) => {
     const port = clampPort(req.body?.port, 8890);
     const streamName = req.body?.streamName || 'srt-feed';
