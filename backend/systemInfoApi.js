@@ -256,7 +256,8 @@ const pollNetworkStats = async () => {
 // Start background network poller
 updateInterfaceMeta().then(() => {
     pollNetworkStats();
-    setInterval(pollNetworkStats, 1000);
+    const netInterval = setInterval(pollNetworkStats, 1000);
+    if (netInterval.unref) netInterval.unref();
 });
 
 /**

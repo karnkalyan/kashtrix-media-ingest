@@ -1,7 +1,22 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { createLogger, defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+
+const defaultLogger = createLogger();
+const customLogger = {
+    ...defaultLogger,
+    error(msg: string, options?: any) {
+        // Suppress transient backend restart proxy connection errors (ECONNREFUSED / ECONNRESET during dev restarts)
+        if (
+            (msg.includes('proxy error') || msg.includes('proxy socket error')) &&
+            (msg.includes('ECONNREFUSED') || msg.includes('ECONNRESET') || msg.includes('ETIMEDOUT'))
+        ) {
+            return;
+        }
+        defaultLogger.error(msg, options);
+    },
+};
 
 const attachProxyErrorHandler = (proxy: any) => {
     proxy.on('error', (err: any, _req: any, res: any) => {
@@ -22,6 +37,7 @@ const attachProxyErrorHandler = (proxy: any) => {
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      customLogger,
       server: {
         port: 3000,
         host: '0.0.0.0',
