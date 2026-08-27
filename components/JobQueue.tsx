@@ -639,9 +639,10 @@ export const ChannelDashboard: React.FC<Props> = ({
                   </span>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-slate-400 block text-[9px]">HLS Preview URL:</span>
-                  <span className="font-mono text-[10px] text-[#6D32D9] dark:text-[#A78BFA] break-all">
-                    {window.location.origin}/hls/{sanitizeName(previewChannel.name)}/index.m3u8
+                  <span className="text-slate-400 block text-[9px]">Confidence Playback Mode:</span>
+                  <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Protected Memory MediaSource Pipeline (Internal Confidence Feed)
                   </span>
                 </div>
               </div>

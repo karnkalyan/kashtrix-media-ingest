@@ -63,6 +63,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   const gainNodeRef = useRef<GainNode | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -445,8 +446,11 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         setError('HLS playback is not supported by your browser');
       }
     } else {
-      video.src = src;
-      video.load();
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+
       const onLoaded = () => {
         setLoading(false);
         setError(null);
@@ -461,13 +465,39 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       video.addEventListener('loadedmetadata', onLoaded, { once: true });
       video.addEventListener('playing', onLoaded, { once: true });
       video.addEventListener('error', onErr, { once: true });
-      if (autoPlayRef.current) video.play().catch(() => {});
+
+      // Fetch file as blob to prevent exposing the raw direct backend URL in the video DOM
+      fetch(src)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.blob();
+        })
+        .then((blob) => {
+          const blobUrl = URL.createObjectURL(blob);
+          objectUrlRef.current = blobUrl;
+          if (videoRef.current) {
+            videoRef.current.src = blobUrl;
+            videoRef.current.load();
+            if (autoPlayRef.current) videoRef.current.play().catch(() => {});
+          }
+        })
+        .catch(() => {
+          if (videoRef.current) {
+            videoRef.current.src = src;
+            videoRef.current.load();
+            if (autoPlayRef.current) videoRef.current.play().catch(() => {});
+          }
+        });
     }
   }, [src, initAudioAnalyser, isLiveStream]);
 
   useEffect(() => {
     loadStream();
     return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
