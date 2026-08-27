@@ -276,8 +276,6 @@ const buildRecordingProfileArgs = (extension, filePath, options = {}) => {
 
     if (deinterlaceCompressed && profile.fallbackVideoFilter) {
         args.push('-vf', profile.fallbackVideoFilter);
-    } else if (profile.interlaced && !isCompressed) {
-        args.push('-vf', 'setfield=tff');
     }
 
     args.push('-c:v', videoEncoder);
