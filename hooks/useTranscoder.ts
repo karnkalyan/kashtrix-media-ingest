@@ -732,7 +732,7 @@ export const generateCommand = (
 
 type PersistentChannel = Omit<
   Channel,
-  "status" | "uptime" | "speed" | "speedHistory" | "outputLog" | "command"
+  "status" | "uptime" | "speed" | "speedHistory" | "outputLog"
 >;
 
 const channelToPersistentData = (channel: Channel): PersistentChannel => {
@@ -742,7 +742,6 @@ const channelToPersistentData = (channel: Channel): PersistentChannel => {
     speed,
     speedHistory,
     outputLog,
-    command,
     ...persistentChannel
   } = channel;
   return persistentChannel;
@@ -757,26 +756,38 @@ const reducer = (state: AppState, action: Action): AppState => {
         profiles: action.payload.profiles?.length
           ? action.payload.profiles
           : DEFAULT_PROFILES,
-        channels: (action.payload.channels || []).map((c) => ({
-          ...c,
-          status:
-            c.status === ChannelStatus.Running
-              ? ChannelStatus.Running
-              : ChannelStatus.Stopped,
-          uptime: 0,
-          speed: 0,
-          speedHistory: [],
-          outputLog: [],
-        })),
+        channels: (action.payload.channels || []).map((c) => {
+          const profile = (action.payload.profiles || state.profiles || DEFAULT_PROFILES).find((p) => p.id === c.profileId);
+          const computedCmd = c.command || generateCommand(c as any, profile, action.payload.settings || state.settings || initialSettings);
+          return {
+            ...c,
+            command: computedCmd,
+            status:
+              c.status === ChannelStatus.Running
+                ? ChannelStatus.Running
+                : ChannelStatus.Stopped,
+            uptime: 0,
+            speed: 0,
+            speedHistory: [],
+            outputLog: [],
+          };
+        }),
       };
-    case "ADD_CHANNEL":
-      return { ...state, channels: [action.payload, ...state.channels] };
+    case "ADD_CHANNEL": {
+      const profile = state.profiles.find((p) => p.id === action.payload.profileId);
+      const command = action.payload.command || generateCommand(action.payload, profile, state.settings);
+      return { ...state, channels: [{ ...action.payload, command }, ...state.channels] };
+    }
     case "UPDATE_CHANNEL":
       return {
         ...state,
-        channels: state.channels.map((c) =>
-          c.id === action.payload.id ? { ...c, ...action.payload } : c,
-        ),
+        channels: state.channels.map((c) => {
+          if (c.id !== action.payload.id) return c;
+          const updated = { ...c, ...action.payload };
+          const profile = state.profiles.find((p) => p.id === updated.profileId);
+          const command = updated.command || generateCommand(updated, profile, state.settings);
+          return { ...updated, command };
+        }),
       };
     case "REMOVE_CHANNEL":
       return {

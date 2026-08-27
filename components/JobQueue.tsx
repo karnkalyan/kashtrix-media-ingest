@@ -28,6 +28,7 @@ import ProfileEditor from './ProfileEditor';
 import Configurator from './Configurator';
 import DetailDrawer from './ui/DetailDrawer';
 import { MediaPreview } from './ui/MediaPreview';
+import { generateCommand } from '../hooks/useTranscoder';
 
 const sanitizeName = (value: string) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'stream';
 
@@ -59,13 +60,22 @@ const formatDuration = (seconds: number) => {
   return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
 };
 
-const ChannelLogsModal: React.FC<{ channel: Channel | null; onClose: () => void }> = ({ channel, onClose }) => {
+const ChannelLogsModal: React.FC<{
+  channel: Channel | null;
+  onClose: () => void;
+  profiles?: TranscodingProfile[];
+  settings?: any;
+}> = ({ channel, onClose, profiles = [], settings }) => {
   if (!channel) return null;
 
   const isRunning = channel.status === ChannelStatus.Running;
   const logs = channel.outputLog?.length
     ? channel.outputLog.join('\n')
     : (isRunning ? 'Waiting for FFmpeg output stream logs...' : 'Channel is currently stopped.');
+
+  const profile = profiles.find(p => p.id === channel.profileId);
+  const effectiveCommand = channel.command || (profile && settings ? generateCommand(channel, profile, settings) : (generateCommand(channel, profile, settings) || ''));
+  const displayCommand = effectiveCommand || 'No command string available';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
@@ -102,8 +112,10 @@ const ChannelLogsModal: React.FC<{ channel: Channel | null; onClose: () => void 
             <button
               type="button"
               onClick={() => {
-                navigator.clipboard.writeText(channel.command || '');
-                toast.success('Command copied!');
+                if (displayCommand && displayCommand !== 'No command string available') {
+                  navigator.clipboard.writeText(displayCommand);
+                  toast.success('Command copied!');
+                }
               }}
               className="flex items-center gap-1 text-[#6D32D9] hover:underline dark:text-[#A78BFA]"
             >
@@ -111,7 +123,7 @@ const ChannelLogsModal: React.FC<{ channel: Channel | null; onClose: () => void 
             </button>
           </div>
           <div className="rounded-lg border border-[#E8DFF0] bg-[#0F0817] p-2.5 font-mono text-[11px] text-[#A78BFA] overflow-x-auto select-all max-h-24 dark:border-[#311B4E]">
-            {channel.command || 'No command string available'}
+            {displayCommand}
           </div>
         </div>
 
@@ -572,6 +584,8 @@ export const ChannelDashboard: React.FC<Props> = ({
         <ChannelLogsModal
           channel={selectedLogChannel}
           onClose={() => setSelectedLogChannel(null)}
+          profiles={profiles}
+          settings={settings}
         />
       )}
 
