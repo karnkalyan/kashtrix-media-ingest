@@ -2623,6 +2623,8 @@ const App: React.FC = () => {
   const [gateRevision, setGateRevision] = useState(0);
   const [licenseGateIntegrityWarning, setLicenseGateIntegrityWarning] =
     useState(false);
+  const userRole = (engine.auth.user?.role || "").toLowerCase().trim();
+  const isSuperadmin = userRole === "superadmin";
 
   const setActiveView = (view: ActiveView) => {
     setActiveViewState(view);
@@ -3008,7 +3010,11 @@ const App: React.FC = () => {
             />
           )}
           {activeView === "users" && (
-            <UserManagementView currentUser={engine.auth.user?.username} />
+            <UserManagementView
+              currentUser={engine.auth.user?.username}
+              isSuperadmin={isSuperadmin}
+              currentUserRole={engine.auth.user?.role}
+            />
           )}
           {activeView === "settings" && (
             <SettingsView

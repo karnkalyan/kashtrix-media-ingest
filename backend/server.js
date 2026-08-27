@@ -4382,7 +4382,11 @@ const canManageUsers = requireRole('admin');
 
 const handleGetUsers = (req, res) => {
     try {
-        const users = db.listUsers().map(({ id, username, role, created_at }) => ({ id, username, role, created_at }));
+        const callerIsSuperadmin = req.user && isSuperadmin(req.user);
+        let users = db.listUsers().map(({ id, username, role, created_at }) => ({ id, username, role, created_at }));
+        if (!callerIsSuperadmin) {
+            users = users.filter(u => u.role !== 'superadmin' && u.username.toLowerCase() !== 'superadmin');
+        }
         res.json({ success: true, users });
     } catch (e) {
         res.status(500).json({ error: 'Failed to query users database: ' + e.message, users: [] });
@@ -6534,7 +6538,7 @@ const startIngestStatsBroadcast = () => {
             console.error("Failed to fetch or broadcast ingest stats:", error);
         } finally {
             ingestPolling = false;
-            setTimeout(tick, 3000);
+            setTimeout(tick, 1000);
         }
     };
     tick();

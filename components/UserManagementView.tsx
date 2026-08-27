@@ -22,7 +22,11 @@ export interface UserItem {
   created_at?: string;
 }
 
-export const UserManagementView: React.FC<{ currentUser?: string }> = ({ currentUser }) => {
+export const UserManagementView: React.FC<{
+  currentUser?: string;
+  isSuperadmin?: boolean;
+  currentUserRole?: string;
+}> = ({ currentUser, isSuperadmin = false, currentUserRole }) => {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -171,7 +175,13 @@ export const UserManagementView: React.FC<{ currentUser?: string }> = ({ current
     }
   };
 
-  const filtered = users.filter(u => u.username.toLowerCase().includes(search.toLowerCase()));
+  const filtered = users.filter(u => {
+    if (!isSuperadmin && (u.role === 'superadmin' || (u.username && u.username.toLowerCase() === 'superadmin'))) {
+      return false;
+    }
+    return (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
+           (u.role || '').toLowerCase().includes(search.toLowerCase());
+  });
 
   return (
     <div className="users-workspace page-stack space-y-4">
