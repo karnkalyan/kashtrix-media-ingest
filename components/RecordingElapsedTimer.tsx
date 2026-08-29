@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, Disc } from 'lucide-react';
+import { Clock3, Disc, Pause } from 'lucide-react';
 
 const getStartTime = (recording: any): number => {
   if (!recording) return 0;
@@ -50,7 +50,18 @@ const RecordingElapsedTimer: React.FC<RecordingElapsedTimerProps> = ({
     return getStartTime(recording) < getStartTime(oldest) ? recording : oldest;
   }, null);
 
-  const elapsed = primary ? Math.max(0, (now - getStartTime(primary)) / 1000) : 0;
+  const isPaused = Boolean(primary?.is_paused || primary?.isPaused);
+  const rawPauseStartedAt = primary?.pause_started_at ?? primary?.pauseStartedAt;
+  const parsedPauseStartedAt = typeof rawPauseStartedAt === 'number'
+    ? rawPauseStartedAt
+    : rawPauseStartedAt ? new Date(rawPauseStartedAt).getTime() : 0;
+  const totalPausedMs = Math.max(0, Number(primary?.total_paused_ms ?? primary?.totalPausedMs) || 0);
+  const currentPauseMs = isPaused && Number.isFinite(parsedPauseStartedAt) && parsedPauseStartedAt > 0
+    ? Math.max(0, now - parsedPauseStartedAt)
+    : 0;
+  const elapsed = primary
+    ? Math.max(0, (now - getStartTime(primary) - totalPausedMs - currentPauseMs) / 1000)
+    : 0;
   const format = String(primary?.format || primary?.profile?.extension || primary?.file_name?.split('.').pop() || 'MP4').toUpperCase();
   const encoder = primary?.encoder || primary?.profile?.videoCodec || 'Hardware';
   const bitrate = primary?.video_bitrate || primary?.videoBitrate || primary?.profile?.videoBitrate || '20 Mbps';
@@ -81,7 +92,11 @@ const RecordingElapsedTimer: React.FC<RecordingElapsedTimerProps> = ({
                   : 'bg-slate-100 text-slate-500 dark:bg-[#2A1744] dark:text-[#B9A5CD]'
               }`}
             >
-              {primary ? <Disc size={20} className="animate-spin" style={{ animationDuration: '3s' }} /> : <Clock3 size={20} />}
+              {primary
+                ? isPaused
+                  ? <Pause size={20} className="fill-current" />
+                  : <Disc size={20} className="animate-spin" style={{ animationDuration: '3s' }} />
+                : <Clock3 size={20} />}
             </span>
 
             <div className="min-w-0 flex-1">
@@ -90,9 +105,12 @@ const RecordingElapsedTimer: React.FC<RecordingElapsedTimerProps> = ({
                   {title}
                 </h2>
                 {primary ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[9px] font-black uppercase text-rose-700 dark:bg-rose-950 dark:text-rose-300 ring-1 ring-rose-500/30">
-                    <span className="h-1.5 w-1.5 rounded-full bg-rose-600 animate-ping" />
-                    LIVE
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase ring-1 ${isPaused
+                    ? 'bg-amber-100 text-amber-800 ring-amber-500/30 dark:bg-amber-950 dark:text-amber-300'
+                    : 'bg-rose-100 text-rose-700 ring-rose-500/30 dark:bg-rose-950 dark:text-rose-300'
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${isPaused ? 'bg-amber-600' : 'bg-rose-600 animate-ping'}`} />
+                    {isPaused ? 'PAUSED' : 'LIVE'}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase text-slate-600 dark:bg-[#2A1744] dark:text-[#B9A5CD]">

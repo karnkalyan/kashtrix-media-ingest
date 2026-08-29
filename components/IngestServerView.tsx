@@ -14,6 +14,7 @@ import {
   Cpu,
   Trash2,
   Play,
+  Pause,
   X,
   Archive,
   Copy,
@@ -142,7 +143,16 @@ const getLiveDurationSeconds = (rec: any): number => {
     if (raw) {
       const parsed = typeof raw === 'number' ? (raw > 1e11 ? raw : raw * 1000) : new Date(raw).getTime();
       if (Number.isFinite(parsed) && parsed > 0) {
-        return Math.max(0, (Date.now() - parsed) / 1000);
+        const isPaused = Boolean(rec.is_paused || rec.isPaused);
+        const rawPauseStartedAt = rec.pause_started_at ?? rec.pauseStartedAt;
+        const pauseStartedAt = typeof rawPauseStartedAt === 'number'
+          ? rawPauseStartedAt
+          : rawPauseStartedAt ? new Date(rawPauseStartedAt).getTime() : 0;
+        const totalPausedMs = Math.max(0, Number(rec.total_paused_ms ?? rec.totalPausedMs) || 0);
+        const currentPauseMs = isPaused && Number.isFinite(pauseStartedAt) && pauseStartedAt > 0
+          ? Math.max(0, Date.now() - pauseStartedAt)
+          : 0;
+        return Math.max(0, (Date.now() - parsed - totalPausedMs - currentPauseMs) / 1000);
       }
     }
   }
@@ -808,28 +818,32 @@ export const IngestServerView: React.FC<Props> = ({
     setInspectorOpen(true);
   };
 
-  const isCurrentRecordingActive = useMemo(() => {
+  const currentActiveRecording = useMemo(() => {
     if (sourceType === 'device') {
       const devName = videoDevice || audioDevice;
       const normalizedDeviceName = devName
         .trim()
         .replace(/[^a-zA-Z0-9._-]/g, '-')
         .replace(/-+/g, '-');
-      return recordings.some((r: any) => r.is_active && (
+      return recordings.find((r: any) => r.is_active && (
         (r.app === 'device' || r.source_type === 'device') &&
         devName &&
         (r.stream === normalizedDeviceName || r.inputDevice === devName || r.input_device === devName)
-      ));
+      )) || null;
     }
-    if (!selectedStreamKey) return false;
+    if (!selectedStreamKey) return null;
     const [app, stream] = selectedStreamKey.includes('/') ? selectedStreamKey.split('/') : ['live', selectedStreamKey];
-    return !!(
-      activeRecordingKeys[selectedStreamKey] ||
-      activeRecordingKeys[`${app}/${stream}`] ||
-      recordingStatuses[`${app}/${stream}`] ||
-      recordings.some((r: any) => r.is_active && (r.stream === stream || `${r.app}/${r.stream}` === `${app}/${stream}` || `${r.app}/${r.stream}` === selectedStreamKey))
-    );
+    return recordings.find((r: any) => r.is_active && (
+      r.stream === stream ||
+      `${r.app}/${r.stream}` === `${app}/${stream}` ||
+      `${r.app}/${r.stream}` === selectedStreamKey
+    )) || ((activeRecordingKeys[selectedStreamKey] || activeRecordingKeys[`${app}/${stream}`] || recordingStatuses[`${app}/${stream}`])
+      ? { app, stream, is_active: true, is_paused: false }
+      : null);
   }, [sourceType, videoDevice, audioDevice, selectedStreamKey, activeRecordingKeys, recordingStatuses, recordings]);
+
+  const isCurrentRecordingActive = Boolean(currentActiveRecording);
+  const isCurrentRecordingPaused = Boolean(currentActiveRecording?.is_paused || currentActiveRecording?.isPaused);
 
   const handleStopControlRecording = async () => {
     const selected = sourceType === 'device'
@@ -850,6 +864,34 @@ export const IngestServerView: React.FC<Props> = ({
       fetchData();
     } catch (e: any) {
       toast.error(e.message || 'Failed to stop recording');
+    }
+  };
+
+  const handleRecordingPauseChange = async (pause: boolean, targetApp?: string, targetStream?: string) => {
+    const selected = targetStream || (sourceType === 'device'
+      ? (videoDevice || audioDevice || 'device')
+      : selectedStreamKey);
+    if (!selected) return toast.error('Select an active stream or device source');
+
+    const [appName, streamName] = targetApp && targetStream
+      ? [targetApp, targetStream]
+      : sourceType === 'device'
+      ? ['device', selected]
+      : selected.includes('/')
+      ? selected.split('/')
+      : ['live', selected];
+
+    try {
+      if (!api) throw new Error('Recording control API is unavailable');
+      await api(`/api/ingest/record/${pause ? 'pause' : 'resume'}`, {
+        method: 'POST',
+        body: JSON.stringify({ app: appName, stream: streamName }),
+      });
+      toast.success(pause ? `Paused recording: ${selected}` : `Resumed recording: ${selected}`);
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error.message || `Failed to ${pause ? 'pause' : 'resume'} recording`);
+      throw error;
     }
   };
 
@@ -1003,6 +1045,9 @@ export const IngestServerView: React.FC<Props> = ({
           saving={savingConfig}
           start={handleStartControlRecording}
           isRecordingActive={isCurrentRecordingActive}
+          isRecordingPaused={isCurrentRecordingPaused}
+          pauseRecording={() => handleRecordingPauseChange(true)}
+          resumeRecording={() => handleRecordingPauseChange(false)}
           stopRecording={handleStopControlRecording}
           profiles={profiles}
           recordingProfiles={recordingProfiles}
@@ -1090,9 +1135,12 @@ export const IngestServerView: React.FC<Props> = ({
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {rec.is_active ? (
-                        <span className="inline-flex items-center gap-1.5 font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px] whitespace-nowrap dark:bg-rose-950/50 dark:border-rose-900/60 dark:text-rose-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
-                          REC {formatRecordingDuration(getLiveDurationSeconds(rec))}
+                        <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] font-bold whitespace-nowrap ${rec.is_paused || rec.isPaused
+                          ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-300'
+                          : 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-400'
+                        }`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${rec.is_paused || rec.isPaused ? 'bg-amber-500' : 'bg-rose-500 animate-pulse'}`} />
+                          {rec.is_paused || rec.isPaused ? 'PAUSED' : 'REC'} {formatRecordingDuration(getLiveDurationSeconds(rec))}
                         </span>
                       ) : (
                         <span className="text-[#6F6078] text-[11px] dark:text-[#8E78A6]">
@@ -1120,6 +1168,21 @@ export const IngestServerView: React.FC<Props> = ({
                       >
                         <Download size={12} /> Download
                       </a>
+
+                      {!!rec.is_active && (
+                        <button
+                          type="button"
+                          onClick={() => handleRecordingPauseChange(!(rec.is_paused || rec.isPaused), rec.app || 'live', rec.stream || rec.file_name)}
+                          className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold ${rec.is_paused || rec.isPaused
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+                            : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300'
+                          }`}
+                          title={rec.is_paused || rec.isPaused ? 'Resume active recording' : 'Pause active recording'}
+                        >
+                          {rec.is_paused || rec.isPaused ? <Play size={12} className="fill-current" /> : <Pause size={12} className="fill-current" />}
+                          {rec.is_paused || rec.isPaused ? 'Resume' : 'Pause'}
+                        </button>
+                      )}
 
                       {!!rec.is_active && (
                         <button

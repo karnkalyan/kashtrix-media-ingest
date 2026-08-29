@@ -21,6 +21,7 @@ import {
   FiFolder,
   FiSliders,
   FiPlay,
+  FiPause,
   FiSave,
   FiActivity,
   FiTv,
@@ -274,7 +275,10 @@ interface Props {
   saving?: boolean;
   start?: () => void;
   isRecordingActive?: boolean;
-  stopRecording?: () => void;
+  isRecordingPaused?: boolean;
+  pauseRecording?: () => void | Promise<void>;
+  resumeRecording?: () => void | Promise<void>;
+  stopRecording?: () => void | Promise<void>;
   profiles?: TranscodingProfile[];
   recordingProfiles?: RecordingProfileSummary[];
   recordingEncoders?: RecordingEncoderCapability[];
@@ -313,6 +317,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   saving = false,
   start = () => {},
   isRecordingActive = false,
+  isRecordingPaused = false,
+  pauseRecording = () => {},
+  resumeRecording = () => {},
   stopRecording = () => {},
   profiles = [],
   recordingProfiles = [],
@@ -330,6 +337,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [managePresetsOpen, setManagePresetsOpen] = useState(false);
   const [setupNameInput, setSetupNameInput] = useState("");
   const [stopping, setStopping] = useState(false);
+  const [pauseActionPending, setPauseActionPending] = useState(false);
 
   // Presets & Active Selection
   const [savedPresets, setSavedPresets] =
@@ -338,6 +346,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     "preset-broadcast-15mbps",
   );
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
+  const [loadedPresetId, setLoadedPresetId] = useState<string | null>(null);
+  const [presetEditingEnabled, setPresetEditingEnabled] = useState(true);
+  const [presetPreviewRequest, setPresetPreviewRequest] = useState(0);
 
   // Database API helper
   const callApi = useCallback(async (endpoint: string, options?: RequestInit) => {
@@ -383,6 +394,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   // Auto-load default preset on mount
   const defaultPresetLoadedRef = useRef(false);
+  const handledPresetPreviewRequestRef = useRef(0);
   useEffect(() => {
     loadPresetsFromDb();
   }, [loadPresetsFromDb]);
@@ -393,6 +405,14 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     if (target) {
       defaultPresetLoadedRef.current = true;
       setSelectedPresetId(target.id);
+      setLoadedPresetId(target.id);
+      setPresetEditingEnabled(false);
+      setActiveStep(2);
+      setProfileDrawerOpen(false);
+      setDestinationDrawerOpen(false);
+      setSaveSetupModalOpen(false);
+      setManagePresetsOpen(false);
+      setPresetPreviewRequest((request) => request + 1);
       if (target.sourceType) setSourceType(target.sourceType);
       if (target.videoDevice !== undefined && typeof setVideoDevice === "function") setVideoDevice(target.videoDevice);
       if (target.audioDevice !== undefined && typeof setAudioDevice === "function") setAudioDevice(target.audioDevice);
@@ -458,6 +478,19 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   const activeConfig = config || defaultConfig;
   const activeFormats = activeConfig.formats || ["mp4"];
+  const loadedPreset = savedPresets.find((preset) => preset.id === loadedPresetId);
+  const isPresetLocked = Boolean(loadedPresetId) && !presetEditingEnabled;
+
+  const setPresetEditorVisible = (enabled: boolean) => {
+    setPresetEditingEnabled(enabled);
+    if (!enabled) {
+      setActiveStep(2);
+      setProfileDrawerOpen(false);
+      setDestinationDrawerOpen(false);
+      setSaveSetupModalOpen(false);
+      setManagePresetsOpen(false);
+    }
+  };
   const selectedOutputFormat = activeFormats[activeFormats.length - 1] || "mp4";
   const selectedRecordingProfile = recordingProfiles.find(profile => profile.extension === selectedOutputFormat);
   const standardProfileSelected = ['mov', 'mkv', 'mxf'].includes(selectedOutputFormat);
@@ -560,6 +593,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }, [primaryActiveRecording]);
 
+  const activeRecordingTotalPausedMs = Math.max(
+    0,
+    Number(primaryActiveRecording?.total_paused_ms ?? primaryActiveRecording?.totalPausedMs) || 0,
+  );
+  const activeRecordingPauseStartedAt = (() => {
+    const raw = primaryActiveRecording?.pause_started_at ?? primaryActiveRecording?.pauseStartedAt;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    const parsed = raw ? new Date(raw).getTime() : NaN;
+    return Number.isFinite(parsed) ? parsed : 0;
+  })();
+
   useEffect(() => {
     if (!isRecordingActive) {
       setRecordingElapsed(0);
@@ -567,15 +611,27 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }
     const updateElapsed = () => {
       if (activeRecordingStartTime > 0) {
-        setRecordingElapsed(Math.max(0, Math.floor((Date.now() - activeRecordingStartTime) / 1000)));
+        const now = Date.now();
+        const currentPauseMs = isRecordingPaused && activeRecordingPauseStartedAt > 0
+          ? Math.max(0, now - activeRecordingPauseStartedAt)
+          : 0;
+        setRecordingElapsed(Math.max(0, Math.floor(
+          (now - activeRecordingStartTime - activeRecordingTotalPausedMs - currentPauseMs) / 1000,
+        )));
       } else {
-        setRecordingElapsed((prev) => prev + 1);
+        setRecordingElapsed((prev) => isRecordingPaused ? prev : prev + 1);
       }
     };
     updateElapsed();
     const timer = setInterval(updateElapsed, 500);
     return () => clearInterval(timer);
-  }, [isRecordingActive, activeRecordingStartTime]);
+  }, [
+    isRecordingActive,
+    isRecordingPaused,
+    activeRecordingStartTime,
+    activeRecordingPauseStartedAt,
+    activeRecordingTotalPausedMs,
+  ]);
 
   // Fetch disk storage status on mount
   const fetchStorageStatus = useCallback(async () => {
@@ -771,6 +827,20 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     streams,
   ]);
 
+  // Loading a preset applies several source/config state updates together.
+  // Start the existing preview/detection flow only after those values have
+  // reached the rendered control, so detection uses the loaded preset source.
+  useEffect(() => {
+    if (!presetPreviewRequest || handledPresetPreviewRequestRef.current === presetPreviewRequest) return;
+    handledPresetPreviewRequestRef.current = presetPreviewRequest;
+    if (previewing || previewStarting || isRecordingActive) return;
+
+    const previewTimer = window.setTimeout(() => {
+      void startSourcePreview();
+    }, 0);
+    return () => window.clearTimeout(previewTimer);
+  }, [presetPreviewRequest, startSourcePreview, previewing, previewStarting, isRecordingActive]);
+
   // Stop Device Preview
   const stopPreview = useCallback(
     async (notifyServer = true) => {
@@ -878,6 +948,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     setSelectedPresetId(targetPresetId);
     const target = savedPresets.find((p) => p.id === targetPresetId);
     if (!target) return;
+
+    setLoadedPresetId(target.id);
+    setPresetEditorVisible(false);
+    setPresetPreviewRequest((request) => request + 1);
 
     if (target.sourceType) {
       setSourceType(target.sourceType);
@@ -1258,6 +1332,39 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   return (
     <div className="space-y-4">
       {/* PRESETS TOOLBAR: Define, Load, Set Default, Delete, Save, Manage Presets */}
+      {isPresetLocked ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 shadow-xs dark:border-emerald-900/60 dark:bg-emerald-950/20">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+              <FiCheckCircle size={15} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                Preset loaded · configuration locked
+              </p>
+              <p className="truncate text-[12px] font-extrabold text-slate-900 dark:text-white">
+                {loadedPreset?.name || "Recording preset"}
+              </p>
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-emerald-200 bg-white px-3 py-2 dark:border-emerald-900/60 dark:bg-[#1E1130]">
+            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+              Enable editing
+            </span>
+            <span className="relative inline-flex items-center">
+              <input
+                type="checkbox"
+                checked={presetEditingEnabled}
+                onChange={(event) => setPresetEditorVisible(event.target.checked)}
+                className="peer sr-only"
+              />
+              <span className="h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-violet-600 dark:bg-slate-700" />
+              <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+            </span>
+          </label>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
         <div className="flex flex-wrap items-center gap-2.5 min-w-0">
           <div className="flex items-center gap-2">
@@ -1353,6 +1460,23 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {loadedPresetId && (
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 dark:border-violet-800 dark:bg-violet-950/40">
+              <span className="text-[10px] font-bold text-violet-700 dark:text-violet-300">
+                Enable editing
+              </span>
+              <span className="relative inline-flex items-center">
+                <input
+                  type="checkbox"
+                  checked={presetEditingEnabled}
+                  onChange={(event) => setPresetEditorVisible(event.target.checked)}
+                  className="peer sr-only"
+                />
+                <span className="h-4 w-8 rounded-full bg-slate-300 transition peer-checked:bg-violet-600 dark:bg-slate-700" />
+                <span className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+              </span>
+            </label>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -1373,10 +1497,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* Top 2-Column Split: Left Stepper Navigation + Right Main Signal Detection & Confidence Preview */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* Left Column: Interactive Workflow Stepper */}
+        {!isPresetLocked && (
         <div className="lg:col-span-4 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-2">
           {workflowSteps.map((step) => {
             const isActive = activeStep === step.number;
@@ -1424,13 +1550,15 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             );
           })}
         </div>
+        )}
 
         {/* Right Column: 2. SIGNAL DETECTION & PREVIEW */}
         <div
           ref={workflowWorkspaceRef}
-          className="scroll-mt-4 lg:col-span-8 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-3"
+          className={`scroll-mt-4 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-3 ${isPresetLocked ? "lg:col-span-12" : "lg:col-span-8"}`}
         >
           {/* Header */}
+          {!isPresetLocked && (
           <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2.5 dark:border-[#371F59]">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
@@ -1463,10 +1591,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               </span>
             </div>
           </div>
+          )}
 
           {/* Sub-grid: Left Details & Specs + Right Live Confidence Monitor */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
             {/* Left Details (REAL HARDWARE TELEMETRY) */}
+            {!isPresetLocked && (
             <div className={`${activeStep === 2 ? "md:col-span-5" : "md:col-span-7"} flex flex-col justify-between space-y-3`}>
               <div
                 ref={workflowInlinePanelRef}
@@ -1813,9 +1943,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               </button>
               </>)}
             </div>
+            )}
 
             {/* Right Live Confidence Monitor & VU Meters */}
-            <div className={`${activeStep === 2 ? "md:col-span-7" : "md:col-span-5"} flex flex-col justify-between space-y-2`}>
+            <div className={`${isPresetLocked ? "md:col-span-12" : activeStep === 2 ? "md:col-span-7" : "md:col-span-5"} flex flex-col justify-between space-y-2`}>
               <div className="relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800 shadow-inner">
                 {/* Confidence Player */}
                 <KashtrixMediaPlayer
@@ -1862,10 +1993,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
+              {!isPresetLocked && (<p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
                 Confidence preview monitor shows live feed from {sourceName}.
                 Ensure video and audio levels look correct before recording.
-              </p>
+              </p>)}
 
               <RecordingElapsedTimer
                 recordings={activeRecordings}
@@ -2238,8 +2369,23 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       )}
 
       {/* Bottom Action Bar: Preview, Save Setup, Record Triggers */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
-        <div className="flex items-center gap-2.5">
+      <div className={`flex flex-wrap justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] ${isPresetLocked ? "items-end" : "items-center"}`}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2.5">
+          {isPresetLocked && (
+            <div className="min-w-[260px] flex-1 sm:min-w-[340px]">
+              <Label>
+                Recording Filename Template
+                <input
+                  type="text"
+                  value={activeConfig.fileName || ""}
+                  onChange={(event) => patch({ fileName: event.target.value })}
+                  className={inputClass}
+                  placeholder="{channel}_{date}_{time}"
+                />
+              </Label>
+            </div>
+          )}
+
           {/* Start / Stop Preview Button */}
           <button
             type="button"
@@ -2281,6 +2427,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           </button>
 
           {/* Save Setup Preset Button */}
+          {!isPresetLocked && (
           <button
             type="button"
             onClick={() => {
@@ -2293,16 +2440,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <FiSave size={14} />
             <span>Save Preset</span>
           </button>
+          )}
         </div>
 
         {/* Start / Stop Recording Master Button */}
         <div>
           {isRecordingActive ? (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-[12px] font-bold text-white shadow-md">
-                <span className="h-2.5 w-2.5 rounded-full bg-white animate-pulse" />
-                <span>RECORDING IN PROGRESS</span>
-                <span className="font-mono text-[13px] bg-rose-700/80 px-2 py-0.5 rounded tracking-wider">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className={`flex items-center gap-2 rounded-xl px-4 py-2 text-[12px] font-bold text-white shadow-md ${isRecordingPaused ? "bg-amber-600" : "bg-rose-600"}`}>
+                <span className={`h-2.5 w-2.5 rounded-full bg-white ${isRecordingPaused ? "" : "animate-pulse"}`} />
+                <span>{isRecordingPaused ? "RECORDING PAUSED" : "RECORDING IN PROGRESS"}</span>
+                <span className={`font-mono text-[13px] px-2 py-0.5 rounded tracking-wider ${isRecordingPaused ? "bg-amber-700/80" : "bg-rose-700/80"}`}>
                   {Math.floor(recordingElapsed / 3600)
                     .toString()
                     .padStart(2, "0")}
@@ -2319,7 +2467,38 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
               <button
                 type="button"
-                disabled={stopping}
+                disabled={pauseActionPending || stopping}
+                onClick={async () => {
+                  if (pauseActionPending || stopping) return;
+                  setPauseActionPending(true);
+                  try {
+                    if (isRecordingPaused) {
+                      await resumeRecording();
+                    } else {
+                      await pauseRecording();
+                    }
+                  } finally {
+                    setPauseActionPending(false);
+                  }
+                }}
+                className={`flex h-10 items-center gap-2 rounded-xl border px-4 text-[12px] font-bold transition-colors disabled:opacity-50 ${isRecordingPaused
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+                }`}
+              >
+                {pauseActionPending ? (
+                  <FiRefreshCw size={14} className="animate-spin" />
+                ) : isRecordingPaused ? (
+                  <FiPlay size={14} className="fill-current" />
+                ) : (
+                  <FiPause size={14} className="fill-current" />
+                )}
+                <span>{pauseActionPending ? "Updating..." : isRecordingPaused ? "Resume Recording" : "Pause Recording"}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={stopping || pauseActionPending}
                 onClick={async () => {
                   if (stopping) return;
                   setStopping(true);
@@ -2353,7 +2532,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               onClick={async () => {
                 await start();
               }}
-              className="flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 text-[12px] font-bold text-white shadow-md hover:from-violet-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="flex h-10 items-center gap-2 rounded-xl bg-red-600 px-6 text-[12px] font-bold text-white shadow-md hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <FiDisc size={15} />
               <span>Start Recording</span>
@@ -2583,7 +2762,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       {/* DRAWER 2: EDIT RECORDING PROFILE (STEP 3) - COMPLETE BROADCAST OPTIONS     */}
       {/* ========================================================================= */}
       <DetailDrawer
-        open={profileDrawerOpen}
+        open={profileDrawerOpen && !isPresetLocked}
         onClose={() => showWorkflowStep(3)}
         title="Edit Recording Profile &amp; Advanced Options"
         subtitle="Fine-tune video quality, max bitrate, CRF, GOP keyframes, pixel format, and audio"
@@ -2960,7 +3139,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       {/* DRAWER 3: DESTINATION & MULTI-STORAGE LOCATIONS MANAGER (STEP 5)          */}
       {/* ========================================================================= */}
       <DetailDrawer
-        open={destinationDrawerOpen}
+        open={destinationDrawerOpen && !isPresetLocked}
         onClose={() => showWorkflowStep(2)}
         title="Storage Destinations Manager"
         subtitle="Configure primary storage and simultaneous remote recording targets"
@@ -3325,7 +3504,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       {/* MODAL 1: SAVE SETUP AS PRESET                                             */}
       {/* ========================================================================= */}
       <DetailDrawer
-        open={saveSetupModalOpen}
+        open={saveSetupModalOpen && !isPresetLocked}
         onClose={() => setSaveSetupModalOpen(false)}
         title="Save Recording Preset"
         subtitle="Save this complete hardware, video profile, and storage configuration"
@@ -3380,7 +3559,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       {/* MODAL 2: MANAGE RECORDING PRESETS                                         */}
       {/* ========================================================================= */}
       <DetailDrawer
-        open={managePresetsOpen}
+        open={managePresetsOpen && !isPresetLocked}
         onClose={() => setManagePresetsOpen(false)}
         title="Manage Recording Presets"
         subtitle="View, load, delete, or set default broadcast recording presets"

@@ -28,6 +28,7 @@ const {
     resolveLocalStoragePath,
 } = require('./storagePaths');
 const { ensureInfiniteVodLoop, resolveChannelInputPath } = require('./channelInputPaths');
+const { getRecordingElapsedMs, setRecordingProcessPaused } = require('./recordingProcessControl');
 
 const PrismaStore = require('./prismaStore');
 
@@ -3492,7 +3493,19 @@ const beginRecording = async (appNameValue, streamValue, rawOptions = {}) => {
     const proc = spawn(ffmpegPath, ffmpegArgs, { windowsHide: true });
     outputs.forEach(output => { output.proc = proc; });
 
-    const active = { appName, stream, startTime, options, outputs, ffmpegArgs, previewConfig, lastError: '' };
+    const active = {
+        appName,
+        stream,
+        startTime,
+        options,
+        outputs,
+        ffmpegArgs,
+        previewConfig,
+        lastError: '',
+        isPaused: false,
+        pauseStartedAt: null,
+        totalPausedMs: 0,
+    };
     activeRecordings.set(key, active);
     broadcastRecordingEvent('recording_started', {
         key,
@@ -3563,8 +3576,7 @@ const getActiveRecordingPayload = (appName, streamName) => {
     const first = active.outputs[0];
     let size = 0;
     try { if (first && fs.existsSync(first.filePath)) size = fs.statSync(first.filePath).size; } catch (e) { }
-    const startTimeMs = new Date(active.startTime || Date.now()).getTime();
-    const duration = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
+    const duration = Math.floor(getRecordingElapsedMs(active) / 1000);
     return {
         id: first?.recordId,
         app: appName,
@@ -3576,6 +3588,10 @@ const getActiveRecordingPayload = (appName, streamName) => {
         size,
         duration,
         is_active: true,
+        is_paused: Boolean(active.isPaused),
+        isPaused: Boolean(active.isPaused),
+        pause_started_at: active.pauseStartedAt ? new Date(active.pauseStartedAt).toISOString() : null,
+        total_paused_ms: Math.max(0, Number(active.totalPausedMs) || 0),
         formats: active.options.formats,
         encoder: first?.profile?.videoCodec || active.options.encoder,
         video_bitrate: first?.profile?.videoBitrate || active.options.videoBitrate,
@@ -3779,8 +3795,7 @@ const listRecordings = (limit = 50) => {
                         size = fs.statSync(output.filePath).size;
                     }
                 } catch (e) {}
-                const startTimeMs = new Date(session.startTime || now).getTime();
-                const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
+                const duration = Math.floor(getRecordingElapsedMs(session, now) / 1000);
                 uniqueRows.unshift({
                     id: output.recordId || `active-${session.appName}-${session.stream}`,
                     app: session.appName,
@@ -3791,6 +3806,10 @@ const listRecordings = (limit = 50) => {
                     size,
                     duration,
                     is_active: true,
+                    is_paused: Boolean(session.isPaused),
+                    isPaused: Boolean(session.isPaused),
+                    pause_started_at: session.pauseStartedAt ? new Date(session.pauseStartedAt).toISOString() : null,
+                    total_paused_ms: Math.max(0, Number(session.totalPausedMs) || 0),
                     start_time: session.startTime,
                     formats: session.options?.formats || [output.format]
                 });
@@ -3800,11 +3819,12 @@ const listRecordings = (limit = 50) => {
 
     return uniqueRows.map(row => {
         let inputDevice = row.stream || '';
+        let recordingSettings = {};
         try {
             if (row.settings_json) {
-                const parsed = JSON.parse(row.settings_json);
-                if (parsed.videoDevice) inputDevice = parsed.videoDevice;
-                else if (parsed.stream) inputDevice = parsed.stream;
+                recordingSettings = JSON.parse(row.settings_json) || {};
+                if (recordingSettings.videoDevice) inputDevice = recordingSettings.videoDevice;
+                else if (recordingSettings.stream) inputDevice = recordingSettings.stream;
             }
         } catch (e) {}
         if (!inputDevice && row.app === 'device') inputDevice = row.stream;
@@ -3833,8 +3853,7 @@ const listRecordings = (limit = 50) => {
                     size = fs.statSync(row.file_path).size;
                 }
             } catch (e) {}
-            const startTimeMs = new Date(row.start_time || session.startTime || now).getTime();
-            const duration = Math.max(0, Math.floor((now - startTimeMs) / 1000));
+            const duration = Math.floor(getRecordingElapsedMs(session, now) / 1000);
             return {
                 ...row,
                 input_device: friendlyDevice,
@@ -3842,6 +3861,10 @@ const listRecordings = (limit = 50) => {
                 size,
                 duration,
                 is_active: true,
+                is_paused: Boolean(session.isPaused),
+                isPaused: Boolean(session.isPaused),
+                pause_started_at: session.pauseStartedAt ? new Date(session.pauseStartedAt).toISOString() : null,
+                total_paused_ms: Math.max(0, Number(session.totalPausedMs) || 0),
                 formats: session.options?.formats || [output.format]
             };
         }
@@ -3880,7 +3903,8 @@ const listRecordings = (limit = 50) => {
 
         const startMs = row.start_time ? new Date(row.start_time).getTime() : 0;
         const endMs = endTime ? new Date(endTime).getTime() : startMs;
-        const elapsedDuration = startMs && endMs ? Math.max(0, (endMs - startMs) / 1000) : 0;
+        const savedPauseSeconds = Math.max(0, Number(recordingSettings.totalPausedMs) || 0) / 1000;
+        const elapsedDuration = startMs && endMs ? Math.max(0, (endMs - startMs) / 1000 - savedPauseSeconds) : 0;
         const duration = actualDuration > 0 ? actualDuration : elapsedDuration;
         const tolerance = Math.max(8, elapsedDuration * 0.25);
         const captureStatus = mediaProbe && !mediaProbe.valid
@@ -3984,13 +4008,23 @@ const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) =
     data.stopPromise = (async () => {
         const proc = data.outputs[0]?.proc;
         if (proc) {
+            if (data.isPaused) {
+                try {
+                    await setRecordingProcessPaused(proc, false);
+                    data.totalPausedMs = Math.max(0, Number(data.totalPausedMs) || 0)
+                        + Math.max(0, Date.now() - Number(data.pauseStartedAt || Date.now()));
+                    data.pauseStartedAt = null;
+                    data.isPaused = false;
+                } catch (error) {
+                    console.warn(`[Recording] Could not resume ${key} before stopping: ${error.message}`);
+                }
+            }
             // Give large MP4/MOV masters up to 3s to flush their trailer and indexes
             await stopChildAndWait(proc, { signal, timeoutMs: 3000, gracefulStdin: true });
         }
 
-        const startTime = new Date(data.startTime).getTime();
         const now = Date.now();
-        const durationMs = now - startTime;
+        const durationMs = getRecordingElapsedMs(data, now);
         const minDurationMs = 1000;
         const completedOutputs = [];
         const failedOutputs = [];
@@ -4016,7 +4050,15 @@ const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) =
                     const elapsedDuration = durationMs / 1000;
                     const tolerance = Math.max(8, elapsedDuration * 0.25);
                     const incompleteCapture = elapsedDuration >= 10 && actualDuration + tolerance < elapsedDuration;
-                    await db.updateRecording(output.recordId, { endTime, size, duration: actualDuration }, { onlyIfOpen: true });
+                    await db.updateRecording(output.recordId, {
+                        endTime,
+                        size,
+                        duration: actualDuration,
+                        settingsJson: JSON.stringify({
+                            ...data.options,
+                            totalPausedMs: Math.max(0, Number(data.totalPausedMs) || 0),
+                        }),
+                    }, { onlyIfOpen: true });
                     const completed = {
                         id: output.recordId,
                         fileName: output.fileName,
@@ -4663,8 +4705,7 @@ const buildDashboardOverview = (streams = {}) => {
         const first = active.outputs && active.outputs[0];
         let size = 0;
         try { if (first && fs.existsSync(first.filePath)) size = fs.statSync(first.filePath).size; } catch (e) { }
-        const startTimeMs = new Date(active.startTime || Date.now()).getTime();
-        const duration = Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000));
+        const duration = Math.floor(getRecordingElapsedMs(active) / 1000);
         return {
             key,
             app: active.appName,
@@ -4675,6 +4716,10 @@ const buildDashboardOverview = (streams = {}) => {
             profile: first?.profile,
             startTime: active.startTime,
             duration,
+            isPaused: Boolean(active.isPaused),
+            is_paused: Boolean(active.isPaused),
+            pauseStartedAt: active.pauseStartedAt,
+            totalPausedMs: Math.max(0, Number(active.totalPausedMs) || 0),
             size,
             encoder: first?.profile?.videoCodec || active.options?.encoder || 'nvidia',
             videoBitrate: first?.profile?.videoBitrate || active.options?.videoBitrate || 0,
@@ -5571,6 +5616,104 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
         res.status(409).json({ error: error.message });
     }
 });
+
+const findActiveRecordingTarget = ({ appName, stream, requestedKey }) => {
+    let targetKey = requestedKey;
+    if (!targetKey && appName && stream) {
+        targetKey = getRecordingKey(
+            cleanStreamPart(appName, 'live'),
+            cleanStreamPart(stream, 'stream'),
+        );
+    }
+
+    let data = targetKey ? activeRecordings.get(targetKey) : null;
+    if (!data && (targetKey || stream)) {
+        for (const [key, active] of activeRecordings.entries()) {
+            if (
+                key === targetKey
+                || key === `${appName}/${stream}`
+                || key.endsWith(`/${stream}`)
+                || (stream && key.includes(stream))
+                || (appName && key.startsWith(`${appName}/`))
+            ) {
+                targetKey = key;
+                data = active;
+                break;
+            }
+        }
+    }
+    if (!data && activeRecordings.size === 1) {
+        targetKey = activeRecordings.keys().next().value;
+        data = activeRecordings.get(targetKey);
+    }
+    return { targetKey, data };
+};
+
+const setRecordingPaused = async (req, res, shouldPause) => {
+    const { app: appName, stream, key: requestedKey } = req.body || {};
+    const { targetKey, data } = findActiveRecordingTarget({ appName, stream, requestedKey });
+    if (!data || !targetKey) {
+        return res.status(404).json({ success: false, error: 'No active recording found' });
+    }
+
+    if (Boolean(data.isPaused) === shouldPause) {
+        return res.json({
+            success: true,
+            message: shouldPause ? 'Recording is already paused' : 'Recording is already running',
+            key: targetKey,
+            recording: getActiveRecordingPayload(data.appName, data.stream),
+        });
+    }
+
+    const proc = data.outputs?.[0]?.proc;
+    try {
+        await setRecordingProcessPaused(proc, shouldPause);
+        const now = Date.now();
+        if (shouldPause) {
+            data.isPaused = true;
+            data.pauseStartedAt = now;
+        } else {
+            data.totalPausedMs = Math.max(0, Number(data.totalPausedMs) || 0)
+                + Math.max(0, now - Number(data.pauseStartedAt || now));
+            data.isPaused = false;
+            data.pauseStartedAt = null;
+        }
+
+        const recording = getActiveRecordingPayload(data.appName, data.stream);
+        broadcastRecordingEvent(shouldPause ? 'recording_paused' : 'recording_resumed', {
+            key: targetKey,
+            app: data.appName,
+            stream: data.stream,
+            recording,
+        });
+        broadcastRecordings(listRecordings(5000));
+        if (data.previewConfig && activeDevicePreviewState?.previewId === data.previewConfig.previewId) {
+            activeDevicePreviewState.isPaused = shouldPause;
+            broadcastDevicePreviewState(activeDevicePreviewState);
+        }
+
+        return res.json({
+            success: true,
+            message: shouldPause ? 'Recording paused' : 'Recording resumed',
+            key: targetKey,
+            recording,
+        });
+    } catch (error) {
+        console.error(`[Recording] Unable to ${shouldPause ? 'pause' : 'resume'} ${targetKey}:`, error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || `Unable to ${shouldPause ? 'pause' : 'resume'} recording`,
+        });
+    }
+};
+
+app.post('/api/ingest/record/pause', authMiddleware, requireActiveLicense, (req, res) => (
+    setRecordingPaused(req, res, true)
+));
+
+app.post('/api/ingest/record/resume', authMiddleware, requireActiveLicense, (req, res) => (
+    setRecordingPaused(req, res, false)
+));
 
 app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, async (req, res) => {
     const { app: appName, stream, key: requestedKey } = req.body || {};

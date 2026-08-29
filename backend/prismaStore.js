@@ -181,6 +181,7 @@ class PrismaStore {
     if (updates.endTime !== undefined) data.endTime = updates.endTime ? new Date(updates.endTime) : null;
     if (updates.size !== undefined) data.size = BigInt(updates.size || 0);
     if (updates.duration !== undefined) data.duration = Number(updates.duration) || 0;
+    if (updates.settingsJson !== undefined) data.settingsJson = updates.settingsJson || null;
     const updated = await this.prisma.streamRecording.update({ where: { id: Number(id) }, data });
     const row = snakeRecording(updated);
     this.data.recordings = this.data.recordings.map(item => Number(item.id) === Number(id) ? row : item);
