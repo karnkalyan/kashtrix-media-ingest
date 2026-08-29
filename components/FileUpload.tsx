@@ -3,6 +3,8 @@ import { toast } from 'react-hot-toast';
 import { RefreshCw } from 'lucide-react';
 import Button from './ui/Button';
 import { UploadIcon } from './icons';
+import UploadProgressBar, { UploadProgressState } from './ui/UploadProgressBar';
+import { uploadWithProgress } from '../utils/uploadHelper';
 
 interface FileUploadProps {
   onFileUploaded: (serverFileName: string, originalName: string) => void;
@@ -14,6 +16,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadButtonTex
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [uploadProgressState, setUploadProgressState] = useState<UploadProgressState | null>(null);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
 
   const uploadFile = async (file: File) => {
     setIsUploading(true);
@@ -21,14 +25,20 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadButtonTex
     formData.append('vodFile', file);
 
     try {
-      const token = localStorage.getItem('kte-auth-token');
-      const response = await fetch('/api/vod/upload', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
+      const token = localStorage.getItem('kte-auth-token') || localStorage.getItem('token') || localStorage.getItem('jwt');
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const { promise, abort } = uploadWithProgress({
+        url: '/api/vod/upload',
+        formData,
+        fileName: file.name,
+        headers,
+        onProgress: (state) => setUploadProgressState(state),
       });
-      const data: { fileName?: string; serverFileName?: string; originalName?: string; error?: string } = await response.json();
-      if (!response.ok) throw new Error(data.error || 'File upload failed on the server.');
+
+      uploadAbortRef.current = abort;
+      const data: any = await promise;
 
       const serverFileName = data.fileName || data.serverFileName;
       const originalName = data.originalName || file.name;
@@ -37,11 +47,13 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadButtonTex
       setSelectedName(originalName);
       onFileUploaded(serverFileName, originalName);
       toast.success(`File "${originalName}" uploaded.`);
+      setTimeout(() => setUploadProgressState(null), 3000);
     } catch (error: any) {
       toast.error(error.message || 'Upload failed.');
       setSelectedName(null);
     } finally {
       setIsUploading(false);
+      uploadAbortRef.current = null;
       if (inputRef.current) inputRef.current.value = '';
     }
   };
@@ -66,9 +78,22 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded, uploadButtonTex
       </Button>
       {selectedName && (
         <p className="mt-2 truncate text-center text-xs text-slate-500">
-          Uploaded: <span className="font-mono text-slate-700">{selectedName}</span>
+          Uploaded: <span className="font-mono text-slate-700 dark:text-slate-300">{selectedName}</span>
         </p>
       )}
+
+      {/* Real-time File Upload Progress Bar Card */}
+      <UploadProgressBar
+        upload={uploadProgressState}
+        onCancel={() => {
+          if (uploadAbortRef.current) {
+            uploadAbortRef.current();
+            uploadAbortRef.current = null;
+            toast('Upload cancelled');
+          }
+        }}
+        onDismiss={() => setUploadProgressState(null)}
+      />
     </div>
   );
 };

@@ -49,6 +49,8 @@ import { KashtrixMediaPlayer } from './ui/KashtrixMediaPlayer';
 import ProtocolBadge from './ui/ProtocolBadge';
 import CodeField from './ui/CodeField';
 import Select from './ui/Select';
+import UploadProgressBar, { UploadProgressState } from './ui/UploadProgressBar';
+import { uploadWithProgress } from '../utils/uploadHelper';
 
 const API_HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 const WEB_ORIGIN = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
@@ -158,7 +160,8 @@ export const VodPlayoutView: React.FC<VodPlayoutViewProps> = ({
 
   // Upload State
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadProgressState, setUploadProgressState] = useState<UploadProgressState | null>(null);
+  const vodUploadAbortRef = React.useRef<(() => void) | null>(null);
 
   // Playout Channel Creator Drawer State
   const [playoutDrawerOpen, setPlayoutDrawerOpen] = useState(false);
@@ -272,28 +275,30 @@ export const VodPlayoutView: React.FC<VodPlayoutViewProps> = ({
     formData.append('vodFile', file);
 
     setUploading(true);
-    setUploadProgress(10);
     try {
-      const token = localStorage.getItem('kte-auth-token');
+      const token = localStorage.getItem('kte-auth-token') || localStorage.getItem('token') || localStorage.getItem('jwt');
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      const res = await fetch('/api/vod/upload', {
-        method: 'POST',
+      const { promise, abort } = uploadWithProgress({
+        url: '/api/vod/upload',
+        formData,
+        fileName: file.name,
         headers,
-        body: formData,
+        onProgress: (state) => setUploadProgressState(state),
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to upload VOD file');
+      vodUploadAbortRef.current = abort;
+      await promise;
 
       toast.success(`Uploaded: ${file.name}`);
       fetchAllMedia();
+      setTimeout(() => setUploadProgressState(null), 3000);
     } catch (err: any) {
       toast.error(err.message || 'Upload failed');
     } finally {
       setUploading(false);
-      setUploadProgress(0);
+      vodUploadAbortRef.current = null;
       e.target.value = '';
     }
   };
@@ -1462,6 +1467,19 @@ export const VodPlayoutView: React.FC<VodPlayoutViewProps> = ({
         loading={deleteLoading}
         onConfirm={confirmDeleteMedia}
         onCancel={() => setDeletingItem(null)}
+      />
+
+      {/* Real-time File Upload Progress Bar Card */}
+      <UploadProgressBar
+        upload={uploadProgressState}
+        onCancel={() => {
+          if (vodUploadAbortRef.current) {
+            vodUploadAbortRef.current();
+            vodUploadAbortRef.current = null;
+            toast('Upload cancelled');
+          }
+        }}
+        onDismiss={() => setUploadProgressState(null)}
       />
     </div>
   );

@@ -27,6 +27,8 @@ import {
 } from 'react-icons/fi';
 import Button from './ui/Button';
 import Modal from './ui/Modal';
+import UploadProgressBar, { UploadProgressState } from './ui/UploadProgressBar';
+import { uploadWithProgress } from '../utils/uploadHelper';
 
 interface FileItem {
   name: string;
@@ -83,6 +85,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
   const [renamingItem, setRenamingItem] = useState<FileItem | null>(null);
   const [newItemName, setNewItemName] = useState<string>('');
   const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getHeaders = useCallback((): HeadersInit => {
@@ -200,33 +204,37 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
     if (!files || files.length === 0) return;
 
     setUploading(true);
-    const toastId = toast.loading(`Uploading ${files.length} file(s)...`);
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append('files', files[i]);
-    }
+    const savedToken = token || localStorage.getItem('token') || localStorage.getItem('jwt');
+    const authHeaders: Record<string, string> = {};
+    if (savedToken) authHeaders['Authorization'] = `Bearer ${savedToken}`;
 
     try {
-      const savedToken = token || localStorage.getItem('token') || localStorage.getItem('jwt');
-      const authHeaders: Record<string, string> = {};
-      if (savedToken) authHeaders['Authorization'] = `Bearer ${savedToken}`;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const formData = new FormData();
+        formData.append('files', file);
 
-      const res = await fetch(`/api/file-manager/upload?path=${encodeURIComponent(currentPath)}`, {
-        method: 'POST',
-        headers: authHeaders,
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(data.message || 'Upload complete', { id: toastId });
-        loadDirectory(currentPath);
-      } else {
-        toast.error(data.error || 'Upload failed', { id: toastId });
+        const prefix = files.length > 1 ? `[${i + 1}/${files.length}] ` : '';
+        const { promise, abort } = uploadWithProgress({
+          url: `/api/file-manager/upload?path=${encodeURIComponent(currentPath)}`,
+          formData,
+          fileName: `${prefix}${file.name}`,
+          headers: authHeaders,
+          onProgress: (state) => setUploadProgress(state),
+        });
+
+        uploadAbortRef.current = abort;
+        await promise;
       }
+
+      toast.success(files.length === 1 ? `Uploaded "${files[0].name}"` : `Successfully uploaded ${files.length} files`);
+      loadDirectory(currentPath);
+      setTimeout(() => setUploadProgress(null), 3000);
     } catch (err: any) {
-      toast.error('Upload failed: ' + err.message, { id: toastId });
+      toast.error('Upload error: ' + err.message);
     } finally {
       setUploading(false);
+      uploadAbortRef.current = null;
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -811,6 +819,19 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
           </form>
         </Modal>
       )}
+
+      {/* Real-time File Upload Progress Bar Card */}
+      <UploadProgressBar
+        upload={uploadProgress}
+        onCancel={() => {
+          if (uploadAbortRef.current) {
+            uploadAbortRef.current();
+            uploadAbortRef.current = null;
+            toast('Upload cancelled');
+          }
+        }}
+        onDismiss={() => setUploadProgress(null)}
+      />
     </div>
   );
 };
