@@ -32,6 +32,9 @@ import {
   FiAlertCircle,
   FiLock,
   FiUnlock,
+  FiGlobe,
+  FiShare2,
+  FiExternalLink,
 } from "react-icons/fi";
 import {
   IngestRecordingOptions,
@@ -346,6 +349,19 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [stopping, setStopping] = useState(false);
   const [pauseActionPending, setPauseActionPending] = useState(false);
 
+  // Network Shares & SMB / FTP Access
+  const [networkShares, setNetworkShares] = useState<{
+    primaryIp: string;
+    customIp?: string | null;
+    interfaces: Array<{ name: string; address: string; internal: boolean }>;
+    smb: { parentPath: string; recordingsPath: string; runCommand: string; instructions: string };
+    ftp: { url: string; rootUrl: string; instructions: string };
+    http: { url: string; parentUrl: string };
+    credentials: { username: string; password: string; permissions: string };
+  } | null>(null);
+  const [customIpInput, setCustomIpInput] = useState("");
+  const [savingCustomIp, setSavingCustomIp] = useState(false);
+
   // Presets & Active Selection
   const [savedPresets, setSavedPresets] =
     useState<SavedRecordingPreset[]>(DEFAULT_PRESETS);
@@ -378,6 +394,53 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     return data;
   }, [api]);
 
+  // Load Network Shares
+  const loadNetworkShares = useCallback(async () => {
+    try {
+      const data = await callApi("/api/ingest/record/network-shares");
+      if (data && data.success) {
+        setNetworkShares(data);
+        if (data.customIp) setCustomIpInput(data.customIp);
+      }
+    } catch (e) {
+      console.warn("[NetworkShares] Failed to load share details:", e);
+    }
+  }, [callApi]);
+
+  const handleUpdateCustomIp = async (ip: string) => {
+    setSavingCustomIp(true);
+    try {
+      const res = await callApi("/api/ingest/record/network-shares", {
+        method: "PUT",
+        body: JSON.stringify({ customIp: ip.trim() || null }),
+      });
+      if (res && res.success) {
+        setNetworkShares(res);
+        toast.success(ip.trim() ? `Network share IP set to ${ip.trim()}` : "Reset to auto-detected network IP");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update network share IP");
+    } finally {
+      setSavingCustomIp(false);
+    }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard!`);
+    } else {
+      const el = document.createElement("textarea");
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      toast.success(`${label} copied to clipboard!`);
+    }
+  };
+
   // Load Presets from Database on Mount
   const loadPresetsFromDb = useCallback(async () => {
     try {
@@ -399,12 +462,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     }
   }, [callApi]);
 
-  // Auto-load default preset on mount
+  // Auto-load default preset and network shares on mount
   const defaultPresetLoadedRef = useRef(false);
   const handledPresetPreviewRequestRef = useRef(0);
   useEffect(() => {
     loadPresetsFromDb();
-  }, [loadPresetsFromDb]);
+    loadNetworkShares();
+  }, [loadPresetsFromDb, loadNetworkShares]);
 
   useEffect(() => {
     if (defaultPresetLoadedRef.current || !defaultPresetId || savedPresets.length === 0) return;
@@ -1708,6 +1772,29 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                       {activeConfig.storagePath || PROJECT_RECORDINGS_PATH}
                     </span>
                   </div>
+
+                  {networkShares && (
+                    <div className="flex items-center justify-between py-1.5 px-2.5 rounded-xl bg-violet-50/80 border border-violet-200 dark:bg-violet-950/40 dark:border-violet-800/70 text-[10px] gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                          <FiShare2 size={11} />
+                          <span>Network Run (SMB · Win+R):</span>
+                        </div>
+                        <p className="font-mono font-bold text-slate-900 dark:text-white truncate mt-0.5" title={networkShares.smb.parentPath}>
+                          {networkShares.smb.parentPath}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(networkShares.smb.parentPath, "Windows Run SMB path (\\\\IP\\media)")}
+                        className="flex items-center gap-1 rounded-lg bg-violet-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-violet-700 shrink-0"
+                        title="Copy to clipboard for Windows Run (Win+R) or File Explorer"
+                      >
+                        <FiCopy size={11} />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between py-1">
                     <span className="text-slate-500 dark:text-[#B9A5CD]">Storage Status</span>
@@ -3181,6 +3268,147 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   ? "CRITICAL STORAGE"
                   : "STORAGE HEALTHY (<98%)"}
               </span>
+            </div>
+          )}
+
+          {/* Network Media Folder Access (SMB / Windows Run & FTP) */}
+          {networkShares && (
+            <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/80 via-white to-purple-50/60 p-4 dark:border-violet-800/60 dark:from-violet-950/30 dark:via-[#1E1130] dark:to-[#25163C] shadow-xs space-y-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-200/80 pb-2.5 dark:border-violet-800/50">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600 text-white shadow-xs">
+                    <FiGlobe size={14} />
+                  </span>
+                  <div>
+                    <h4 className="text-[13px] font-extrabold text-slate-900 dark:text-white">
+                      Direct Network Access (SMB / Windows Run &amp; FTP)
+                    </h4>
+                    <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD]">
+                      Access the parent <code className="font-mono font-bold text-violet-700 dark:text-violet-300">media</code> folder directly from network workstations (No username/password required)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold text-slate-500 dark:text-[#B9A5CD]">Interface IP:</span>
+                  <div className="flex items-center gap-1">
+                    {networkShares.interfaces && networkShares.interfaces.length > 1 ? (
+                      <select
+                        value={networkShares.primaryIp}
+                        onChange={(e) => handleUpdateCustomIp(e.target.value)}
+                        className="h-7 text-[11px] font-mono font-bold rounded-lg border border-violet-300 bg-white px-2 dark:bg-[#25163C] dark:border-violet-700 dark:text-white outline-none"
+                      >
+                        {networkShares.interfaces.map((iface) => (
+                          <option key={iface.address} value={iface.address}>
+                            {iface.address} ({iface.name})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="font-mono font-bold text-[11px] text-violet-700 dark:text-violet-300 px-2 py-0.5 bg-white dark:bg-[#25163C] rounded border border-violet-200 dark:border-violet-700">
+                        {networkShares.primaryIp}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Network Share URL Cards */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {/* Windows Explorer / Run (Win+R) SMB Share */}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                        <FiShare2 size={12} />
+                        <span>Windows Run / SMB Share</span>
+                      </span>
+                      <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 px-1.5 py-0.2 rounded">
+                        No Password
+                      </span>
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-emerald-200/80 dark:border-emerald-900/40">
+                        <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-white truncate" title={networkShares.smb.parentPath}>
+                          {networkShares.smb.parentPath}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(networkShares.smb.parentPath, "Parent media SMB path (\\\\IP\\media)")}
+                          className="ml-2 px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 transition-colors shrink-0"
+                          title="Copy \\IP\media for Windows Run"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-emerald-200/80 dark:border-emerald-900/40">
+                        <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate" title={networkShares.smb.recordingsPath}>
+                          {networkShares.smb.recordingsPath}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(networkShares.smb.recordingsPath, "Recordings SMB path (\\\\IP\\recordings)")}
+                          className="ml-2 px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-800 dark:text-emerald-300 text-[9px] font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors shrink-0"
+                          title="Copy \\IP\recordings"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[9.5px] text-emerald-900/90 dark:text-emerald-200/90 pt-1 leading-tight">
+                    💡 <strong>How to open:</strong> Press <kbd className="px-1 py-0.2 rounded bg-white dark:bg-black/40 border text-[9px] font-bold">Win + R</kbd>, paste <code className="font-mono font-bold">{networkShares.smb.parentPath}</code>, and press <strong>Enter</strong>.
+                  </p>
+                </div>
+
+                {/* FTP Network URL */}
+                <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 dark:border-violet-900/60 dark:bg-violet-950/20 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-800 dark:text-violet-300 flex items-center gap-1.5">
+                        <FiFolder size={12} />
+                        <span>FTP Network Access</span>
+                      </span>
+                      <span className="text-[9px] font-bold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/50 px-1.5 py-0.2 rounded">
+                        Anonymous
+                      </span>
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-violet-200/80 dark:border-violet-900/40">
+                        <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-white truncate" title={networkShares.ftp.url}>
+                          {networkShares.ftp.url}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(networkShares.ftp.url, "FTP URL (ftp://IP/media)")}
+                          className="ml-2 px-2 py-0.5 rounded bg-violet-600 text-white text-[10px] font-bold hover:bg-violet-700 transition-colors shrink-0"
+                          title="Copy FTP URL"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-violet-200/80 dark:border-violet-900/40">
+                        <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate" title={networkShares.http.url}>
+                          {networkShares.http.url}
+                        </span>
+                        <a
+                          href={networkShares.http.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-2 px-1.5 py-0.5 rounded border border-violet-300 text-violet-800 dark:text-violet-300 text-[9px] font-semibold hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors shrink-0 flex items-center gap-1"
+                          title="Open HTTP Browser"
+                        >
+                          <span>Open</span>
+                          <FiExternalLink size={9} />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[9.5px] text-violet-900/90 dark:text-violet-200/90 pt-1 leading-tight">
+                    📁 <strong>FTP Client / Browser:</strong> Connect via FileZilla, Cyberduck, or browser with username <code className="font-bold">anonymous</code> (no password).
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 

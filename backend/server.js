@@ -39,6 +39,7 @@ const bundledFfmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
+const { getNetworkShareInfo } = require('./networkShares');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {
@@ -5243,6 +5244,28 @@ app.put('/api/ingest/record/config', authMiddleware, async (req, res) => {
         const config = { autoRecord: !!req.body?.autoRecord, ...normalizeRecordingOptions(req.body || {}) };
         await setJsonSetting('recording_config', config);
         res.json({ success: true, config });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+// --- Network Media Sharing (SMB / FTP / HTTP) ---
+app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
+    try {
+        const customIp = await getJsonSetting('custom_network_share_ip', null);
+        const info = getNetworkShareInfo(req, customIp);
+        res.json({ success: true, ...info, customIp });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.put(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
+    try {
+        const customIp = req.body?.customIp ? String(req.body.customIp).trim() : null;
+        await setJsonSetting('custom_network_share_ip', customIp || null);
+        const info = getNetworkShareInfo(req, customIp);
+        res.json({ success: true, ...info, customIp });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
