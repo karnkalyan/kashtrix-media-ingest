@@ -21,6 +21,7 @@ import {
   FiWifi,
   FiX,
 } from 'react-icons/fi';
+import ConfirmDialog from './ui/ConfirmDialog';
 import {
   AppSettings,
   Channel,
@@ -142,6 +143,8 @@ export const MuxView: React.FC<MuxViewProps> = ({ api, ws }) => {
   const [customName, setCustomName] = useState('');
   const [customUrl, setCustomUrl] = useState('');
   const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
+  const [deletingMux, setDeletingMux] = useState<MuxConfig | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -346,24 +349,27 @@ export const MuxView: React.FC<MuxViewProps> = ({ api, ws }) => {
     }
   };
 
-  const deleteMux = async (mux: MuxConfig) => {
-    if (!window.confirm(`Delete "${mux.name}"?`)) return;
+  const confirmDeleteMux = async () => {
+    if (!deletingMux) return;
+    setDeleteLoading(true);
     try {
-      await api(`/api/mux/${encodeURIComponent(mux.id)}`, { method: 'DELETE' });
+      await api(`/api/mux/${encodeURIComponent(deletingMux.id)}`, { method: 'DELETE' });
       toast.success('MPTS output deleted');
+      setDeletingMux(null);
       await fetchAll();
     } catch (error: any) {
       toast.error(error?.message || 'Could not delete MPTS output');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
   const duplicateMux = async (mux: MuxConfig) => {
-    const name = window.prompt('Name for the duplicated MPTS output', `${mux.name} Copy`);
-    if (!name?.trim()) return;
+    const name = `${mux.name} Copy`;
     try {
       await api(`/api/mux/${encodeURIComponent(mux.id)}/duplicate`, {
         method: 'POST',
-        body: JSON.stringify({ newName: name.trim(), newIp: mux.outputIp, newPort: Number(mux.outputPort) + 1 }),
+        body: JSON.stringify({ newName: name, newIp: mux.outputIp, newPort: Number(mux.outputPort) + 1 }),
       });
       toast.success('MPTS output duplicated');
       await fetchAll();
@@ -1037,7 +1043,7 @@ export const MuxView: React.FC<MuxViewProps> = ({ api, ws }) => {
                   <div className="flex items-center gap-1.5 ml-auto">
                     <button type="button" onClick={() => editMux(mux)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[11px] font-bold text-[#1B1024] dark:border-[#371F59] dark:bg-[#190E28] dark:text-white hover:bg-slate-50"><FiEdit2 /> Edit</button>
                     <button type="button" onClick={() => void duplicateMux(mux)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E8DFF0] bg-white px-3 text-[11px] font-bold text-[#6F6078] dark:border-[#371F59] dark:bg-[#190E28] dark:text-[#B9A5CD] hover:bg-slate-50"><FiCopy /> Duplicate</button>
-                    <button type="button" onClick={() => void deleteMux(mux)} className="rounded-lg border border-rose-200 p-2 text-rose-600 dark:border-rose-900 hover:bg-rose-50"><FiTrash2 /></button>
+                    <button type="button" onClick={() => setDeletingMux(mux)} className="rounded-lg border border-rose-200 p-2 text-rose-600 dark:border-rose-900 hover:bg-rose-50" title="Delete MPTS"><FiTrash2 /></button>
                   </div>
                 </div>
               </article>
@@ -1051,6 +1057,18 @@ export const MuxView: React.FC<MuxViewProps> = ({ api, ws }) => {
         <div className="flex items-center gap-3"><div className="rounded-lg bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-950"><FiPlay /></div><div><span className="block text-[10px] uppercase text-[#8E78A6]">Running</span><b className="text-sm text-[#1B1024] dark:text-white">{muxes.filter(item => item.status === 'Running').length} outputs</b></div></div>
         <div className="flex items-center gap-3"><div className="rounded-lg bg-blue-100 p-2 text-blue-700 dark:bg-blue-950"><FiWifi /></div><div><span className="block text-[10px] uppercase text-[#8E78A6]">Egress NICs</span><b className="text-sm text-[#1B1024] dark:text-white">{interfaces.length} selectable</b></div></div>
       </div>
+
+      {/* Custom Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deletingMux}
+        title="Delete MPTS Output"
+        message={`Are you sure you want to permanently delete MPTS output "${deletingMux?.name}"?`}
+        confirmLabel="Delete Output"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteMux}
+        onCancel={() => setDeletingMux(null)}
+      />
     </div>
   );
 };

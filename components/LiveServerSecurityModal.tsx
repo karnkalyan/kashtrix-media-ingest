@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { RtmpSecuritySettings, RtmpStreamKey, RtmpPublisherAccount, RtmpActiveLock } from '../types';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 interface LiveServerSecurityModalProps {
   open: boolean;
@@ -82,6 +83,24 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
     playbackSecurity: 'inherit' as 'open' | 'secure' | 'inherit',
     enabled: true
   });
+
+  // Custom Confirmation Modal State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    variant?: 'danger' | 'primary';
+    onConfirm: () => Promise<void> | void;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Confirm',
+    variant: 'danger',
+    onConfirm: () => {},
+  });
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Setup Generator State
   const [genStreamName, setGenStreamName] = useState('live_feed');
@@ -323,15 +342,27 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
   };
 
   // Delete Stream Key
-  const handleDeleteKey = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete stream key "${name}"?`)) return;
-    try {
-      await api(`/api/live-server/security/keys/${id}`, { method: 'DELETE' });
-      toast.success('Stream key deleted');
-      fetchSecuritySettings();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete stream key');
-    }
+  const handleDeleteKey = (id: string, name: string) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Stream Key',
+      message: `Are you sure you want to delete stream key "${name}"?`,
+      confirmLabel: 'Delete Key',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          await api(`/api/live-server/security/keys/${id}`, { method: 'DELETE' });
+          toast.success('Stream key deleted');
+          fetchSecuritySettings();
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to delete stream key');
+        } finally {
+          setConfirmLoading(false);
+        }
+      }
+    });
   };
 
   // Toggle Key Enabled
@@ -397,15 +428,27 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
   };
 
   // Delete Publisher Account
-  const handleDeleteAccount = async (id: string, username: string) => {
-    if (!window.confirm(`Are you sure you want to delete publisher account "${username}"?`)) return;
-    try {
-      await api(`/api/live-server/security/accounts/${id}`, { method: 'DELETE' });
-      toast.success('Publisher account deleted');
-      fetchSecuritySettings();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete account');
-    }
+  const handleDeleteAccount = (id: string, username: string) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Publisher Account',
+      message: `Are you sure you want to delete publisher account "${username}"?`,
+      confirmLabel: 'Delete Account',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          await api(`/api/live-server/security/accounts/${id}`, { method: 'DELETE' });
+          toast.success('Publisher account deleted');
+          fetchSecuritySettings();
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (err: any) {
+          toast.error(err.message || 'Failed to delete account');
+        } finally {
+          setConfirmLoading(false);
+        }
+      }
+    });
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -1276,6 +1319,18 @@ export const LiveServerSecurityModal: React.FC<LiveServerSecurityModalProps> = (
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        variant={confirmDialog.variant}
+        loading={confirmLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 };

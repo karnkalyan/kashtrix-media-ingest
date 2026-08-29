@@ -40,6 +40,7 @@ import {
 } from '../constants';
 import Select from './ui/Select';
 import Button from './ui/Button';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 interface Props {
   profiles: TranscodingProfile[];
@@ -108,6 +109,8 @@ export const TranscodingProfilesView: React.FC<Props> = ({
   const [editingProfileId, setEditingProfileId] = useState<string | 'new' | null>(null);
   const [form, setForm] = useState<Omit<TranscodingProfile, 'id'>>({ ...blankProfile });
   const [saving, setSaving] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState<{ id: string; name: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const setField = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -129,14 +132,18 @@ export const TranscodingProfilesView: React.FC<Props> = ({
     setEditingProfileId('new');
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete profile "${name}"?`)) return;
+  const confirmDeleteProfile = async () => {
+    if (!deletingProfile) return;
+    setDeleteLoading(true);
     try {
-      await removeProfile(id);
-      toast.success(`Profile "${name}" deleted`);
-      if (editingProfileId === id) setEditingProfileId(null);
+      await removeProfile(deletingProfile.id);
+      toast.success(`Profile "${deletingProfile.name}" deleted`);
+      if (editingProfileId === deletingProfile.id) setEditingProfileId(null);
+      setDeletingProfile(null);
     } catch (e: any) {
       toast.error(e.message || 'Failed to delete profile');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -742,7 +749,7 @@ export const TranscodingProfilesView: React.FC<Props> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDelete(p.id, p.name)}
+                      onClick={() => setDeletingProfile({ id: p.id, name: p.name })}
                       className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50"
                       title="Delete Profile"
                     >
@@ -755,6 +762,18 @@ export const TranscodingProfilesView: React.FC<Props> = ({
           })}
         </div>
       )}
+
+      {/* Custom Confirmation Dialog for Profile Deletion */}
+      <ConfirmDialog
+        open={!!deletingProfile}
+        title="Delete Transcoding Profile"
+        message={`Are you sure you want to permanently delete profile "${deletingProfile?.name}"? Any channel using this profile may fail to encode.`}
+        confirmLabel="Delete Profile"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDeleteProfile}
+        onCancel={() => setDeletingProfile(null)}
+      />
     </div>
   );
 };

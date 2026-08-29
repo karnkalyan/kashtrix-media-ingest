@@ -27,6 +27,8 @@ import {
 } from 'react-icons/fi';
 import Button from './ui/Button';
 import Modal from './ui/Modal';
+import ConfirmDialog from './ui/ConfirmDialog';
+import { KashtrixMediaPlayer } from './ui/KashtrixMediaPlayer';
 import UploadProgressBar, { UploadProgressState } from './ui/UploadProgressBar';
 import { uploadWithProgress } from '../utils/uploadHelper';
 
@@ -80,6 +82,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
 
   // Modals & Active Actions
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [deletingItem, setDeletingItem] = useState<FileItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
   const [isMkdirOpen, setIsMkdirOpen] = useState<boolean>(false);
   const [newFolderName, setNewFolderName] = useState<string>('');
   const [renamingItem, setRenamingItem] = useState<FileItem | null>(null);
@@ -152,27 +156,27 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
     }
   };
 
-  const handleDelete = async (item: FileItem) => {
-    const confirmMsg = item.isDirectory
-      ? `Are you sure you want to permanently delete the folder "${item.name}" and all its contents?`
-      : `Are you sure you want to delete "${item.name}"?`;
-    if (!window.confirm(confirmMsg)) return;
-
+  const confirmDelete = async () => {
+    if (!deletingItem) return;
+    setDeleteLoading(true);
     try {
       const res = await fetch('/api/file-manager/delete', {
         method: 'DELETE',
         headers: getHeaders(),
-        body: JSON.stringify({ path: item.path }),
+        body: JSON.stringify({ path: deletingItem.path }),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success('Deleted successfully');
+        toast.success(`"${deletingItem.name}" deleted successfully`);
+        setDeletingItem(null);
         loadDirectory(currentPath);
       } else {
         toast.error(data.error || 'Failed to delete');
       }
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -558,7 +562,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDelete(item)}
+                    onClick={() => setDeletingItem(item)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
                     title="Delete"
                   >
@@ -653,7 +657,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDelete(item)}
+                          onClick={() => setDeletingItem(item)}
                           className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950"
                           title="Delete"
                         >
@@ -698,12 +702,12 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
           title={`Media Player & Preview — ${previewFile.name}`}
         >
           <div className="space-y-4">
-            <div className="rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center relative">
+            <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center relative min-h-[240px]">
               {previewFile.type === 'image' ? (
                 <img
                   src={previewFile.url}
                   alt={previewFile.name}
-                  className="max-h-full max-w-full object-contain"
+                  className="max-h-[60vh] max-w-full object-contain"
                 />
               ) : previewFile.type === 'audio' ? (
                 <div className="p-8 w-full flex flex-col items-center justify-center gap-4">
@@ -711,11 +715,13 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                   <audio controls autoPlay src={previewFile.url} className="w-full max-w-md" />
                 </div>
               ) : (
-                <video
-                  controls
-                  autoPlay
+                <KashtrixMediaPlayer
                   src={previewFile.url}
-                  className="w-full h-full object-contain"
+                  title={previewFile.name}
+                  isLive={false}
+                  autoPlay={true}
+                  showAudioMeter={true}
+                  maxHeight="60vh"
                 />
               )}
             </div>
@@ -831,6 +837,22 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
           }
         }}
         onDismiss={() => setUploadProgress(null)}
+      />
+
+      {/* Custom Confirmation Dialog for Deletions */}
+      <ConfirmDialog
+        open={!!deletingItem}
+        title={deletingItem?.isDirectory ? 'Delete Folder' : 'Delete Media File'}
+        message={
+          deletingItem?.isDirectory
+            ? `Are you sure you want to permanently delete the folder "${deletingItem?.name}" and all of its contents from storage? This cannot be undone.`
+            : `Are you sure you want to permanently delete "${deletingItem?.name}" from media storage?`
+        }
+        confirmLabel="Delete Permanently"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeletingItem(null)}
       />
     </div>
   );

@@ -48,6 +48,7 @@ import {
 } from "../types";
 import { DEFAULT_DECKLINK_FORMATS } from "../constants";
 import DetailDrawer from "./ui/DetailDrawer";
+import ConfirmDialog from "./ui/ConfirmDialog";
 import KashtrixMediaPlayer from "./ui/KashtrixMediaPlayer";
 import RecordingElapsedTimer from "./RecordingElapsedTimer";
 import { toast } from "react-hot-toast";
@@ -374,6 +375,19 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [loadedPresetId, setLoadedPresetId] = useState<string | null>(null);
   const [presetEditingEnabled, setPresetEditingEnabled] = useState(true);
   const [presetPreviewRequest, setPresetPreviewRequest] = useState(0);
+  const [deletingPreset, setDeletingPreset] = useState<{ id: string; name: string } | null>(null);
+  const [deletePresetLoading, setDeletePresetLoading] = useState(false);
+
+  const confirmDeletePreset = async () => {
+    if (!deletingPreset) return;
+    setDeletePresetLoading(true);
+    try {
+      await handleDeletePreset(deletingPreset.id);
+      setDeletingPreset(null);
+    } finally {
+      setDeletePresetLoading(false);
+    }
+  };
 
   // Database API helper
   const callApi = useCallback(async (endpoint: string, options?: RequestInit) => {
@@ -2004,11 +2018,8 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 type="button"
                 onClick={() => {
                   const current = savedPresets.find((p) => p.id === selectedPresetId);
-                  if (
-                    current &&
-                    window.confirm(`Are you sure you want to delete preset "${current.name}" from database?`)
-                  ) {
-                    handleDeletePreset(selectedPresetId);
+                  if (current) {
+                    setDeletingPreset({ id: current.id, name: current.name });
                   }
                 }}
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300"
@@ -4098,13 +4109,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      if (
-                        window.confirm(`Are you sure you want to delete preset "${preset.name}" from database?`)
-                      ) {
-                        handleDeletePreset(preset.id);
-                      }
-                    }}
+                    onClick={() => setDeletingPreset({ id: preset.id, name: preset.name })}
                     className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 transition"
                     title="Delete preset from database"
                   >
@@ -4116,6 +4121,18 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
           })}
         </div>
       </DetailDrawer>
+
+      {/* Custom Confirmation Dialog for Presets */}
+      <ConfirmDialog
+        open={!!deletingPreset}
+        title="Delete Recording Preset"
+        message={`Are you sure you want to permanently delete preset "${deletingPreset?.name}" from database?`}
+        confirmLabel="Delete Preset"
+        variant="danger"
+        loading={deletePresetLoading}
+        onConfirm={confirmDeletePreset}
+        onCancel={() => setDeletingPreset(null)}
+      />
     </div>
   );
 };

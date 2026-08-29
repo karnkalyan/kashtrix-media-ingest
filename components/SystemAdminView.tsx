@@ -39,6 +39,7 @@ import {
 import Button from './ui/Button';
 import Modal from './ui/Modal';
 import Select from './ui/Select';
+import ConfirmDialog from './ui/ConfirmDialog';
 import {
   PhysicalInterface,
   NicBondingItem,
@@ -156,6 +157,24 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
 
   // Hardware Monitoring State
   const [hardware, setHardware] = useState<SystemHardwareExtended | null>(null);
+
+  // Custom Confirmation Modal State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    variant?: 'danger' | 'primary';
+    onConfirm: () => Promise<void> | void;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Confirm',
+    variant: 'danger',
+    onConfirm: () => {},
+  });
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // System Update State
   const [updateInfo, setUpdateInfo] = useState<SystemUpdateInfo | null>(null);
@@ -414,24 +433,36 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     }
   };
 
-  const handleDeleteShareUser = async (id: string, username: string) => {
-    if (!window.confirm(`Are you sure you want to delete network share user "${username}"?`)) return;
-    try {
-      const res = await fetch(`/api/system/network-share-users/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setShareUsers(data.users);
-        toast.success(`Network share user "${username}" deleted`);
-        fetchNetworkShares();
-      } else {
-        toast.error(data.error || 'Failed to delete user');
+  const handleDeleteShareUser = (id: string, username: string) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Network Share User',
+      message: `Are you sure you want to delete network share user "${username}"?`,
+      confirmLabel: 'Delete User',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const res = await fetch(`/api/system/network-share-users/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setShareUsers(data.users);
+            toast.success(`Network share user "${username}" deleted`);
+            fetchNetworkShares();
+            setConfirmDialog(prev => ({ ...prev, open: false }));
+          } else {
+            toast.error(data.error || 'Failed to delete user');
+          }
+        } catch (e: any) {
+          toast.error(e?.message || 'Error deleting user');
+        } finally {
+          setConfirmLoading(false);
+        }
       }
-    } catch (e: any) {
-      toast.error(e?.message || 'Error deleting user');
-    }
+    });
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -570,15 +601,27 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     }
   };
 
-  const handleDeleteBond = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this bond interface?')) return;
-    try {
-      await fetch(`/api/system/network/bonding/${id}`, { method: 'DELETE', headers: authHeaders });
-      toast.success('NIC bond removed.');
-      fetchNetworkData();
-    } catch (e) {
-      toast.error('Failed to delete bond.');
-    }
+  const handleDeleteBond = (id: string) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Remove NIC Bond',
+      message: 'Are you sure you want to remove this bond interface?',
+      confirmLabel: 'Remove Bond',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          await fetch(`/api/system/network/bonding/${id}`, { method: 'DELETE', headers: authHeaders });
+          toast.success('NIC bond removed.');
+          fetchNetworkData();
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (e) {
+          toast.error('Failed to delete bond.');
+        } finally {
+          setConfirmLoading(false);
+        }
+      }
+    });
   };
 
   const openAddVlanModal = () => {
@@ -625,15 +668,27 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     }
   };
 
-  const handleDeleteVlan = async (id: string) => {
-    if (!confirm('Delete VLAN configuration?')) return;
-    try {
-      await fetch(`/api/system/network/vlan/${id}`, { method: 'DELETE', headers: authHeaders });
-      toast.success('VLAN removed.');
-      fetchNetworkData();
-    } catch (e) {
-      toast.error('Failed to delete VLAN.');
-    }
+  const handleDeleteVlan = (id: string) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete VLAN Interface',
+      message: 'Are you sure you want to delete this VLAN configuration?',
+      confirmLabel: 'Delete VLAN',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          await fetch(`/api/system/network/vlan/${id}`, { method: 'DELETE', headers: authHeaders });
+          toast.success('VLAN removed.');
+          fetchNetworkData();
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (e) {
+          toast.error('Failed to delete VLAN.');
+        } finally {
+          setConfirmLoading(false);
+        }
+      }
+    });
   };
 
   const handleSaveRoute = async () => {
@@ -688,19 +743,31 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     }
   };
 
-  const handleReboot = async (target: string) => {
-    if (!confirm(`Are you sure you want to reboot ${target}? Active broadcasts will momentarily disconnect.`)) return;
-    try {
-      const res = await fetch('/api/system/reboot', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ target }),
-      });
-      const data = await res.json();
-      toast.success(data.message || 'Reboot sequence initiated.');
-    } catch (e) {
-      toast.error('Reboot failed.');
-    }
+  const handleReboot = (target: string) => {
+    setConfirmDialog({
+      open: true,
+      title: `Reboot ${target}`,
+      message: `Are you sure you want to reboot ${target}? Active broadcasts will momentarily disconnect.`,
+      confirmLabel: 'Proceed with Reboot',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const res = await fetch('/api/system/reboot', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({ target }),
+          });
+          const data = await res.json();
+          toast.success(data.message || 'Reboot sequence initiated.');
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        } catch (e) {
+          toast.error('Reboot failed.');
+        } finally {
+          setConfirmLoading(false);
+        }
+      }
+    });
   };
 
   const handleApplyUpdate = async () => {
@@ -2717,6 +2784,18 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
           </div>
         </Modal>
       )}
+
+      {/* Custom Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        variant={confirmDialog.variant}
+        loading={confirmLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 };
