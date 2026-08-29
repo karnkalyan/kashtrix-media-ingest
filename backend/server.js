@@ -40,6 +40,8 @@ const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
 const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare } = require('./networkShares');
+const { createMediaExplorerMiddleware } = require('./webMediaExplorer');
+const { KashtrixFtpServer } = require('./ftpServer');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {
@@ -908,6 +910,7 @@ app.use('/live', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/hls', express.static(HLS_DIR, hlsStaticOptions));
 app.use('/hls', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/media/hls', express.static(HLS_DIR, hlsStaticOptions));
+app.use('/media', createMediaExplorerMiddleware());
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 app.use('/dash', express.static(DASH_DIR, hlsStaticOptions));
 const isAllowedMediaPath = (targetPath) => {
@@ -1071,6 +1074,9 @@ app.use('/recordings', serveRecordingFile);
 app.use('/media/recordings', serveRecordingFile);
 app.use('/recorded', serveRecordingFile);
 app.use('/media/recorded', serveRecordingFile);
+app.use('/media', createMediaExplorerMiddleware());
+app.use('/recordings', createMediaExplorerMiddleware());
+app.use('/media/recordings', createMediaExplorerMiddleware());
 app.use('/media', express.static(MEDIA_ROOT, hlsStaticOptions));
 
 // Direct dedicated recording stream & download routes
@@ -5250,13 +5256,29 @@ app.put('/api/ingest/record/config', authMiddleware, async (req, res) => {
 });
 
 // --- Network Media Sharing (SMB / FTP / HTTP) & Network Share Users ---
+const kashtrixFtpServer = new KashtrixFtpServer(MEDIA_ROOT, {
+    port: 21,
+    fallbackPort: 2121,
+    getAuthSettings: () => {
+        try {
+            return {
+                authMode: settingsCache?.network_share_auth_mode || 'anonymous',
+                users: settingsCache?.network_share_users || DEFAULT_NETWORK_SHARE_USERS,
+            };
+        } catch (_) {
+            return { authMode: 'anonymous', users: DEFAULT_NETWORK_SHARE_USERS };
+        }
+    }
+});
+
 app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
     try {
         const customIp = await getJsonSetting('custom_network_share_ip', null);
         const authMode = await getJsonSetting('network_share_auth_mode', 'anonymous');
         const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
-        const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT });
-        res.json({ success: true, ...info, customIp, authMode, users, mediaPath: MEDIA_ROOT });
+        const ftpPort = kashtrixFtpServer?.getStatus()?.port || 21;
+        const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT, ftpPort });
+        res.json({ success: true, ...info, customIp, authMode, users, mediaPath: MEDIA_ROOT, ftpPort });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -5269,8 +5291,9 @@ app.put(['/api/ingest/record/network-shares', '/api/system/network-shares', '/ap
         if (req.body?.customIp !== undefined) await setJsonSetting('custom_network_share_ip', customIp);
         if (req.body?.authMode !== undefined) await setJsonSetting('network_share_auth_mode', authMode);
         const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
-        const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT });
-        res.json({ success: true, ...info, customIp, authMode, users, mediaPath: MEDIA_ROOT });
+        const ftpPort = kashtrixFtpServer?.getStatus()?.port || 21;
+        const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT, ftpPort });
+        res.json({ success: true, ...info, customIp, authMode, users, mediaPath: MEDIA_ROOT, ftpPort });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
@@ -7289,6 +7312,9 @@ mediaApp.use('/recordings', serveRecordingFile);
 mediaApp.use('/media/recordings', serveRecordingFile);
 mediaApp.use('/recorded', serveRecordingFile);
 mediaApp.use('/media/recorded', serveRecordingFile);
+mediaApp.use('/media', createMediaExplorerMiddleware());
+mediaApp.use('/recordings', createMediaExplorerMiddleware());
+mediaApp.use('/media/recordings', createMediaExplorerMiddleware());
 mediaApp.use('/media', express.static(MEDIA_ROOT));
 
 mediaApp.get('/recording-thumbnail/:id.jpg', (req, res) => {
@@ -8217,6 +8243,7 @@ const apiServer = server.listen(API_PORT, () => {
     startIngestStatsBroadcast();
     startStorageMonitoring();
     startMuxStatsBroadcast();
+    kashtrixFtpServer.start().catch(err => console.warn('[FTP] Startup notice:', err.message));
 
     void secureLicense.start().then(async license => {
         console.log(`[License] Secure client state: ${license.status}`);

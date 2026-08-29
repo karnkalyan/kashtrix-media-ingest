@@ -35,11 +35,11 @@ const resolvePrimaryIp = (req, customIp = null) => {
         return String(customIp).trim();
     }
 
-    // 1. Check client request Host header (e.g. 10.1.2.56:3000 or 192.168.2.162:3005)
+    // 1. Check client request Host header (e.g. 192.168.2.162:3005)
     if (req) {
-        const hostHeader = req.headers?.host || '';
+        const hostHeader = req.headers?.host || req.hostname || '';
         const hostIpMatch = hostHeader.split(':')[0]?.trim();
-        if (hostIpMatch && hostIpMatch !== 'localhost' && hostIpMatch !== '127.0.0.1' && !hostIpMatch.startsWith('172.')) {
+        if (hostIpMatch && hostIpMatch !== 'localhost' && hostIpMatch !== '127.0.0.1' && !hostIpMatch.startsWith('172.17.') && !hostIpMatch.startsWith('172.18.')) {
             return hostIpMatch;
         }
     }
@@ -48,7 +48,7 @@ const resolvePrimaryIp = (req, customIp = null) => {
     const allIps = getAvailableNetworkIps();
     const externalIps = allIps.filter(i => !i.internal && i.address !== '127.0.0.1');
 
-    // Prefer non-docker 172.x subnets if a 10.x, 192.168.x or 172.x physical exists
+    // Prefer non-docker bridge subnets if a 10.x, 192.168.x or physical exists
     const preferredIp = externalIps.find(i => !i.address.startsWith('172.17.') && !i.address.startsWith('172.18.') && !i.address.startsWith('172.19.'))
         || externalIps[0];
 
@@ -161,6 +161,7 @@ const getNetworkShareInfo = (req, options = {}) => {
     const authMode = options.authMode || 'anonymous'; // 'anonymous' | 'authenticated'
     const users = Array.isArray(options.users) && options.users.length > 0 ? options.users : DEFAULT_NETWORK_SHARE_USERS;
     const mediaPath = options.mediaPath || null;
+    const ftpPort = options.ftpPort || 21;
 
     const interfaces = getAvailableNetworkIps();
     const primaryIp = resolvePrimaryIp(req, customIp);
@@ -169,6 +170,7 @@ const getNetworkShareInfo = (req, options = {}) => {
     const activeUser = users.find(u => u.enabled) || users[0] || { username: 'media_admin', password: 'Password123!' };
     const isAuth = authMode === 'authenticated';
     const windowsStatus = checkWindowsSmbShareStatus(mediaPath);
+    const ftpUrl = ftpPort === 21 ? `ftp://${primaryIp}/media` : `ftp://${primaryIp}:${ftpPort}/media`;
 
     return {
         success: true,
@@ -195,16 +197,16 @@ const getNetworkShareInfo = (req, options = {}) => {
                 : `Connect to \\\\${primaryIp}\\media directly (Anonymous / Guest access enabled).`
         },
         ftp: {
-            url: `ftp://${primaryIp}/media`,
-            rootUrl: `ftp://${primaryIp}/`,
-            port: 21,
+            url: ftpUrl,
+            rootUrl: ftpPort === 21 ? `ftp://${primaryIp}/` : `ftp://${primaryIp}:${ftpPort}/`,
+            port: ftpPort,
             anonymous: !isAuth,
             authRequired: isAuth,
             username: isAuth ? activeUser.username : 'anonymous',
             password: isAuth ? '******' : '',
             instructions: isAuth
-                ? `Connect to ftp://${primaryIp}/media using assigned Network Share credentials.`
-                : `Connect to ftp://${primaryIp}/media with anonymous login (no password required).`
+                ? `Connect to ${ftpUrl} using assigned Network Share credentials.`
+                : `Connect to ${ftpUrl} with anonymous login (no password required).`
         },
         http: {
             url: `http://${primaryIp}:${port}/media/recordings`,

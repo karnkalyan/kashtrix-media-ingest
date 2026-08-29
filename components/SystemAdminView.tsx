@@ -1866,23 +1866,40 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59] space-y-1">
                 <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Active Interface IP</span>
                 <div className="flex items-center gap-2">
-                  {physicalIfaces.length > 0 ? (
-                    <select
-                      value={networkSharesInfo?.primaryIp || ''}
-                      onChange={(e) => handleUpdateShareCustomIp(e.target.value)}
-                      className="h-7 text-xs font-mono font-bold rounded-lg border border-[#E8DFF0] bg-white px-2 dark:bg-[#190E28] dark:border-[#371F59] dark:text-white outline-none w-full"
-                    >
-                      {physicalIfaces.filter(i => i.address).map(i => (
-                        <option key={i.address} value={i.address}>
-                          {i.address} ({i.interface})
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="font-mono text-sm font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
-                      {networkSharesInfo?.primaryIp || '127.0.0.1'}
-                    </span>
-                  )}
+                  {(() => {
+                    const rawList = [
+                      ...(networkSharesInfo?.interfaces || []).map((i: any) => ({ address: i.address, label: `${i.address} (${i.name})` })),
+                      ...physicalIfaces.filter(i => i.address).map(i => ({ address: i.address, label: `${i.address} (${i.interface})` })),
+                      ...(typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+                        ? [{ address: window.location.hostname, label: `${window.location.hostname} (Current Browser Host)` }]
+                        : [])
+                    ].filter(i => i.address && i.address !== '127.0.0.1');
+
+                    const seen = new Set();
+                    const candidateIps = rawList.filter(item => {
+                      if (seen.has(item.address)) return false;
+                      seen.add(item.address);
+                      return true;
+                    });
+
+                    return candidateIps.length > 0 ? (
+                      <select
+                        value={networkSharesInfo?.primaryIp || (typeof window !== 'undefined' ? window.location.hostname : '')}
+                        onChange={(e) => handleUpdateShareCustomIp(e.target.value)}
+                        className="h-7 text-xs font-mono font-bold rounded-lg border border-[#E8DFF0] bg-white px-2 dark:bg-[#190E28] dark:border-[#371F59] dark:text-white outline-none w-full"
+                      >
+                        {candidateIps.map(i => (
+                          <option key={i.address} value={i.address}>
+                            {i.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="font-mono text-sm font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
+                        {networkSharesInfo?.primaryIp || (typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1')}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 

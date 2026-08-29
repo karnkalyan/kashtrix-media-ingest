@@ -3294,23 +3294,39 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-semibold text-slate-500 dark:text-[#B9A5CD]">Interface IP:</span>
                   <div className="flex items-center gap-1">
-                    {networkShares.interfaces && networkShares.interfaces.length > 1 ? (
-                      <select
-                        value={networkShares.primaryIp}
-                        onChange={(e) => handleUpdateCustomIp(e.target.value)}
-                        className="h-7 text-[11px] font-mono font-bold rounded-lg border border-violet-300 bg-white px-2 dark:bg-[#25163C] dark:border-violet-700 dark:text-white outline-none"
-                      >
-                        {networkShares.interfaces.map((iface) => (
-                          <option key={iface.address} value={iface.address}>
-                            {iface.address} ({iface.name})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="font-mono font-bold text-[11px] text-violet-700 dark:text-violet-300 px-2 py-0.5 bg-white dark:bg-[#25163C] rounded border border-violet-200 dark:border-violet-700">
-                        {networkShares.primaryIp}
-                      </span>
-                    )}
+                    {(() => {
+                      const rawList = [
+                        ...(networkShares.interfaces || []).map((i) => ({ address: i.address, label: `${i.address} (${i.name})` })),
+                        ...(typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+                          ? [{ address: window.location.hostname, label: `${window.location.hostname} (Current Host)` }]
+                          : [])
+                      ].filter(i => i.address && i.address !== '127.0.0.1');
+
+                      const seen = new Set();
+                      const candidateIps = rawList.filter(item => {
+                        if (seen.has(item.address)) return false;
+                        seen.add(item.address);
+                        return true;
+                      });
+
+                      return candidateIps.length > 0 ? (
+                        <select
+                          value={networkShares.primaryIp}
+                          onChange={(e) => handleUpdateCustomIp(e.target.value)}
+                          className="h-7 text-[11px] font-mono font-bold rounded-lg border border-violet-300 bg-white px-2 dark:bg-[#25163C] dark:border-violet-700 dark:text-white outline-none"
+                        >
+                          {candidateIps.map((iface) => (
+                            <option key={iface.address} value={iface.address}>
+                              {iface.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="font-mono font-bold text-[11px] text-violet-700 dark:text-violet-300 px-2 py-0.5 bg-white dark:bg-[#25163C] rounded border border-violet-200 dark:border-violet-700">
+                          {networkShares.primaryIp}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
