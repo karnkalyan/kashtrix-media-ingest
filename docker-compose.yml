@@ -40,6 +40,7 @@ services:
       FFMPEG_PATH: /usr/local/bin/ffmpeg
       FFPROBE_PATH: /usr/local/bin/ffprobe
     ports:
+      - "21:21"
       - "1935:1935"
       - "3005:3005"
       - "8080:8080"
@@ -96,20 +97,6 @@ services:
       -g "unix extensions = no"
     volumes:
       - recording-data:/media
-    networks:
-      - kashtrix
-
-  ftp:
-    image: delfer/alpine-ftp-server
-    restart: unless-stopped
-    ports:
-      - "21:21"
-      - "21000-21010:21000-21010"
-    environment:
-      - USERS=anonymous|
-      - ADDRESS=0.0.0.0
-    volumes:
-      - recording-data:/ftp/anonymous/media
     networks:
       - kashtrix
 
