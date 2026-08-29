@@ -7,10 +7,10 @@ const defaultLogger = createLogger();
 const customLogger = {
     ...defaultLogger,
     error(msg: string, options?: any) {
-        // Suppress transient backend restart proxy connection errors (ECONNREFUSED / ECONNRESET during dev restarts)
+        // Suppress transient backend restart proxy connection errors (ECONNREFUSED / ECONNRESET / ECONNABORTED during dev restarts)
         if (
             (msg.includes('proxy error') || msg.includes('proxy socket error')) &&
-            (msg.includes('ECONNREFUSED') || msg.includes('ECONNRESET') || msg.includes('ETIMEDOUT'))
+            (msg.includes('ECONNREFUSED') || msg.includes('ECONNRESET') || msg.includes('ECONNABORTED') || msg.includes('ETIMEDOUT') || msg.includes('EPIPE'))
         ) {
             return;
         }
@@ -29,7 +29,12 @@ const attachProxyErrorHandler = (proxy: any) => {
             }
             res.end(JSON.stringify({ error: 'Backend server is restarting or reconnecting', code: err.code }));
         } else if (res && typeof res.destroy === 'function') {
-            res.destroy();
+            try { res.destroy(); } catch (_) {}
+        }
+    });
+    proxy.on('proxyReqWs', (_proxyReq: any, _req: any, socket: any) => {
+        if (socket && typeof socket.on === 'function') {
+            socket.on('error', () => {});
         }
     });
 };
@@ -41,6 +46,17 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        watch: {
+          ignored: [
+            '**/backend/**',
+            '**/media/**',
+            '**/temp/**',
+            '**/scratch/**',
+            '**/data/**',
+            '**/*.test.js',
+            '**/*.test.ts',
+          ],
+        },
         proxy: {
           // Main backend API
           '/api': {
