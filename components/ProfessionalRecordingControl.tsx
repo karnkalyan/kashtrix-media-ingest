@@ -30,6 +30,8 @@ import {
   FiUpload,
   FiCopy,
   FiAlertCircle,
+  FiLock,
+  FiUnlock,
 } from "react-icons/fi";
 import {
   IngestRecordingOptions,
@@ -58,7 +60,8 @@ export interface SavedRecordingPreset {
   videoDevice?: string;
   audioDevice?: string;
   selectedStreamKey?: string;
-  config: IngestRecordingOptions;
+  defaultEditingEnabled?: boolean;
+  config: Partial<IngestRecordingOptions> & { defaultEditingEnabled?: boolean };
   createdAt: string;
 }
 
@@ -276,9 +279,9 @@ interface Props {
   start?: () => void;
   isRecordingActive?: boolean;
   isRecordingPaused?: boolean;
-  pauseRecording?: () => void | Promise<void>;
-  resumeRecording?: () => void | Promise<void>;
-  stopRecording?: () => void | Promise<void>;
+  pauseRecording?: () => void | Promise<any>;
+  resumeRecording?: () => void | Promise<any>;
+  stopRecording?: () => void | Promise<any>;
   profiles?: TranscodingProfile[];
   recordingProfiles?: RecordingProfileSummary[];
   recordingEncoders?: RecordingEncoderCapability[];
@@ -336,6 +339,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [saveSetupModalOpen, setSaveSetupModalOpen] = useState(false);
   const [managePresetsOpen, setManagePresetsOpen] = useState(false);
   const [setupNameInput, setSetupNameInput] = useState("");
+  const [saveMode, setSaveMode] = useState<"overwrite" | "create">("create");
+  const [setupDefaultEditingMode, setSetupDefaultEditingMode] = useState<boolean>(true);
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [editingPresetName, setEditingPresetName] = useState<string>("");
   const [stopping, setStopping] = useState(false);
   const [pauseActionPending, setPauseActionPending] = useState(false);
 
@@ -406,7 +413,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       defaultPresetLoadedRef.current = true;
       setSelectedPresetId(target.id);
       setLoadedPresetId(target.id);
-      setPresetEditingEnabled(false);
+      const shouldEnableEditing = target.defaultEditingEnabled !== undefined
+        ? target.defaultEditingEnabled
+        : (target.config?.defaultEditingEnabled !== undefined ? target.config.defaultEditingEnabled : true);
+      setPresetEditingEnabled(shouldEnableEditing);
       setActiveStep(2);
       setProfileDrawerOpen(false);
       setDestinationDrawerOpen(false);
@@ -939,6 +949,23 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   };
 
   // Preset Handlers
+  const openSavePresetModal = (mode?: "overwrite" | "create") => {
+    const isOverwrite = (mode === "overwrite" || (!mode && Boolean(loadedPresetId))) && Boolean(loadedPreset);
+    setSaveMode(isOverwrite ? "overwrite" : "create");
+    if (isOverwrite && loadedPreset) {
+      setSetupNameInput(loadedPreset.name);
+      setSetupDefaultEditingMode(
+        loadedPreset.defaultEditingEnabled !== undefined
+          ? loadedPreset.defaultEditingEnabled
+          : (loadedPreset.config?.defaultEditingEnabled !== undefined ? loadedPreset.config.defaultEditingEnabled : true)
+      );
+    } else {
+      setSetupNameInput(`${sourceName} Preset`);
+      setSetupDefaultEditingMode(true);
+    }
+    setSaveSetupModalOpen(true);
+  };
+
   const handleLoadPreset = async (
     targetPresetId: string,
     options?: { persistToDb?: boolean; notify?: boolean }
@@ -950,7 +977,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     if (!target) return;
 
     setLoadedPresetId(target.id);
-    setPresetEditorVisible(false);
+    const shouldEnableEditing = target.defaultEditingEnabled !== undefined
+      ? target.defaultEditingEnabled
+      : (target.config?.defaultEditingEnabled !== undefined ? target.config.defaultEditingEnabled : true);
+    setPresetEditorVisible(shouldEnableEditing);
     setPresetPreviewRequest((request) => request + 1);
 
     if (target.sourceType) {
@@ -996,23 +1026,30 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       }
     }
     if (shouldNotify) {
-      toast.success(`Loaded "${target.name}" and saved to active recording config in database`);
+      toast.success(`Loaded "${target.name}" (${shouldEnableEditing ? 'Editing Mode' : 'Locked Mode'})`);
     }
   };
 
   const handleSavePreset = async () => {
-    const name =
-      setupNameInput.trim() ||
-      `${sourceName} Setup (${new Date().toLocaleDateString()})`;
-    const newPresetPayload = {
-      id: `preset-${Date.now()}`,
+    const isOverwriting = saveMode === "overwrite" && Boolean(loadedPresetId);
+    const targetId = isOverwriting && loadedPresetId ? loadedPresetId : `preset-${Date.now()}`;
+    const defaultName = isOverwriting && loadedPreset ? loadedPreset.name : `${sourceName} Setup (${new Date().toLocaleDateString()})`;
+    const name = setupNameInput.trim() || defaultName;
+
+    const newPresetPayload: SavedRecordingPreset = {
+      id: targetId,
       name,
       sourceType,
       videoDevice,
       audioDevice,
       selectedStreamKey,
-      config: activeConfig,
-      createdAt: new Date().toISOString(),
+      defaultEditingEnabled: setupDefaultEditingMode,
+      config: {
+        ...activeConfig,
+        formats: activeFormats,
+        defaultEditingEnabled: setupDefaultEditingMode,
+      },
+      createdAt: isOverwriting && loadedPreset?.createdAt ? loadedPreset.createdAt : new Date().toISOString(),
     };
 
     try {
@@ -1022,12 +1059,68 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       });
       const updatedList = res.presets || [newPresetPayload, ...savedPresets];
       setSavedPresets(updatedList);
-      setSelectedPresetId(res.preset?.id || newPresetPayload.id);
+      const savedId = res.preset?.id || newPresetPayload.id;
+      setSelectedPresetId(savedId);
+      setLoadedPresetId(savedId);
       setSaveSetupModalOpen(false);
       setSetupNameInput("");
-      toast.success(`Preset "${name}" saved to database!`);
+      toast.success(
+        isOverwriting
+          ? `Preset "${name}" modified & updated in database!`
+          : `New preset "${name}" saved to database!`
+      );
     } catch (err: any) {
       toast.error(err?.message || `Preset "${name}" could not be saved to the database`);
+    }
+  };
+
+  const handleRenamePreset = async (presetId: string, newName: string) => {
+    const target = savedPresets.find((p) => p.id === presetId);
+    if (!target) return;
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      toast.error("Preset name cannot be empty");
+      return;
+    }
+    const updatedPreset = { ...target, name: trimmed };
+    try {
+      const res = await callApi("/api/ingest/record/presets/save", {
+        method: "POST",
+        body: JSON.stringify(updatedPreset),
+      });
+      const updatedList = res.presets || savedPresets.map(p => p.id === presetId ? updatedPreset : p);
+      setSavedPresets(updatedList);
+      setEditingPresetId(null);
+      toast.success(`Preset renamed to "${trimmed}"`);
+    } catch (err: any) {
+      toast.error(err?.message || "Could not rename preset");
+    }
+  };
+
+  const handleTogglePresetDefaultEditing = async (preset: SavedRecordingPreset) => {
+    const currentMode = preset.defaultEditingEnabled !== undefined
+      ? preset.defaultEditingEnabled
+      : (preset.config?.defaultEditingEnabled !== undefined ? preset.config.defaultEditingEnabled : true);
+    const newMode = !currentMode;
+    const updatedPreset: SavedRecordingPreset = {
+      ...preset,
+      defaultEditingEnabled: newMode,
+      config: {
+        ...(preset.config || {}),
+        formats: preset.config?.formats || ["mp4"],
+        defaultEditingEnabled: newMode,
+      },
+    };
+    try {
+      const res = await callApi("/api/ingest/record/presets/save", {
+        method: "POST",
+        body: JSON.stringify(updatedPreset),
+      });
+      const updatedList = res.presets || savedPresets.map(p => p.id === preset.id ? updatedPreset : p);
+      setSavedPresets(updatedList);
+      toast.success(`"${preset.name}" default load mode set to: ${newMode ? 'Editing Mode' : 'Locked Mode'}`);
+    } catch (err: any) {
+      toast.error(err?.message || "Could not update preset default mode");
     }
   };
 
@@ -1329,1220 +1422,1102 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       : option;
   });
 
+  const previewControl = (
+    <button
+      type="button"
+      onClick={() => {
+        if (previewing) {
+          void stopPreview(true);
+        } else {
+          void startSourcePreview();
+        }
+      }}
+      disabled={
+        previewing
+          ? previewStopping
+          : startDisabled || previewStarting || previewStopping
+      }
+      className="flex h-10 items-center justify-center gap-2 rounded-xl border border-violet-300 bg-white px-4 text-[12px] font-bold text-violet-700 transition-colors hover:bg-violet-50 disabled:opacity-40 dark:border-violet-700 dark:bg-[#25163C] dark:text-violet-300 dark:hover:bg-violet-950/50"
+    >
+      {previewStopping ? (
+        <>
+          <FiRefreshCw size={14} className="animate-spin" />
+          <span>Stopping Previewâ€¦</span>
+        </>
+      ) : previewStarting ? (
+        <>
+          <FiRefreshCw size={14} className="animate-spin" />
+          <span>Connecting Previewâ€¦</span>
+        </>
+      ) : previewing ? (
+        <>
+          <FiEyeOff size={14} />
+          <span>Stop Preview</span>
+        </>
+      ) : (
+        <>
+          <FiPlay size={14} />
+          <span>Start Preview</span>
+        </>
+      )}
+    </button>
+  );
+
+  const recordingControls = isRecordingActive ? (
+    <div className="flex flex-wrap items-center gap-2.5">
+      <div className={`flex items-center gap-2 rounded-xl px-4 py-2 text-[12px] font-bold text-white shadow-md ${isRecordingPaused ? "bg-amber-600" : "bg-rose-600"}`}>
+        <span className={`h-2.5 w-2.5 rounded-full bg-white ${isRecordingPaused ? "" : "animate-pulse"}`} />
+        <span>{isRecordingPaused ? "RECORDING PAUSED" : "RECORDING IN PROGRESS"}</span>
+        <span className={`rounded px-2 py-0.5 font-mono text-[13px] tracking-wider ${isRecordingPaused ? "bg-amber-700/80" : "bg-rose-700/80"}`}>
+          {Math.floor(recordingElapsed / 3600).toString().padStart(2, "0")}:
+          {Math.floor((recordingElapsed % 3600) / 60).toString().padStart(2, "0")}:
+          {Math.floor(recordingElapsed % 60).toString().padStart(2, "0")}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        disabled={pauseActionPending || stopping}
+        onClick={async () => {
+          if (pauseActionPending || stopping) return;
+          setPauseActionPending(true);
+          try {
+            if (isRecordingPaused) {
+              await resumeRecording();
+            } else {
+              await pauseRecording();
+            }
+          } finally {
+            setPauseActionPending(false);
+          }
+        }}
+        className={`flex h-10 items-center gap-2 rounded-xl border px-4 text-[12px] font-bold transition-colors disabled:opacity-50 ${isRecordingPaused
+          ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+          : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+        }`}
+      >
+        {pauseActionPending ? (
+          <FiRefreshCw size={14} className="animate-spin" />
+        ) : isRecordingPaused ? (
+          <FiPlay size={14} className="fill-current" />
+        ) : (
+          <FiPause size={14} className="fill-current" />
+        )}
+        <span>{pauseActionPending ? "Updating..." : isRecordingPaused ? "Resume Recording" : "Pause Recording"}</span>
+      </button>
+
+      <button
+        type="button"
+        disabled={stopping || pauseActionPending}
+        onClick={async () => {
+          if (stopping) return;
+          setStopping(true);
+          try {
+            if (typeof stopRecording === "function") {
+              await stopRecording();
+            }
+          } finally {
+            setStopping(false);
+          }
+        }}
+        className="flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 text-[12px] font-bold text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+      >
+        {stopping ? (
+          <>
+            <FiRefreshCw size={14} className="animate-spin" />
+            <span>Stopping...</span>
+          </>
+        ) : (
+          <>
+            <FiSquare size={14} className="fill-current" />
+            <span>Stop Recording</span>
+          </>
+        )}
+      </button>
+    </div>
+  ) : (
+    <button
+      type="button"
+      disabled={startDisabled}
+      onClick={async () => {
+        await start();
+      }}
+      className="flex h-10 items-center justify-center gap-2 rounded-xl bg-red-600 px-6 text-[12px] font-bold text-white shadow-md transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <FiDisc size={15} />
+      <span>Start Recording</span>
+      <span className="ml-1 rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-black uppercase tracking-widest text-white">
+        REC
+      </span>
+    </button>
+  );
+
+  const formattedFilenamePreview = (activeConfig.fileName || "{channel}_{date}_{time}")
+    .replace("{channel}", (sourceName || "source").replace(/[^a-zA-Z0-9_-]/g, "_"))
+    .replace("{date}", new Date().toISOString().slice(0, 10))
+    .replace("{time}", new Date().toTimeString().slice(0, 8).replace(/:/g, "-"))
+    + `.${activeFormats[0] || "mp4"}`;
+
   return (
     <div className="space-y-4">
-      {/* PRESETS TOOLBAR: Define, Load, Set Default, Delete, Save, Manage Presets */}
+      {/* PRESETS TOOLBAR & MAIN CONTENT */}
       {isPresetLocked ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 shadow-xs dark:border-emerald-900/60 dark:bg-emerald-950/20">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
-              <FiCheckCircle size={15} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                Preset loaded · configuration locked
-              </p>
-              <p className="truncate text-[12px] font-extrabold text-slate-900 dark:text-white">
-                {loadedPreset?.name || "Recording preset"}
-              </p>
+        <div className="space-y-4">
+          {/* Locked Preset Toolbar Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5 shadow-xs dark:border-emerald-900/60 dark:bg-emerald-950/20">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
+                <FiLock size={15} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  Preset loaded · locked mode
+                </p>
+                <p className="truncate text-[13px] font-extrabold text-slate-900 dark:text-white">
+                  {loadedPreset?.name || "Recording preset"}
+                </p>
+              </div>
             </div>
-          </div>
 
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-emerald-200 bg-white px-3 py-2 dark:border-emerald-900/60 dark:bg-[#1E1130]">
-            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
-              Enable editing
-            </span>
-            <span className="relative inline-flex items-center">
-              <input
-                type="checkbox"
-                checked={presetEditingEnabled}
-                onChange={(event) => setPresetEditorVisible(event.target.checked)}
-                className="peer sr-only"
-              />
-              <span className="h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-violet-600 dark:bg-slate-700" />
-              <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
-            </span>
-          </label>
-        </div>
-      ) : (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
-        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-300">
-              <FiSliders size={14} />
-            </span>
-            <span className="text-[12px] font-extrabold uppercase tracking-wider text-slate-800 dark:text-white">
-              Recording Preset:
-            </span>
-          </div>
-
-          <div className="relative min-w-[260px] max-w-[380px]">
-            <select
-              value={selectedPresetId}
-              onChange={(e) => handleLoadPreset(e.target.value)}
-              className="h-8 w-full appearance-none rounded-lg border border-slate-200 bg-[#F8F7FA] px-3 pr-8 text-[11px] font-bold text-slate-800 outline-none focus:border-violet-600 dark:bg-[#25163C] dark:border-[#371F59] dark:text-white"
-            >
-              <optgroup label="Broadcast Standards & Defaults">
-                {savedPresets
-                  .filter((p) => DEFAULT_PRESETS.some((dp) => dp.id === p.id))
-                  .map((p) => (
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="relative min-w-[200px] max-w-[280px]">
+                <select
+                  value={selectedPresetId}
+                  onChange={(e) => handleLoadPreset(e.target.value)}
+                  className="h-8 w-full appearance-none rounded-lg border border-emerald-200 bg-white px-3 pr-8 text-[11px] font-bold text-slate-800 outline-none focus:border-violet-600 dark:bg-[#25163C] dark:border-emerald-900/60 dark:text-white"
+                >
+                  {savedPresets.map((p) => (
                     <option key={p.id} value={p.id}>
                       {defaultPresetId === p.id ? `★ ${p.name} (Default)` : p.name}
                     </option>
                   ))}
-              </optgroup>
-              {savedPresets.filter(
-                (p) => !DEFAULT_PRESETS.some((dp) => dp.id === p.id),
-              ).length > 0 && (
-                <optgroup label="User Custom Presets">
-                  {savedPresets
-                    .filter(
-                      (p) => !DEFAULT_PRESETS.some((dp) => dp.id === p.id),
-                    )
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {defaultPresetId === p.id ? `★ ${p.name} (Default)` : p.name}
-                      </option>
-                    ))}
-                </optgroup>
-              )}
-            </select>
-            <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-              <FiChevronDown size={14} />
-            </div>
-          </div>
+                </select>
+                <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <FiChevronDown size={14} />
+                </div>
+              </div>
 
-          {/* Load Preset Button */}
-          <button
-            type="button"
-            onClick={() => handleLoadPreset(selectedPresetId)}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
-            title="Load preset and store active configuration in database"
-          >
-            <FiUpload size={12} /> Load Preset
-          </button>
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-1.5 dark:border-emerald-900/60 dark:bg-[#1E1130]">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                  Enable editing
+                </span>
+                <span className="relative inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={presetEditingEnabled}
+                    onChange={(event) => setPresetEditorVisible(event.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="h-4 w-8 rounded-full bg-slate-300 transition peer-checked:bg-violet-600 dark:bg-slate-700" />
+                  <span className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+                </span>
+              </label>
 
-          {/* Set / Toggle Default Preset Button */}
-          <button
-            type="button"
-            onClick={() => handleSetDefaultPreset(selectedPresetId)}
-            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold transition ${
-              defaultPresetId === selectedPresetId
-                ? "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:border-amber-700 dark:text-amber-300"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-300"
-            }`}
-            title={defaultPresetId === selectedPresetId ? "Default preset (Click to unset)" : "Set as default preset in database"}
-          >
-            <FiStar
-              size={13}
-              className={defaultPresetId === selectedPresetId ? "text-amber-500 fill-amber-500" : "text-slate-400"}
-            />
-            {defaultPresetId === selectedPresetId ? "Default" : "Set Default"}
-          </button>
-
-          {/* Delete / Remove Selected Preset Button */}
-          <button
-            type="button"
-            onClick={() => {
-              const current = savedPresets.find((p) => p.id === selectedPresetId);
-              if (
-                current &&
-                window.confirm(`Are you sure you want to delete preset "${current.name}" from database?`)
-              ) {
-                handleDeletePreset(selectedPresetId);
-              }
-            }}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300"
-            title="Remove/delete currently selected preset from database"
-          >
-            <FiTrash2 size={12} /> Delete Preset
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {loadedPresetId && (
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 dark:border-violet-800 dark:bg-violet-950/40">
-              <span className="text-[10px] font-bold text-violet-700 dark:text-violet-300">
-                Enable editing
-              </span>
-              <span className="relative inline-flex items-center">
-                <input
-                  type="checkbox"
-                  checked={presetEditingEnabled}
-                  onChange={(event) => setPresetEditorVisible(event.target.checked)}
-                  className="peer sr-only"
-                />
-                <span className="h-4 w-8 rounded-full bg-slate-300 transition peer-checked:bg-violet-600 dark:bg-slate-700" />
-                <span className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
-              </span>
-            </label>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              setSetupNameInput(`${sourceName} Setup`);
-              setSaveSetupModalOpen(true);
-            }}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 text-[11px] font-bold text-white shadow-xs hover:bg-violet-700 transition-colors"
-          >
-            <FiSave size={12} /> Save Preset
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setManagePresetsOpen(true)}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
-          >
-            <FiFolder size={12} /> Manage Presets
-          </button>
-        </div>
-      </div>
-      )}
-
-      {/* Top 2-Column Split: Left Stepper Navigation + Right Main Signal Detection & Confidence Preview */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* Left Column: Interactive Workflow Stepper */}
-        {!isPresetLocked && (
-        <div className="lg:col-span-4 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-2">
-          {workflowSteps.map((step) => {
-            const isActive = activeStep === step.number;
-            return (
               <button
                 type="button"
-                key={step.number}
-                onClick={step.onClick}
-                className={`w-full flex items-center justify-between gap-3 rounded-xl p-3 text-left transition-all duration-150 select-none ${
-                  isActive
-                    ? "border-2 border-violet-600 bg-violet-50/60 shadow-xs dark:bg-violet-950/30 dark:border-violet-500"
-                    : "border border-transparent hover:bg-slate-50 hover:border-slate-200 dark:hover:bg-[#25163C] dark:hover:border-[#371F59]"
-                }`}
+                onClick={() => openSavePresetModal()}
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 text-[11px] font-bold text-white shadow-xs transition-colors"
+                title="Modify loaded preset or save as new preset"
               >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
-                      isActive
-                        ? "bg-violet-600 text-white shadow-xs"
-                        : step.completed
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
-                          : "bg-slate-100 text-slate-500 dark:bg-[#2A1744] dark:text-[#B9A5CD]"
-                    }`}
-                  >
-                    {step.number}
-                  </div>
-                  <div>
-                    <h4
-                      className={`text-[13px] font-bold leading-tight ${isActive ? "text-violet-900 dark:text-violet-200" : "text-slate-800 dark:text-[#F1EAFA]"}`}
-                    >
-                      {step.title}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-tight mt-0.5">
-                      {step.desc}
-                    </p>
-                  </div>
-                </div>
-
-                {step.completed && (
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-                    <FiCheck size={12} strokeWidth={3} />
-                  </div>
-                )}
+                <FiSave size={12} /> Save / Modify
               </button>
-            );
-          })}
-        </div>
-        )}
 
-        {/* Right Column: 2. SIGNAL DETECTION & PREVIEW */}
-        <div
-          ref={workflowWorkspaceRef}
-          className={`scroll-mt-4 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-3 ${isPresetLocked ? "lg:col-span-12" : "lg:col-span-8"}`}
-        >
-          {/* Header */}
-          {!isPresetLocked && (
-          <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2.5 dark:border-[#371F59]">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
-                {activeStep}.{" "}
-                {workflowSteps.find((step) => step.number === activeStep)
-                  ?.title || "Signal Detection"}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                  signalDetected && !previewError
-                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
-                    : previewing
-                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
-                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                }`}
+              <button
+                type="button"
+                onClick={() => setManagePresetsOpen(true)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-emerald-900/60 dark:text-slate-200"
               >
-                <span
-                  className={`h-2 w-2 rounded-full ${signalDetected && !previewError ? "bg-emerald-500 animate-pulse" : previewing ? "bg-amber-500 animate-pulse" : "bg-slate-400"}`}
-                />
-                {signalDetected && !previewError
-                  ? "Signal Detected"
-                  : previewing
-                    ? "Preview Active · Detecting Metadata"
-                  : previewStarting
-                    ? "Detecting..."
-                    : "Standby / Ready"}
-              </span>
+                <FiFolder size={12} /> Manage
+              </button>
             </div>
           </div>
-          )}
 
-          {/* Sub-grid: Left Details & Specs + Right Live Confidence Monitor */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
-            {/* Left Details (REAL HARDWARE TELEMETRY) */}
-            {!isPresetLocked && (
-            <div className={`${activeStep === 2 ? "md:col-span-5" : "md:col-span-7"} flex flex-col justify-between space-y-3`}>
-              <div
-                ref={workflowInlinePanelRef}
-                className={activeStep === 4 || activeStep === 5 ? "block" : "hidden"}
-              />
-
-              {activeStep === 1 && (
-                <section ref={deviceSetupRef} className="scroll-mt-4 rounded-xl border border-violet-300 bg-violet-50/60 p-3.5 dark:border-[#51306F] dark:bg-[#25163C]">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="flex items-start gap-2.5">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-600 text-white">
-                        <FiTv size={15} />
-                      </span>
-                      <div>
-                        <h3 className="text-[12px] font-extrabold text-slate-900 dark:text-white">
-                          Capture Device &amp; Signal Input
-                        </h3>
-                        <p className="mt-0.5 text-[10px] text-slate-500 dark:text-[#B9A5CD]">
-                          Choose the source that will feed the confidence preview.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void refreshDevices()}
-                      disabled={devicesLoading}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 text-[10px] font-bold text-violet-700 disabled:opacity-50 dark:border-violet-800 dark:bg-[#1E1130] dark:text-violet-300"
-                    >
-                      <FiRefreshCw size={11} className={devicesLoading ? "animate-spin" : ""} />
-                      Refresh
-                    </button>
+          {/* 2-Column Split: Left Recording Details & Controls + Right Medium Confidence Preview */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+            {/* Left Column: Filename, Recording Details & Action Controls */}
+            <div className="lg:col-span-5 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3.5">
+              <div className="space-y-3">
+                {/* Filename Template Input & Live Preview */}
+                <div className="rounded-xl border border-slate-200 bg-[#F8F7FA] p-3 dark:bg-[#25163C] dark:border-[#371F59] space-y-1.5">
+                  <Label>
+                    Recording Filename Template
+                    <input
+                      type="text"
+                      value={activeConfig.fileName || ""}
+                      onChange={(event) => patch({ fileName: event.target.value })}
+                      className={inputClass}
+                      placeholder="{channel}_{date}_{time}"
+                    />
+                  </Label>
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-[#B9A5CD] pt-0.5">
+                    <span>Generated File:</span>
+                    <span className="font-mono font-bold text-violet-600 dark:text-violet-300 truncate max-w-[220px]" title={formattedFilenamePreview}>
+                      {formattedFilenamePreview}
+                    </span>
                   </div>
-
-                  <div className="mt-3 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-[#371F59] dark:bg-[#211335]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSourceType("device");
-                        patch({ sourceType: "device" });
-                      }}
-                      className={`rounded-md px-2 py-1.5 text-[10px] font-bold transition ${sourceType === "device" ? "bg-violet-600 text-white" : "text-slate-600 dark:text-[#B9A5CD]"}`}
-                    >
-                      Capture Device
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSourceType("ingest");
-                        patch({ sourceType: "ingest" });
-                      }}
-                      className={`rounded-md px-2 py-1.5 text-[10px] font-bold transition ${sourceType === "ingest" ? "bg-violet-600 text-white" : "text-slate-600 dark:text-[#B9A5CD]"}`}
-                    >
-                      Live Ingest Stream
-                    </button>
-                  </div>
-
-                  {sourceType === "device" ? (
-                    <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-                      <Label>
-                        Video Device
-                        <select value={videoDevice} onChange={(event) => setVideoDevice(event.target.value)} className={selectClass}>
-                          <option value="">Select video hardware…</option>
-                          {videoDevices.map((device) => <option key={device} value={device}>{device}</option>)}
-                        </select>
-                      </Label>
-                      <Label>
-                        Audio Device
-                        <select value={audioDevice} onChange={(event) => setAudioDevice(event.target.value)} className={selectClass}>
-                          <option value="">Select audio hardware…</option>
-                          {audioDevices.map((device) => <option key={device} value={device}>{device}</option>)}
-                        </select>
-                      </Label>
-                      <Label>
-                        Video Input
-                        <select value={activeConfig.videoInput || "hdmi"} onChange={(event) => patch({ videoInput: event.target.value })} className={selectClass}>
-                          <option value="hdmi">HDMI Input</option>
-                          <option value="sdi">SDI Input</option>
-                          <option value="optical_sdi">Optical SDI</option>
-                          <option value="component">Component Video</option>
-                          <option value="composite">Composite Video</option>
-                        </select>
-                      </Label>
-                      <Label>
-                        Signal Standard
-                        <select
-                          value={activeConfig.formatCode || ""}
-                          onChange={(event) => {
-                            const formatCode = event.target.value;
-                            const format = (deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS).find((item) => item.code === formatCode);
-                            patch({ formatCode, ...(format ? { resolution: format.resolution, framerate: Number(format.fps) } : { resolution: "source" }) });
-                          }}
-                          className={selectClass}
-                        >
-                          <option value="">Auto Detect Format</option>
-                          {(deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS).map((format) => (
-                            <option key={format.code} value={format.code}>{format.description || format.code} · {format.resolution} @ {format.fps} fps</option>
-                          ))}
-                        </select>
-                      </Label>
-                      <Label>
-                        Resolution
-                        <select value={activeConfig.resolution || "source"} onChange={(event) => patch({ resolution: event.target.value })} className={selectClass}>
-                          <option value="source">Follow detected signal</option>
-                          <option value="3840x2160">3840×2160 UHD</option>
-                          <option value="1920x1080">1920×1080 HD</option>
-                          <option value="1280x720">1280×720 HD</option>
-                          <option value="720x576">720×576 PAL</option>
-                          <option value="720x480">720×480 NTSC</option>
-                        </select>
-                      </Label>
-                      <Label>
-                        Frame Rate
-                        <select value={activeConfig.framerate || 50} onChange={(event) => patch({ framerate: Number(event.target.value) })} className={selectClass}>
-                          {[23.976, 24, 25, 29.97, 30, 50, 59.94, 60].map((rate) => <option key={rate} value={rate}>{rate} fps</option>)}
-                        </select>
-                      </Label>
-                      <Label>
-                        Pixel Format
-                        <select value={activeConfig.pixelFormat || "yuv420p"} onChange={(event) => patch({ pixelFormat: event.target.value as IngestRecordingOptions["pixelFormat"] })} className={selectClass}>
-                          <option value="yuv420p">YUV420P</option>
-                          <option value="yuv422p">YUV422P</option>
-                          <option value="yuv444p">YUV444P</option>
-                        </select>
-                      </Label>
-                      <Label>
-                        Audio Channels
-                        <select value={activeConfig.audioChannels || 2} onChange={(event) => patch({ audioChannels: Number(event.target.value) })} className={selectClass}>
-                          <option value={1}>Mono · 1 channel</option>
-                          <option value={2}>Stereo · 2 channels</option>
-                          <option value={6}>Surround · 6 channels</option>
-                          <option value={8}>Embedded · 8 channels</option>
-                        </select>
-                      </Label>
-                      <Label>
-                        Audio Sample Rate
-                        <select value={activeConfig.sampleRate || 48000} onChange={(event) => patch({ sampleRate: Number(event.target.value) })} className={selectClass}>
-                          <option value={44100}>44.1 kHz</option>
-                          <option value={48000}>48 kHz</option>
-                          <option value={96000}>96 kHz</option>
-                        </select>
-                      </Label>
-                    </div>
-                  ) : (
-                    <div className="mt-3">
-                      <Label>
-                        Active Ingest Stream
-                        <select value={selectedStreamKey} onChange={(event) => setSelectedStreamKey(event.target.value)} className={selectClass}>
-                          <option value="">Select incoming stream key…</option>
-                          {Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || "live"})</option>)}
-                        </select>
-                      </Label>
-                    </div>
-                  )}
-
-                  <div className="mt-3 flex flex-wrap items-end gap-2.5 border-t border-slate-200 pt-3 dark:border-[#371F59]">
-                    <div className="min-w-[220px] flex-1">
-                      <Label>
-                        Recording Filename Template
-                        <input type="text" value={activeConfig.fileName || ""} onChange={(event) => patch({ fileName: event.target.value })} className={inputClass} />
-                      </Label>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={previewStarting || (sourceType === "device" ? !videoDevice && !audioDevice : !selectedStreamKey)}
-                      onClick={() => {
-                        setActiveStep(2);
-                        void startSourcePreview();
-                      }}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white disabled:opacity-40"
-                    >
-                      <FiActivity size={12} /> Apply &amp; Detect
-                    </button>
-                  </div>
-                </section>
-              )}
-
-              {activeStep === 3 && (
-                <section className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-[#371F59] dark:bg-[#25163C]/60">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">Output Containers</h3>
-                      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-[#B9A5CD]">Select one or more simultaneous recording outputs.</p>
-                    </div>
-                    <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">{activeFormats.length} selected</span>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {formatOptions.map((format) => {
-                      const selected = activeFormats.includes(format.id);
-                      return (
-                        <button type="button" key={format.id} disabled={format.available === false} title={format.warning} onClick={() => toggleFormat(format.id)} className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${selected ? "border-violet-600 bg-white ring-1 ring-violet-500 dark:bg-violet-950/30" : "border-slate-200 bg-white dark:border-[#371F59] dark:bg-[#1E1130]"}`}>
-                          <span className="flex items-center justify-between gap-2"><strong className="text-[12px] text-slate-900 dark:text-white">{format.label}</strong>{selected && <FiCheckCircle className="text-violet-600" size={14} />}</span>
-                          <span className="mt-1 block text-[10px] text-slate-500 dark:text-[#B9A5CD]">{format.desc}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button type="button" onClick={() => showWorkflowStep(4)} disabled={!activeFormats.length} className="mt-3 h-9 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white disabled:opacity-40">Continue to Encoding</button>
-                </section>
-              )}
-
-              {activeStep === 6 && (
-                <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
-                  <div className="flex items-start gap-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-600 text-white"><FiCheckCircle size={17} /></span>
-                    <div>
-                      <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">Ready to Record</h3>
-                      <p className="mt-0.5 text-[10px] text-slate-600 dark:text-emerald-200/80">Review the source and output settings before recording.</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {[
-                      ["Source", sourceName],
-                      ["Signal", resolvedSignalStatus],
-                      ["Resolution", resolvedResolution],
-                      ["Profile", selectedProfileObj?.name || "Custom profile"],
-                      ["Formats", activeFormats.join(", ").toUpperCase()],
-                      ["Destination", activeConfig.storagePath || "Not configured"],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-lg border border-emerald-200/80 bg-white p-2.5 dark:border-emerald-900/60 dark:bg-[#1E1130]">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">{label}</span>
-                        <p className="mt-1 truncate text-[11px] font-bold text-slate-900 dark:text-white" title={String(value)}>{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {activeStep === 2 && (<>
-              {/* Device Header Card */}
-              <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 dark:bg-[#25163C] dark:border-[#371F59]">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
-                  <FiTv size={18} />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h4
-                    className="truncate text-[13px] font-bold text-slate-900 dark:text-white"
-                    title={sourceName}
+
+                {/* Device & Signal Details */}
+                <div className="space-y-1.5 text-[11px]">
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Capture Device</span>
+                    <span className="font-bold text-slate-800 dark:text-white truncate max-w-[170px]" title={sourceName}>
+                      {sourceName}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Signal Port</span>
+                    <span className="font-mono text-slate-700 dark:text-[#F1EAFA]">
+                      {resolvedInputPort}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Signal Standard</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                      {resolvedSignalStandard}
+                      {signalDetected && <FiCheck size={12} className="text-emerald-500" />}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Resolution &amp; Rate</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-white">
+                      {resolvedResolution} @ {resolvedFramerate}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Profile &amp; Codec</span>
+                    <span className="font-bold text-slate-800 dark:text-white">
+                      {activeConfig.videoCodec?.toUpperCase()} · {activeConfig.videoBitrate ? `${Math.round(activeConfig.videoBitrate / 1000)} Mbps` : "Auto"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Container Format</span>
+                    <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
+                      {activeFormats.join(", ").toUpperCase()}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Destination Path</span>
+                    <span className="font-mono text-[10px] text-slate-700 dark:text-slate-300 truncate max-w-[170px]" title={activeConfig.storagePath || PROJECT_RECORDINGS_PATH}>
+                      {activeConfig.storagePath || PROJECT_RECORDINGS_PATH}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-slate-500 dark:text-[#B9A5CD]">Storage Status</span>
+                    <span className={`font-bold ${storageStatus?.isFull ? "text-rose-600" : "text-emerald-600 dark:text-emerald-400"}`}>
+                      {storageStatus ? `${storageStatus.availableFmt} free (${storageStatus.usePercent.toFixed(1)}%)` : "Available"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Real-time Recording Timer Component */}
+                <RecordingElapsedTimer
+                  recordings={activeRecordings}
+                  title="Recording Timer & Details"
+                  compact
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 border-t border-slate-200 dark:border-[#371F59] space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {previewControl}
+                  <div className="flex-1 min-w-[160px]">
+                    {recordingControls}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Medium-Sized Video Preview */}
+            <div className="lg:col-span-7 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2.5 dark:border-[#371F59] mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                      <FiTv size={13} />
+                    </span>
+                    <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">
+                      Live Confidence Preview
+                    </h3>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                      signalDetected && !previewError
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                        : previewing
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    }`}
                   >
-                    {sourceName}
-                  </h4>
-                  <p className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 uppercase">
-                    {resolvedInputPort}
-                  </p>
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        signalDetected && !previewError ? "bg-emerald-500 animate-pulse" : previewing ? "bg-amber-500 animate-pulse" : "bg-slate-400"
+                      }`}
+                    />
+                    {signalDetected && !previewError
+                      ? "Signal Detected"
+                      : previewing
+                        ? "Preview Active"
+                        : previewStarting
+                          ? "Detecting..."
+                          : "Standby / Ready"}
+                  </span>
                 </div>
+
+                {/* Video Player Box with Medium Size Constraint */}
+                <div className="relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800 shadow-inner max-w-full">
+                  <KashtrixMediaPlayer
+                    src={
+                      previewing || isRecordingActive
+                        ? activeHlsUrl ||
+                          (devicePreviewIdRef.current
+                            ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8`
+                            : undefined)
+                        : undefined
+                    }
+                    title={sourceName}
+                    isLive={true}
+                    isRecording={isRecordingActive}
+                    showAudioMeter={true}
+                    hasSignal={(previewing || isRecordingActive) && signalDetected && !previewError}
+                    signalLabel={
+                      sourceType === "device"
+                        ? "Hardware Input Feed"
+                        : "Active Live Ingest"
+                    }
+                    resolution={resolvedResolution}
+                    framerate={resolvedFramerate}
+                    onResolutionDetected={(res, fps) => {
+                      if (res) setDetectedResolution(res);
+                      if (fps) setDetectedFramerate(fps);
+                    }}
+                    onRefresh={() => {
+                      void startSourcePreview();
+                    }}
+                  />
+
+                  {/* Status Overlay Badges */}
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10 pointer-events-none">
+                    <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
+                      Preview
+                    </span>
+                    <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
+                      {resolvedResolution}
+                    </span>
+                    <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
+                      16:9
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-[#371F59]/50 text-[11px] text-slate-500 dark:text-[#B9A5CD]">
+                <span>Live confidence monitor for <strong className="text-slate-800 dark:text-white">{sourceName}</strong></span>
                 <button
                   type="button"
-                  onClick={openDeviceSetup}
-                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 dark:bg-[#1E1130] dark:border-[#371F59] dark:text-slate-200"
+                  onClick={() => setPresetEditorVisible(true)}
+                  className="font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400"
                 >
-                  Change
+                  Configure Settings &rarr;
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* PRESETS TOOLBAR: Define, Load, Set Default, Delete, Save, Manage Presets */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-300">
+                  <FiSliders size={14} />
+                </span>
+                <span className="text-[12px] font-extrabold uppercase tracking-wider text-slate-800 dark:text-white">
+                  Recording Preset:
+                </span>
+              </div>
 
-              {/* Signal Specifications List (DYNAMIC REAL DATA) */}
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Signal Standard
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                    {resolvedSignalStandard}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Resolution
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                    {resolvedResolution}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Frame Rate
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                    {resolvedFramerate}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Pixel Format
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                    {resolvedPixelFormat}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Audio Channels
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                    {resolvedAudioChannels}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Audio Sample Rate
-                  </span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                    {resolvedAudioSampleRate}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-slate-500 dark:text-[#B9A5CD]">
-                    Signal Status
-                  </span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                    {resolvedSignalStatus}
-                    <FiCheck size={12} className="text-emerald-500" />
-                  </span>
+              <div className="relative min-w-[260px] max-w-[380px]">
+                <select
+                  value={selectedPresetId}
+                  onChange={(e) => handleLoadPreset(e.target.value)}
+                  className="h-8 w-full appearance-none rounded-lg border border-slate-200 bg-[#F8F7FA] px-3 pr-8 text-[11px] font-bold text-slate-800 outline-none focus:border-violet-600 dark:bg-[#25163C] dark:border-[#371F59] dark:text-white"
+                >
+                  <optgroup label="Broadcast Standards & Defaults">
+                    {savedPresets
+                      .filter((p) => DEFAULT_PRESETS.some((dp) => dp.id === p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {defaultPresetId === p.id ? `★ ${p.name} (Default)` : p.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                  {savedPresets.filter(
+                    (p) => !DEFAULT_PRESETS.some((dp) => dp.id === p.id),
+                  ).length > 0 && (
+                    <optgroup label="User Custom Presets">
+                      {savedPresets
+                        .filter(
+                          (p) => !DEFAULT_PRESETS.some((dp) => dp.id === p.id),
+                        )
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {defaultPresetId === p.id ? `★ ${p.name} (Default)` : p.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+                <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <FiChevronDown size={14} />
                 </div>
               </div>
 
-              {/* Re-detect Button */}
+              {/* Load Preset Button */}
+              <button
+                type="button"
+                onClick={() => handleLoadPreset(selectedPresetId)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
+                title="Load preset and store active configuration in database"
+              >
+                <FiUpload size={12} /> Load Preset
+              </button>
+
+              {/* Set / Toggle Default Preset Button */}
+              <button
+                type="button"
+                onClick={() => handleSetDefaultPreset(selectedPresetId)}
+                className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-bold transition ${
+                  defaultPresetId === selectedPresetId
+                    ? "border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:border-amber-700 dark:text-amber-300"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-300"
+                }`}
+                title={defaultPresetId === selectedPresetId ? "Default preset (Click to unset)" : "Set as default preset in database"}
+              >
+                <FiStar
+                  size={13}
+                  className={defaultPresetId === selectedPresetId ? "text-amber-500 fill-amber-500" : "text-slate-400"}
+                />
+                {defaultPresetId === selectedPresetId ? "Default" : "Set Default"}
+              </button>
+
+              {/* Delete / Remove Selected Preset Button */}
               <button
                 type="button"
                 onClick={() => {
-                  refreshDevices();
-                  void startSourcePreview();
+                  const current = savedPresets.find((p) => p.id === selectedPresetId);
+                  if (
+                    current &&
+                    window.confirm(`Are you sure you want to delete preset "${current.name}" from database?`)
+                  ) {
+                    handleDeletePreset(selectedPresetId);
+                  }
                 }}
-                disabled={previewStarting || devicesLoading}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 transition-colors"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300"
+                title="Remove/delete currently selected preset from database"
               >
-                <FiRefreshCw
-                  size={12}
-                  className={
-                    previewStarting || devicesLoading ? "animate-spin" : ""
-                  }
-                />
-                Re-detect Signal
+                <FiTrash2 size={12} /> Delete Preset
               </button>
-              </>)}
             </div>
-            )}
 
-            {/* Right Live Confidence Monitor & VU Meters */}
-            <div className={`${isPresetLocked ? "md:col-span-12" : activeStep === 2 ? "md:col-span-7" : "md:col-span-5"} flex flex-col justify-between space-y-2`}>
-              <div className="relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800 shadow-inner">
-                {/* Confidence Player */}
-                <KashtrixMediaPlayer
-                  src={
-                    previewing || isRecordingActive
-                      ? activeHlsUrl ||
-                        (devicePreviewIdRef.current
-                          ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8`
-                          : undefined)
-                      : undefined
-                  }
-                  title={sourceName}
-                  isLive={true}
-                  isRecording={isRecordingActive}
-                  showAudioMeter={true}
-                  hasSignal={(previewing || isRecordingActive) && signalDetected && !previewError}
-                  signalLabel={
-                    sourceType === "device"
-                      ? "Hardware Input Feed"
-                      : "Active Live Ingest"
-                  }
-                  resolution={resolvedResolution}
-                  framerate={resolvedFramerate}
-                  onResolutionDetected={(res, fps) => {
-                    if (res) setDetectedResolution(res);
-                    if (fps) setDetectedFramerate(fps);
-                  }}
-                  onRefresh={() => {
-                    void startSourcePreview();
-                  }}
-                />
+            <div className="flex items-center gap-2">
+              {loadedPresetId && (
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 dark:border-violet-800 dark:bg-violet-950/40">
+                  <span className="text-[10px] font-bold text-violet-700 dark:text-violet-300">
+                    Enable editing
+                  </span>
+                  <span className="relative inline-flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={presetEditingEnabled}
+                      onChange={(event) => setPresetEditorVisible(event.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <span className="h-4 w-8 rounded-full bg-slate-300 transition peer-checked:bg-violet-600 dark:bg-slate-700" />
+                    <span className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+                  </span>
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSetupNameInput(`${sourceName} Setup`);
+                  setSaveSetupModalOpen(true);
+                }}
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 text-[11px] font-bold text-white shadow-xs hover:bg-violet-700 transition-colors"
+              >
+                <FiSave size={12} /> Save Preset
+              </button>
 
-                {/* Status Overlay Badges */}
-                <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10 pointer-events-none">
-                  <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
-                    Preview
+              <button
+                type="button"
+                onClick={() => setManagePresetsOpen(true)}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
+              >
+                <FiFolder size={12} /> Manage Presets
+              </button>
+            </div>
+          </div>
+
+          {/* Stepper + Workspace */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+            {/* Left Column: Interactive Workflow Stepper */}
+            <div className="lg:col-span-4 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-2">
+              {workflowSteps.map((step) => {
+                const isActive = activeStep === step.number;
+                return (
+                  <button
+                    type="button"
+                    key={step.number}
+                    onClick={step.onClick}
+                    className={`w-full flex items-center justify-between gap-3 rounded-xl p-3 text-left transition-all duration-150 select-none ${
+                      isActive
+                        ? "border-2 border-violet-600 bg-violet-50/60 shadow-xs dark:bg-violet-950/30 dark:border-violet-500"
+                        : "border border-transparent hover:bg-slate-50 hover:border-slate-200 dark:hover:bg-[#25163C] dark:hover:border-[#371F59]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
+                          isActive
+                            ? "bg-violet-600 text-white shadow-xs"
+                            : step.completed
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
+                              : "bg-slate-100 text-slate-500 dark:bg-[#2A1744] dark:text-[#B9A5CD]"
+                        }`}
+                      >
+                        {step.number}
+                      </div>
+                      <div>
+                        <h4
+                          className={`text-[13px] font-bold leading-tight ${isActive ? "text-violet-900 dark:text-violet-200" : "text-slate-800 dark:text-[#F1EAFA]"}`}
+                        >
+                          {step.title}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-tight mt-0.5">
+                          {step.desc}
+                        </p>
+                      </div>
+                    </div>
+
+                    {step.completed && (
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                        <FiCheck size={12} strokeWidth={3} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right Column: Signal Detection & Workspace */}
+            <div
+              ref={workflowWorkspaceRef}
+              className="lg:col-span-8 scroll-mt-4 rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] space-y-3"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-[#E8DFF0] pb-2.5 dark:border-[#371F59]">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                    {activeStep}.{" "}
+                    {workflowSteps.find((step) => step.number === activeStep)
+                      ?.title || "Signal Detection"}
                   </span>
-                  <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
-                    {resolvedResolution}
-                  </span>
-                  <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
-                    16:9
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                      signalDetected && !previewError
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                        : previewing
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full ${signalDetected && !previewError ? "bg-emerald-500 animate-pulse" : previewing ? "bg-amber-500 animate-pulse" : "bg-slate-400"}`}
+                    />
+                    {signalDetected && !previewError
+                      ? "Signal Detected"
+                      : previewing
+                        ? "Preview Active · Detecting Metadata"
+                      : previewStarting
+                        ? "Detecting..."
+                        : "Standby / Ready"}
                   </span>
                 </div>
               </div>
 
-              {!isPresetLocked && (<p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
-                Confidence preview monitor shows live feed from {sourceName}.
-                Ensure video and audio levels look correct before recording.
-              </p>)}
+              {/* Sub-grid: Left Details & Specs + Right Live Confidence Monitor */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                {/* Left Details (REAL HARDWARE TELEMETRY) */}
+                <div className={`${activeStep === 2 ? "md:col-span-5" : "md:col-span-7"} flex flex-col justify-between space-y-3`}>
+                  <div
+                    ref={workflowInlinePanelRef}
+                    className={activeStep === 4 || activeStep === 5 ? "block" : "hidden"}
+                  />
 
-              <RecordingElapsedTimer
-                recordings={activeRecordings}
-                title="Recording Timer & Details"
-                compact
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+                  {activeStep === 1 && (
+                    <section ref={deviceSetupRef} className="scroll-mt-4 rounded-xl border border-violet-300 bg-violet-50/60 p-3.5 dark:border-[#51306F] dark:bg-[#25163C]">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-600 text-white">
+                            <FiTv size={15} />
+                          </span>
+                          <div>
+                            <h3 className="text-[12px] font-extrabold text-slate-900 dark:text-white">
+                              Capture Device &amp; Signal Input
+                            </h3>
+                            <p className="mt-0.5 text-[10px] text-slate-500 dark:text-[#B9A5CD]">
+                              Choose the source that will feed the confidence preview.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void refreshDevices()}
+                          disabled={devicesLoading}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 text-[10px] font-bold text-violet-700 disabled:opacity-50 dark:border-violet-800 dark:bg-[#1E1130] dark:text-violet-300"
+                        >
+                          <FiRefreshCw size={11} className={devicesLoading ? "animate-spin" : ""} />
+                          Refresh
+                        </button>
+                      </div>
 
-      {/* Bottom 4-Card Workflow Matrix Grid */}
-      {false && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* 3. RECORDING PROFILE (Full options display including Max Bitrate) */}
-        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between">
-              <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
-                3. Recording Profile
-              </h4>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
-              Select a profile or customize
-            </p>
+                      <div className="mt-3 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-[#371F59] dark:bg-[#211335]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSourceType("device");
+                            patch({ sourceType: "device" });
+                          }}
+                          className={`rounded-md px-2 py-1.5 text-[10px] font-bold transition ${sourceType === "device" ? "bg-violet-600 text-white" : "text-slate-600 dark:text-[#B9A5CD]"}`}
+                        >
+                          Capture Device
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSourceType("ingest");
+                            patch({ sourceType: "ingest" });
+                          }}
+                          className={`rounded-md px-2 py-1.5 text-[10px] font-bold transition ${sourceType === "ingest" ? "bg-violet-600 text-white" : "text-slate-600 dark:text-[#B9A5CD]"}`}
+                        >
+                          Live Ingest Stream
+                        </button>
+                      </div>
 
-            {/* Profile Dropdown */}
-            <div className="relative mt-2.5">
-              <select
-                value={profileId}
-                onChange={(e) => applyProfile(e.target.value)}
-                className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 pr-8 text-[12px] font-bold text-slate-900 focus:border-violet-600 focus:outline-none dark:bg-[#25163C] dark:border-[#371F59] dark:text-white"
-              >
-                <option value="source-default">
-                  Broadcast Master HD (1080p)
-                </option>
-                <option value="custom">Custom Recording Profile</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-                <FiChevronDown size={14} />
-              </div>
-            </div>
-
-            {/* Profile Key-Value Specs (Including Max Bitrate & CRF) */}
-            <div className="mt-3 space-y-1.5 text-[11px]">
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Video Codec
-                </span>
-                <span className="font-mono font-bold text-slate-800 dark:text-white">
-                  {activeConfig.videoCodec === "hevc"
-                    ? "H.265 / HEVC"
-                    : activeConfig.videoCodec === "v210"
-                      ? "V210 10-bit 4:2:2"
-                      : activeConfig.videoCodec === "mpeg2video"
-                        ? "MPEG-2 4:2:2"
-                        : "H.264 NVENC"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Bitrate Mode
-                </span>
-                <span className="font-mono font-bold text-slate-800 dark:text-white">
-                  {(activeConfig.rateControl || "cbr").toUpperCase()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Target Bitrate
-                </span>
-                <span className="font-mono font-bold text-slate-800 dark:text-white">
-                  {activeConfig.videoBitrate
-                    ? `${Math.round(activeConfig.videoBitrate / 1000)} Mbps`
-                    : "Uncompressed"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Max Bitrate
-                </span>
-                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
-                  {activeConfig.maxBitrate
-                    ? `${Math.round(activeConfig.maxBitrate / 1000)} Mbps`
-                    : "Not applicable"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Preset / Quality
-                </span>
-                <span className="font-mono font-bold text-slate-800 dark:text-white">
-                  {activeConfig.preset || "fast"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Keyframe Interval
-                </span>
-                <span className="font-mono font-bold text-slate-800 dark:text-white">
-                  {Math.round(
-                    (activeConfig.gopSize || 60) /
-                      (activeConfig.framerate || 30),
-                  )}{" "}
-                  sec (GOP {activeConfig.gopSize || 60})
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => showWorkflowStep(4)}
-            className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 transition-colors"
-          >
-            <FiEdit3 size={12} /> Edit Profile &amp; Advanced Options
-          </button>
-        </div>
-
-        {/* 4. OUTPUT FORMAT */}
-        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
-          <div>
-            <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
-              4. Output Format
-            </h4>
-            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
-              Choose container &amp; stream type
-            </p>
-
-            {/* Interactive 2x3 Tiles Grid */}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {formatOptions.map((fmt) => {
-                const isSelected = activeFormats.includes(fmt.id);
-                return (
-                  <button
-                    type="button"
-                    key={fmt.id}
-                    disabled={fmt.available === false}
-                    title={fmt.warning}
-                    onClick={() => toggleFormat(fmt.id)}
-                    className={`relative flex flex-col items-start justify-center rounded-xl border p-2.5 text-left transition-all duration-150 select-none disabled:cursor-not-allowed disabled:opacity-45 ${
-                      isSelected
-                        ? "border-violet-600 bg-violet-50/70 text-violet-950 shadow-2xs dark:bg-violet-950/40 dark:border-violet-500 dark:text-violet-200 ring-1 ring-violet-600"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200"
-                    }`}
-                  >
-                    <div className="flex w-full items-center justify-between">
-                      <span className="text-[12px] font-extrabold uppercase">
-                        {fmt.label}
-                      </span>
-                      {isSelected && (
-                        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-600 text-white">
-                          <FiCheck size={10} strokeWidth={3} />
+                      {sourceType === "device" ? (
+                        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                          <Label>
+                            Video Device
+                            <select value={videoDevice} onChange={(event) => setVideoDevice(event.target.value)} className={selectClass}>
+                              <option value="">Select video hardware…</option>
+                              {videoDevices.map((device) => <option key={device} value={device}>{device}</option>)}
+                            </select>
+                          </Label>
+                          <Label>
+                            Audio Device
+                            <select value={audioDevice} onChange={(event) => setAudioDevice(event.target.value)} className={selectClass}>
+                              <option value="">Select audio hardware…</option>
+                              {audioDevices.map((device) => <option key={device} value={device}>{device}</option>)}
+                            </select>
+                          </Label>
+                          <Label>
+                            Video Input
+                            <select value={activeConfig.videoInput || "hdmi"} onChange={(event) => patch({ videoInput: event.target.value })} className={selectClass}>
+                              <option value="hdmi">HDMI Input</option>
+                              <option value="sdi">SDI Input</option>
+                              <option value="optical_sdi">Optical SDI</option>
+                              <option value="component">Component Video</option>
+                              <option value="composite">Composite Video</option>
+                            </select>
+                          </Label>
+                          <Label>
+                            Signal Standard
+                            <select
+                              value={activeConfig.formatCode || ""}
+                              onChange={(event) => {
+                                const formatCode = event.target.value;
+                                const format = (deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS).find((item) => item.code === formatCode);
+                                patch({ formatCode, ...(format ? { resolution: format.resolution, framerate: Number(format.fps) } : { resolution: "source" }) });
+                              }}
+                              className={selectClass}
+                            >
+                              <option value="">Auto Detect Format</option>
+                              {(deviceFormats[videoDevice] || DEFAULT_DECKLINK_FORMATS).map((format) => (
+                                <option key={format.code} value={format.code}>{format.description || format.code} · {format.resolution} @ {format.fps} fps</option>
+                              ))}
+                            </select>
+                          </Label>
+                          <Label>
+                            Resolution
+                            <select value={activeConfig.resolution || "source"} onChange={(event) => patch({ resolution: event.target.value })} className={selectClass}>
+                              <option value="source">Follow detected signal</option>
+                              <option value="3840x2160">3840×2160 UHD</option>
+                              <option value="1920x1080">1920×1080 HD</option>
+                              <option value="1280x720">1280×720 HD</option>
+                              <option value="720x576">720×576 PAL</option>
+                              <option value="720x480">720×480 NTSC</option>
+                            </select>
+                          </Label>
+                          <Label>
+                            Frame Rate
+                            <select value={activeConfig.framerate || 50} onChange={(event) => patch({ framerate: Number(event.target.value) })} className={selectClass}>
+                              {[23.976, 24, 25, 29.97, 30, 50, 59.94, 60].map((rate) => <option key={rate} value={rate}>{rate} fps</option>)}
+                            </select>
+                          </Label>
+                          <Label>
+                            Pixel Format
+                            <select value={activeConfig.pixelFormat || "yuv420p"} onChange={(event) => patch({ pixelFormat: event.target.value as IngestRecordingOptions["pixelFormat"] })} className={selectClass}>
+                              <option value="yuv420p">YUV420P</option>
+                              <option value="yuv422p">YUV422P</option>
+                              <option value="yuv444p">YUV444P</option>
+                            </select>
+                          </Label>
+                          <Label>
+                            Audio Channels
+                            <select value={activeConfig.audioChannels || 2} onChange={(event) => patch({ audioChannels: Number(event.target.value) })} className={selectClass}>
+                              <option value={1}>Mono · 1 channel</option>
+                              <option value={2}>Stereo · 2 channels</option>
+                              <option value={6}>Surround · 6 channels</option>
+                              <option value={8}>Embedded · 8 channels</option>
+                            </select>
+                          </Label>
+                          <Label>
+                            Audio Sample Rate
+                            <select value={activeConfig.sampleRate || 48000} onChange={(event) => patch({ sampleRate: Number(event.target.value) })} className={selectClass}>
+                              <option value={44100}>44.1 kHz</option>
+                              <option value={48000}>48 kHz</option>
+                              <option value={96000}>96 kHz</option>
+                            </select>
+                          </Label>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          <Label>
+                            Active Ingest Stream
+                            <select value={selectedStreamKey} onChange={(event) => setSelectedStreamKey(event.target.value)} className={selectClass}>
+                              <option value="">Select incoming stream key…</option>
+                              {Object.entries(streams).map(([key, value]: [string, any]) => <option key={key} value={key}>{value.name || key} ({value.app || "live"})</option>)}
+                            </select>
+                          </Label>
                         </div>
                       )}
+
+                      <div className="mt-3 flex flex-wrap items-end gap-2.5 border-t border-slate-200 pt-3 dark:border-[#371F59]">
+                        <div className="min-w-[220px] flex-1">
+                          <Label>
+                            Recording Filename Template
+                            <input type="text" value={activeConfig.fileName || ""} onChange={(event) => patch({ fileName: event.target.value })} className={inputClass} />
+                          </Label>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={previewStarting || (sourceType === "device" ? !videoDevice && !audioDevice : !selectedStreamKey)}
+                          onClick={() => {
+                            setActiveStep(2);
+                            void startSourcePreview();
+                          }}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white disabled:opacity-40"
+                        >
+                          <FiActivity size={12} /> Apply &amp; Detect
+                        </button>
+                      </div>
+                    </section>
+                  )}
+
+                  {activeStep === 3 && (
+                    <section className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-[#371F59] dark:bg-[#25163C]/60">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">Output Containers</h3>
+                          <p className="mt-0.5 text-[10px] text-slate-500 dark:text-[#B9A5CD]">Select one or more simultaneous recording outputs.</p>
+                        </div>
+                        <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300">{activeFormats.length} selected</span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {formatOptions.map((format) => {
+                          const selected = activeFormats.includes(format.id);
+                          return (
+                            <button type="button" key={format.id} disabled={format.available === false} title={format.warning} onClick={() => toggleFormat(format.id)} className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${selected ? "border-violet-600 bg-white ring-1 ring-violet-500 dark:bg-violet-950/30" : "border-slate-200 bg-white dark:border-[#371F59] dark:bg-[#1E1130]"}`}>
+                              <span className="flex items-center justify-between gap-2"><strong className="text-[12px] text-slate-900 dark:text-white">{format.label}</strong>{selected && <FiCheckCircle className="text-violet-600" size={14} />}</span>
+                              <span className="mt-1 block text-[10px] text-slate-500 dark:text-[#B9A5CD]">{format.desc}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button type="button" onClick={() => showWorkflowStep(4)} disabled={!activeFormats.length} className="mt-3 h-9 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white disabled:opacity-40">Continue to Encoding</button>
+                    </section>
+                  )}
+
+                  {activeStep === 6 && (
+                    <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-600 text-white"><FiCheckCircle size={17} /></span>
+                        <div>
+                          <h3 className="text-[13px] font-extrabold text-slate-900 dark:text-white">Ready to Record</h3>
+                          <p className="mt-0.5 text-[10px] text-slate-600 dark:text-emerald-200/80">Review the source and output settings before recording.</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {[
+                          ["Source", sourceName],
+                          ["Signal", resolvedSignalStatus],
+                          ["Resolution", resolvedResolution],
+                          ["Profile", selectedProfileObj?.name || "Custom profile"],
+                          ["Formats", activeFormats.join(", ").toUpperCase()],
+                          ["Destination", activeConfig.storagePath || "Not configured"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-lg border border-emerald-200/80 bg-white p-2.5 dark:border-emerald-900/60 dark:bg-[#1E1130]">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-[#B9A5CD]">{label}</span>
+                            <p className="mt-1 truncate text-[11px] font-bold text-slate-900 dark:text-white" title={String(value)}>{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {activeStep === 2 && (<>
+                  {/* Device Header Card */}
+                  <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 dark:bg-[#25163C] dark:border-[#371F59]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                      <FiTv size={18} />
                     </div>
-                    <span className="text-[9px] font-medium text-slate-500 dark:text-[#B9A5CD] mt-0.5 truncate w-full">
-                      {fmt.desc}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h4
+                        className="truncate text-[13px] font-bold text-slate-900 dark:text-white"
+                        title={sourceName}
+                      >
+                        {sourceName}
+                      </h4>
+                      <p className="text-[10px] font-semibold text-violet-600 dark:text-violet-300 uppercase">
+                        {resolvedInputPort}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openDeviceSetup}
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-100 dark:bg-[#1E1130] dark:border-[#371F59] dark:text-slate-200"
+                    >
+                      Change
+                    </button>
+                  </div>
+
+                  {/* Signal Specifications List (DYNAMIC REAL DATA) */}
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Signal Standard
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                        {resolvedSignalStandard}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Resolution
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                        {resolvedResolution}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Frame Rate
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                        {resolvedFramerate}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Pixel Format
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                        {resolvedPixelFormat}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Audio Channels
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                        {resolvedAudioChannels}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Audio Sample Rate
+                      </span>
+                      <span className="font-mono font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                        {resolvedAudioSampleRate}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-slate-500 dark:text-[#B9A5CD]">
+                        Signal Status
+                      </span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        {resolvedSignalStatus}
+                        <FiCheck size={12} className="text-emerald-500" />
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Re-detect Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      refreshDevices();
+                      void startSourcePreview();
+                    }}
+                    disabled={previewStarting || devicesLoading}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 transition-colors"
+                  >
+                    <FiRefreshCw
+                      size={12}
+                      className={
+                        previewStarting || devicesLoading ? "animate-spin" : ""
+                      }
+                    />
+                    Re-detect Signal
                   </button>
-                );
-              })}
+                  </>)}
+                </div>
 
-              {/* Custom Tile */}
+                {/* Right Live Confidence Monitor & VU Meters */}
+                <div className={`${activeStep === 2 ? "md:col-span-7" : "md:col-span-5"} flex flex-col justify-between space-y-2`}>
+                  <div className="relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800 shadow-inner">
+                    {/* Confidence Player */}
+                    <KashtrixMediaPlayer
+                      src={
+                        previewing || isRecordingActive
+                          ? activeHlsUrl ||
+                            (devicePreviewIdRef.current
+                              ? `/hls/device-preview/${devicePreviewIdRef.current}/index.m3u8`
+                              : undefined)
+                          : undefined
+                      }
+                      title={sourceName}
+                      isLive={true}
+                      isRecording={isRecordingActive}
+                      showAudioMeter={true}
+                      hasSignal={(previewing || isRecordingActive) && signalDetected && !previewError}
+                      signalLabel={
+                        sourceType === "device"
+                          ? "Hardware Input Feed"
+                          : "Active Live Ingest"
+                      }
+                      resolution={resolvedResolution}
+                      framerate={resolvedFramerate}
+                      onResolutionDetected={(res, fps) => {
+                        if (res) setDetectedResolution(res);
+                        if (fps) setDetectedFramerate(fps);
+                      }}
+                      onRefresh={() => {
+                        void startSourcePreview();
+                      }}
+                    />
+
+                    {/* Status Overlay Badges */}
+                    <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10 pointer-events-none">
+                      <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
+                        Preview
+                      </span>
+                      <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
+                        {resolvedResolution}
+                      </span>
+                      <span className="rounded bg-black/70 backdrop-blur-xs px-2 py-0.5 text-[10px] font-mono font-bold text-white">
+                        16:9
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
+                    Confidence preview monitor shows live feed from {sourceName}.
+                    Ensure video and audio levels look correct before recording.
+                  </p>
+
+                  <RecordingElapsedTimer
+                    recordings={activeRecordings}
+                    title="Recording Timer & Details"
+                    compact
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Action Bar: Preview, Save Setup, Record Triggers */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59]">
+            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2.5">
+              <div className="min-w-[260px] flex-1 sm:min-w-[340px]">
+                <Label>
+                  Recording Filename Template
+                  <input
+                    type="text"
+                    value={activeConfig.fileName || ""}
+                    onChange={(event) => patch({ fileName: event.target.value })}
+                    className={inputClass}
+                    placeholder="{channel}_{date}_{time}"
+                  />
+                </Label>
+                <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 dark:text-[#B9A5CD]">
+                  <span>Generated File:</span>
+                  <span className="font-mono font-bold text-violet-600 dark:text-violet-300 truncate max-w-[260px]" title={formattedFilenamePreview}>
+                    {formattedFilenamePreview}
+                  </span>
+                </div>
+              </div>
+
+              {/* Start / Stop Preview Button */}
+              {previewControl}
+
+              {/* Save Setup Preset Button */}
               <button
                 type="button"
-                onClick={() => showWorkflowStep(4)}
-                className="flex flex-col items-start justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-2.5 text-left hover:bg-slate-100 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-300"
+                onClick={() => {
+                  setSetupNameInput(`${sourceName} Preset`);
+                  setSaveSetupModalOpen(true);
+                }}
+                title="Save recording configuration and profile as preset"
+                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[12px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2D1A45] transition-colors"
               >
-                <span className="text-[12px] font-extrabold text-slate-700 dark:text-slate-200">
-                  Custom
-                </span>
-                <span className="text-[9px] font-medium text-slate-500 dark:text-[#B9A5CD] mt-0.5">
-                  Advanced settings
-                </span>
+                <FiSave size={14} />
+                <span>Save Preset</span>
               </button>
             </div>
-          </div>
 
-          <span className="text-[10px] text-slate-400 dark:text-[#8E78A6] italic text-center">
-            Multiple formats write simultaneously in parallel
-          </span>
-        </div>
-
-        {/* 5. DESTINATION */}
-        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
-          <div>
-            <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
-              5. Destination
-            </h4>
-            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
-              Where recordings will be saved
-            </p>
-
-            {/* Destination Selector */}
-            <div className="mt-2.5 flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2 dark:bg-[#25163C] dark:border-[#371F59]">
-              <div className="flex items-center gap-2 min-w-0">
-                <FiHardDrive className="text-violet-600 shrink-0" size={14} />
-                <span className="truncate text-[12px] font-bold text-slate-900 dark:text-white">
-                  {storageStatus
-                    ? `Local Disk (${storageStatus.mount})`
-                    : "Local Disk (checking…)"}
-                </span>
-              </div>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
-                  storageStatus?.isFull
-                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                    : !storageStatus
-                      ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                }`}
-              >
-                {storageStatus?.isFull
-                  ? "Critical"
-                  : storageStatus
-                    ? "Healthy"
-                    : "Checking"}
-              </span>
-            </div>
-
-            {/* Storage Meter */}
-            <div className="mt-3 space-y-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
-                  {storageStatus
-                    ? `${storageStatus.usedFmt} used of ${storageStatus.sizeFmt}`
-                    : "Storage status unavailable"}
-                </span>
-                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
-                  {storageStatus
-                    ? `${storageStatus.usePercent.toFixed(1)}%`
-                    : "—"}
-                </span>
-              </div>
-
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    storageStatus?.isFull ? "bg-rose-600" : "bg-violet-600"
-                  }`}
-                  style={{
-                    width: `${Math.min(100, Math.max(0, storageStatus?.usePercent ?? 0))}%`,
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-[10px] pt-1">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Free Space
-                </span>
-                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                  {storageStatus ? `${storageStatus.availableFmt} free` : "—"}
-                </span>
-              </div>
-            </div>
-
-            {/* Recording Path */}
-            <div className="mt-2.5 flex items-center justify-between text-[11px]">
-              <div className="min-w-0 flex-1">
-                <span className="text-[10px] text-slate-400 dark:text-[#B9A5CD] block">
-                  Recording Path
-                </span>
-                <span className="font-mono text-[11px] text-slate-800 dark:text-white truncate block">
-                  {storageStatus?.path ||
-                    activeConfig.storagePath ||
-                    PROJECT_RECORDINGS_PATH}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => showWorkflowStep(5)}
-                className="text-[11px] font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400"
-              >
-                Change
-              </button>
+            {/* Start / Stop Recording Master Button */}
+            <div>
+              {recordingControls}
             </div>
           </div>
-
-          {/* Toggle Daily Folders */}
-          <div className="flex items-center justify-between border-t border-slate-100 pt-2 dark:border-[#371F59]/50">
-            <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200">
-              Auto create daily folders
-            </span>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoCreateDailyFolders}
-                onChange={(e) => setAutoCreateDailyFolders(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-violet-600" />
-            </label>
-          </div>
-        </div>
-
-        {/* 6. READY TO RECORD */}
-        <div className="rounded-2xl border border-[#E8DFF0] bg-white p-4 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] flex flex-col justify-between space-y-3">
-          <div>
-            <h4 className="text-[12px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">
-              6. Ready to Record
-            </h4>
-            <p className="text-[11px] text-slate-500 dark:text-[#B9A5CD] mt-0.5">
-              Review your settings
-            </p>
-
-            {/* Summary List */}
-            <div className="mt-3 space-y-1.5 text-[11px]">
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Device
-                </span>
-                <span
-                  className="font-bold text-slate-800 dark:text-white truncate max-w-[130px]"
-                  title={sourceName}
-                >
-                  {sourceName}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Signal
-                </span>
-                <span className="font-mono font-bold text-slate-800 dark:text-white truncate max-w-[130px]">
-                  {resolvedResolution}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Profile
-                </span>
-                <span className="font-bold text-slate-800 dark:text-white truncate max-w-[130px]">
-                  {selectedProfileObj?.name || "Broadcast HD (1080p)"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-[#371F59]/50">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Format
-                </span>
-                <span className="font-bold text-slate-800 dark:text-white truncate max-w-[130px]">
-                  {activeFormats.join(", ").toUpperCase()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1">
-                <span className="text-slate-500 dark:text-[#B9A5CD]">
-                  Max Bitrate
-                </span>
-                <span className="font-mono font-bold text-violet-700 dark:text-violet-300">
-                  {activeConfig.maxBitrate
-                    ? `${Math.round(activeConfig.maxBitrate / 1000)} Mbps`
-                    : "25 Mbps"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5 text-[11px] text-emerald-900 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-300 flex items-center gap-2">
-            <FiCheckCircle size={14} className="text-emerald-600 shrink-0" />
-            <span className="font-semibold leading-tight">
-              All set! You can start preview or begin recording.
-            </span>
-          </div>
-        </div>
         </div>
       )}
-
-      {/* Bottom Action Bar: Preview, Save Setup, Record Triggers */}
-      <div className={`flex flex-wrap justify-between gap-3 rounded-2xl border border-[#E8DFF0] bg-white p-3.5 shadow-xs dark:bg-[#1E1130] dark:border-[#371F59] ${isPresetLocked ? "items-end" : "items-center"}`}>
-        <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2.5">
-          {isPresetLocked && (
-            <div className="min-w-[260px] flex-1 sm:min-w-[340px]">
-              <Label>
-                Recording Filename Template
-                <input
-                  type="text"
-                  value={activeConfig.fileName || ""}
-                  onChange={(event) => patch({ fileName: event.target.value })}
-                  className={inputClass}
-                  placeholder="{channel}_{date}_{time}"
-                />
-              </Label>
-            </div>
-          )}
-
-          {/* Start / Stop Preview Button */}
-          <button
-            type="button"
-            onClick={() => {
-              if (previewing) {
-                void stopPreview(true);
-              } else {
-                void startSourcePreview();
-              }
-            }}
-            disabled={
-              previewing
-                ? previewStopping
-                : startDisabled || previewStarting || previewStopping
-            }
-            className="flex h-10 items-center gap-2 rounded-xl border border-violet-300 bg-white px-4 text-[12px] font-bold text-violet-700 hover:bg-violet-50 dark:bg-[#25163C] dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/50 disabled:opacity-40 transition-colors"
-          >
-            {previewStopping ? (
-              <>
-                <FiRefreshCw size={14} className="animate-spin" />
-                <span>Stopping Preview…</span>
-              </>
-            ) : previewStarting ? (
-              <>
-                <FiRefreshCw size={14} className="animate-spin" />
-                <span>Connecting Preview…</span>
-              </>
-            ) : previewing ? (
-              <>
-                <FiEyeOff size={14} />
-                <span>Stop Preview</span>
-              </>
-            ) : (
-              <>
-                <FiPlay size={14} />
-                <span>Start Preview</span>
-              </>
-            )}
-          </button>
-
-          {/* Save Setup Preset Button */}
-          {!isPresetLocked && (
-          <button
-            type="button"
-            onClick={() => {
-              setSetupNameInput(`${sourceName} Preset`);
-              setSaveSetupModalOpen(true);
-            }}
-            title="Save recording configuration and profile as preset"
-            className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[12px] font-bold text-slate-700 hover:bg-slate-50 dark:bg-[#25163C] dark:border-[#371F59] dark:text-slate-200 dark:hover:bg-[#2D1A45] transition-colors"
-          >
-            <FiSave size={14} />
-            <span>Save Preset</span>
-          </button>
-          )}
-        </div>
-
-        {/* Start / Stop Recording Master Button */}
-        <div>
-          {isRecordingActive ? (
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className={`flex items-center gap-2 rounded-xl px-4 py-2 text-[12px] font-bold text-white shadow-md ${isRecordingPaused ? "bg-amber-600" : "bg-rose-600"}`}>
-                <span className={`h-2.5 w-2.5 rounded-full bg-white ${isRecordingPaused ? "" : "animate-pulse"}`} />
-                <span>{isRecordingPaused ? "RECORDING PAUSED" : "RECORDING IN PROGRESS"}</span>
-                <span className={`font-mono text-[13px] px-2 py-0.5 rounded tracking-wider ${isRecordingPaused ? "bg-amber-700/80" : "bg-rose-700/80"}`}>
-                  {Math.floor(recordingElapsed / 3600)
-                    .toString()
-                    .padStart(2, "0")}
-                  :
-                  {Math.floor((recordingElapsed % 3600) / 60)
-                    .toString()
-                    .padStart(2, "0")}
-                  :
-                  {Math.floor(recordingElapsed % 60)
-                    .toString()
-                    .padStart(2, "0")}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                disabled={pauseActionPending || stopping}
-                onClick={async () => {
-                  if (pauseActionPending || stopping) return;
-                  setPauseActionPending(true);
-                  try {
-                    if (isRecordingPaused) {
-                      await resumeRecording();
-                    } else {
-                      await pauseRecording();
-                    }
-                  } finally {
-                    setPauseActionPending(false);
-                  }
-                }}
-                className={`flex h-10 items-center gap-2 rounded-xl border px-4 text-[12px] font-bold transition-colors disabled:opacity-50 ${isRecordingPaused
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
-                }`}
-              >
-                {pauseActionPending ? (
-                  <FiRefreshCw size={14} className="animate-spin" />
-                ) : isRecordingPaused ? (
-                  <FiPlay size={14} className="fill-current" />
-                ) : (
-                  <FiPause size={14} className="fill-current" />
-                )}
-                <span>{pauseActionPending ? "Updating..." : isRecordingPaused ? "Resume Recording" : "Pause Recording"}</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={stopping || pauseActionPending}
-                onClick={async () => {
-                  if (stopping) return;
-                  setStopping(true);
-                  try {
-                    if (typeof stopRecording === "function") {
-                      await stopRecording();
-                    }
-                  } finally {
-                    setStopping(false);
-                  }
-                }}
-                className="flex h-10 items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 text-[12px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 transition-colors"
-              >
-                {stopping ? (
-                  <>
-                    <FiRefreshCw size={14} className="animate-spin" />
-                    <span>Stopping...</span>
-                  </>
-                ) : (
-                  <>
-                    <FiSquare size={14} className="fill-current" />
-                    <span>Stop Recording</span>
-                  </>
-                )}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={startDisabled}
-              onClick={async () => {
-                await start();
-              }}
-              className="flex h-10 items-center gap-2 rounded-xl bg-red-600 px-6 text-[12px] font-bold text-white shadow-md hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <FiDisc size={15} />
-              <span>Start Recording</span>
-              <span className="rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-black uppercase text-white tracking-widest ml-1">
-                REC
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* ========================================================================= */}
       {/* Legacy device drawer is disabled; configuration now renders inline.       */}
@@ -3501,16 +3476,16 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       </DetailDrawer>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: SAVE SETUP AS PRESET                                             */}
+      {/* MODAL 1: SAVE SETUP AS PRESET / MODIFY PRESET                             */}
       {/* ========================================================================= */}
       <DetailDrawer
-        open={saveSetupModalOpen && !isPresetLocked}
+        open={saveSetupModalOpen}
         onClose={() => setSaveSetupModalOpen(false)}
-        title="Save Recording Preset"
-        subtitle="Save this complete hardware, video profile, and storage configuration"
-        width="max-w-[440px]"
+        title={saveMode === "overwrite" ? "Modify & Save Preset" : "Save as New Preset"}
+        subtitle="Save hardware source, broadcast profile, file template, and default load behavior"
+        width="max-w-[500px]"
         footer={
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-between w-full">
             <button
               type="button"
               onClick={() => setSaveSetupModalOpen(false)}
@@ -3521,36 +3496,124 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             <button
               type="button"
               onClick={handleSavePreset}
-              className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700"
+              className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700 shadow-xs flex items-center gap-1.5"
             >
-              Save Preset
+              <FiSave size={13} />
+              <span>{saveMode === "overwrite" ? "Update Preset in Database" : "Save as New Preset"}</span>
             </button>
           </div>
         }
       >
-        <div className="space-y-3">
-          <Label>
-            Preset Name
-            <input
-              type="text"
-              value={setupNameInput}
-              onChange={(e) => setSetupNameInput(e.target.value)}
-              placeholder="e.g. Master Studio Ingest 1080p50"
-              className={inputClass}
-            />
-          </Label>
+        <div className="space-y-4">
+          {/* Preset Destination Mode Switcher when loadedPresetId exists */}
+          {loadedPresetId && loadedPreset && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-1 dark:bg-[#25163C] dark:border-[#371F59] grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveMode("overwrite");
+                  setSetupNameInput(loadedPreset.name);
+                }}
+                className={`py-2 px-3 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+                  saveMode === "overwrite"
+                    ? "bg-violet-600 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900 dark:text-[#B9A5CD] dark:hover:text-white"
+                }`}
+              >
+                <FiRefreshCw size={12} />
+                <span>Update Loaded Preset</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveMode("create");
+                  setSetupNameInput(`${sourceName} Copy`);
+                }}
+                className={`py-2 px-3 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+                  saveMode === "create"
+                    ? "bg-violet-600 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900 dark:text-[#B9A5CD] dark:hover:text-white"
+                }`}
+              >
+                <FiPlus size={12} />
+                <span>Save as New Preset</span>
+              </button>
+            </div>
+          )}
+
+          {/* Preset Name */}
+          <div>
+            <Label>
+              {saveMode === "overwrite" ? "Preset Name (Rename or Keep)" : "New Preset Name"}
+              <input
+                type="text"
+                value={setupNameInput}
+                onChange={(e) => setSetupNameInput(e.target.value)}
+                placeholder="e.g. Master Studio Ingest 1080p50"
+                className={inputClass}
+              />
+            </Label>
+          </div>
+
+          {/* Default Editing Mode on Load */}
+          <div className="space-y-2">
+            <Label>Default Editing Mode on Load</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setSetupDefaultEditingMode(true)}
+                className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between space-y-1.5 ${
+                  setupDefaultEditingMode
+                    ? "border-violet-600 bg-violet-50/70 dark:bg-violet-950/40 dark:border-violet-500 ring-1 ring-violet-500/20"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:bg-[#25163C] dark:border-[#371F59]"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <FiUnlock size={14} className={setupDefaultEditingMode ? "text-violet-600 dark:text-violet-400" : "text-slate-400"} />
+                    <span className="text-[12px] font-bold text-slate-900 dark:text-white">Enable Editing</span>
+                  </div>
+                  {setupDefaultEditingMode && <FiCheckCircle size={14} className="text-violet-600 dark:text-violet-400" />}
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
+                  Opens in interactive setup mode with full workflow stepper and configuration options available.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSetupDefaultEditingMode(false)}
+                className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between space-y-1.5 ${
+                  !setupDefaultEditingMode
+                    ? "border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/40 dark:border-emerald-500 ring-1 ring-emerald-500/20"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:bg-[#25163C] dark:border-[#371F59]"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <FiLock size={14} className={!setupDefaultEditingMode ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"} />
+                    <span className="text-[12px] font-bold text-slate-900 dark:text-white">Disable Editing (Locked)</span>
+                  </div>
+                  {!setupDefaultEditingMode && <FiCheckCircle size={14} className="text-emerald-600 dark:text-emerald-400" />}
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] leading-snug">
+                  Opens directly in locked broadcast view with left-side controls &amp; medium confidence monitor.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Configuration Summary Pill */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600 dark:bg-[#25163C] dark:border-[#371F59] dark:text-[#B9A5CD] space-y-1">
-            <p className="font-semibold text-slate-800 dark:text-white">
-              Preset will capture:
+            <p className="font-semibold text-slate-800 dark:text-white flex items-center justify-between">
+              <span>Preset Configuration:</span>
+              <span className="text-[10px] uppercase font-bold text-violet-600 dark:text-violet-400">
+                {setupDefaultEditingMode ? "Loads in Editing Mode" : "Loads in Locked Mode"}
+              </span>
             </p>
-            <p>
-              • Source: {sourceName} ({resolvedInputPort})
-            </p>
-            <p>
-              • Profile: {activeConfig.videoCodec?.toUpperCase()} @{" "}
-              {activeConfig.videoBitrate}k (Max: {activeConfig.maxBitrate}k)
-            </p>
-            <p>• Containers: {activeFormats.join(", ").toUpperCase()}</p>
+            <p>• Source: {sourceName} ({resolvedInputPort})</p>
+            <p>• Profile: {activeConfig.videoCodec?.toUpperCase()} @ {activeConfig.videoBitrate}k (Max: {activeConfig.maxBitrate}k)</p>
+            <p>• Containers: {activeFormats.join(", ").toUpperCase()} | Filename: {activeConfig.fileName || "{channel}_{date}_{time}"}</p>
           </div>
         </div>
       </DetailDrawer>
@@ -3559,11 +3622,14 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       {/* MODAL 2: MANAGE RECORDING PRESETS                                         */}
       {/* ========================================================================= */}
       <DetailDrawer
-        open={managePresetsOpen && !isPresetLocked}
-        onClose={() => setManagePresetsOpen(false)}
+        open={managePresetsOpen}
+        onClose={() => {
+          setEditingPresetId(null);
+          setManagePresetsOpen(false);
+        }}
         title="Manage Recording Presets"
-        subtitle="View, load, delete, or set default broadcast recording presets"
-        width="max-w-[560px]"
+        subtitle="View, rename, load, delete, or toggle default load mode for broadcast recording presets"
+        width="max-w-[580px]"
         footer={
           <div className="flex items-center justify-between w-full">
             <button
@@ -3576,7 +3642,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </button>
             <button
               type="button"
-              onClick={() => setManagePresetsOpen(false)}
+              onClick={() => {
+                setEditingPresetId(null);
+                setManagePresetsOpen(false);
+              }}
               className="h-8 rounded-lg bg-violet-600 px-4 text-[11px] font-bold text-white hover:bg-violet-700"
             >
               Done
@@ -3586,38 +3655,87 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       >
         <div className="space-y-3">
           <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD]">
-            Click the <FiStar size={10} className="inline text-amber-500" /> star to set a preset as default — it will automatically load into active recording configuration when the ingest server opens.
+            Click <FiStar size={10} className="inline text-amber-500" /> to set auto-load default. Click the lock/unlock badge to change default editing mode on load. Click <FiEdit3 size={10} className="inline text-violet-500" /> to rename.
           </p>
           {savedPresets.map((preset) => {
             const isBuiltIn = DEFAULT_PRESETS.some((dp) => dp.id === preset.id);
             const isSelected = selectedPresetId === preset.id;
             const isUserDefault = defaultPresetId === preset.id;
+            const isEditing = editingPresetId === preset.id;
+            const isEditingEnabledOnLoad = preset.defaultEditingEnabled !== undefined
+              ? preset.defaultEditingEnabled
+              : (preset.config?.defaultEditingEnabled !== undefined ? preset.config.defaultEditingEnabled : true);
+
             return (
               <div
                 key={preset.id}
-                className={`flex items-center justify-between gap-3 rounded-xl border p-3 transition ${
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3 transition ${
                   isSelected
                     ? "border-violet-600 bg-violet-50/50 dark:bg-violet-950/30 dark:border-violet-500"
                     : "border-slate-200 bg-white dark:bg-[#25163C] dark:border-[#371F59]"
                 }`}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h5 className="font-bold text-[12px] text-slate-900 dark:text-white truncate">
-                      {preset.name}
-                    </h5>
-                    {isBuiltIn && (
-                      <span className="rounded bg-slate-100 text-slate-600 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-slate-800 dark:text-slate-300">
-                        Broadcast
-                      </span>
-                    )}
-                    {isUserDefault && (
-                      <span className="rounded bg-amber-100 text-amber-700 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-amber-900/40 dark:text-amber-300">
-                        ★ Default
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] mt-0.5 truncate">
+                <div className="min-w-0 flex-1 space-y-1">
+                  {isEditing ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={editingPresetName}
+                        onChange={(e) => setEditingPresetName(e.target.value)}
+                        className="h-7 px-2 text-[12px] font-bold rounded border border-violet-400 bg-white dark:bg-[#1E1130] dark:text-white outline-none flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRenamePreset(preset.id, editingPresetName);
+                          if (e.key === "Escape") setEditingPresetId(null);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRenamePreset(preset.id, editingPresetName)}
+                        className="p-1 rounded bg-violet-600 text-white hover:bg-violet-700"
+                        title="Save name"
+                      >
+                        <FiCheck size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingPresetId(null)}
+                        className="p-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-[#371F59] dark:text-slate-300"
+                        title="Cancel"
+                      >
+                        <FiSquare size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h5 className="font-bold text-[12px] text-slate-900 dark:text-white truncate max-w-[220px]">
+                        {preset.name}
+                      </h5>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPresetId(preset.id);
+                          setEditingPresetName(preset.name);
+                        }}
+                        className="text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+                        title="Rename preset"
+                      >
+                        <FiEdit3 size={12} />
+                      </button>
+                      {isBuiltIn && (
+                        <span className="rounded bg-slate-100 text-slate-600 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-slate-800 dark:text-slate-300">
+                          Broadcast
+                        </span>
+                      )}
+                      {isUserDefault && (
+                        <span className="rounded bg-amber-100 text-amber-700 px-1.5 py-0.2 text-[9px] font-bold uppercase dark:bg-amber-900/40 dark:text-amber-300">
+                          ★ Default
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD] truncate">
                     {preset.config?.resolution || "source"} | {preset.config?.videoCodec?.toUpperCase()}{" "}
                     {preset.config?.videoBitrate}k CBR | Max{" "}
                     {preset.config?.maxBitrate}k |{" "}
@@ -3625,7 +3743,22 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Load mode toggle badge */}
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePresetDefaultEditing(preset)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold border transition ${
+                      isEditingEnabledOnLoad
+                        ? "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300"
+                    }`}
+                    title="Click to toggle default editing mode on load (Editable vs Locked)"
+                  >
+                    {isEditingEnabledOnLoad ? <FiUnlock size={10} /> : <FiLock size={10} />}
+                    <span>{isEditingEnabledOnLoad ? "Load: Editable" : "Load: Locked"}</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleSetDefaultPreset(preset.id)}
@@ -3638,6 +3771,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   >
                     <FiStar size={14} className={isUserDefault ? "fill-amber-500 text-amber-500" : ""} />
                   </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -3645,7 +3779,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                       setManagePresetsOpen(false);
                     }}
                     className="rounded-lg bg-violet-50 border border-violet-200 px-2.5 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100 dark:bg-violet-950 dark:border-violet-800 dark:text-violet-300"
-                    title="Load preset and persist to active recording configuration in DB"
+                    title="Load preset into active recording configuration"
                   >
                     Load
                   </button>

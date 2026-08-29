@@ -5401,28 +5401,45 @@ const DEFAULT_RECORDING_PRESETS = [
     },
 ];
 
-const recordingPresetFromRow = row => ({
-    id: row.id,
-    name: row.name,
-    sourceType: row.sourceType,
-    videoDevice: row.videoDevice || '',
-    audioDevice: row.audioDevice || '',
-    selectedStreamKey: row.selectedStreamKey || '',
-    config: JSON.parse(row.configJson || '{}'),
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-});
+const recordingPresetFromRow = row => {
+    let parsedConfig = {};
+    try {
+        parsedConfig = JSON.parse(row.configJson || '{}');
+    } catch {
+        parsedConfig = {};
+    }
+    const defaultEditingEnabled = parsedConfig.defaultEditingEnabled !== undefined ? Boolean(parsedConfig.defaultEditingEnabled) : true;
+    return {
+        id: row.id,
+        name: row.name,
+        sourceType: row.sourceType,
+        videoDevice: row.videoDevice || '',
+        audioDevice: row.audioDevice || '',
+        selectedStreamKey: row.selectedStreamKey || '',
+        defaultEditingEnabled,
+        config: parsedConfig,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+    };
+};
 
-const recordingPresetData = preset => ({
-    id: String(preset.id),
-    name: String(preset.name || preset.id),
-    sourceType: preset.sourceType === 'ingest' ? 'ingest' : 'device',
-    videoDevice: preset.videoDevice || null,
-    audioDevice: preset.audioDevice || null,
-    selectedStreamKey: preset.selectedStreamKey || null,
-    configJson: JSON.stringify(preset.config || {}),
-    ...(preset.createdAt ? { createdAt: new Date(preset.createdAt) } : {}),
-});
+const recordingPresetData = preset => {
+    const defaultEditingEnabled = preset.defaultEditingEnabled !== undefined ? Boolean(preset.defaultEditingEnabled) : (preset.config?.defaultEditingEnabled !== undefined ? Boolean(preset.config.defaultEditingEnabled) : true);
+    const config = {
+        ...(preset.config || {}),
+        defaultEditingEnabled,
+    };
+    return {
+        id: String(preset.id),
+        name: String(preset.name || preset.id),
+        sourceType: preset.sourceType === 'ingest' ? 'ingest' : 'device',
+        videoDevice: preset.videoDevice || null,
+        audioDevice: preset.audioDevice || null,
+        selectedStreamKey: preset.selectedStreamKey || null,
+        configJson: JSON.stringify(config),
+        ...(preset.createdAt ? { createdAt: new Date(preset.createdAt) } : {}),
+    };
+};
 
 const replaceRecordingPresets = async presets => {
     await db.prisma.$transaction([
@@ -5468,6 +5485,11 @@ app.post(['/api/ingest/record/presets/save', '/api/recording/presets/save'], aut
         if (!name) return res.status(400).json({ success: false, error: 'Preset name is required' });
 
         const presetId = String(payload.id || `preset-${Date.now()}`);
+        const defaultEditingEnabled = payload.defaultEditingEnabled !== undefined ? Boolean(payload.defaultEditingEnabled) : (payload.config?.defaultEditingEnabled !== undefined ? Boolean(payload.config.defaultEditingEnabled) : true);
+        const config = {
+            ...(payload.config || {}),
+            defaultEditingEnabled,
+        };
         const newPreset = {
             id: presetId,
             name,
@@ -5475,7 +5497,8 @@ app.post(['/api/ingest/record/presets/save', '/api/recording/presets/save'], aut
             videoDevice: payload.videoDevice || '',
             audioDevice: payload.audioDevice || '',
             selectedStreamKey: payload.selectedStreamKey || '',
-            config: payload.config || {},
+            defaultEditingEnabled,
+            config,
             createdAt: payload.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
