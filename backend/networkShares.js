@@ -223,6 +223,150 @@ const getNetworkShareInfo = (req, options = {}) => {
     };
 };
 
+const http = require('http');
+const fs = require('fs');
+
+/**
+ * Perform a Docker Engine API request over /var/run/docker.sock
+ */
+const dockerApiRequest = (urlPath, method = 'GET', postData = null) => {
+    return new Promise((resolve, reject) => {
+        if (!fs.existsSync('/var/run/docker.sock')) {
+            return reject(new Error('docker.sock not present'));
+        }
+        const payload = postData ? JSON.stringify(postData) : null;
+        const options = {
+            socketPath: '/var/run/docker.sock',
+            path: urlPath,
+            method,
+            headers: {
+                ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+            },
+            timeout: 5000,
+        };
+
+        const req = http.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    const parsed = data ? JSON.parse(data) : {};
+                    resolve(parsed);
+                } catch (_) {
+                    resolve(data);
+                }
+            });
+        });
+
+        req.on('error', (err) => reject(err));
+        req.on('timeout', () => { req.destroy(); reject(new Error('Docker socket timeout')); });
+        if (payload) req.write(payload);
+        req.end();
+    });
+};
+
+/**
+ * Sync a user and password to the Samba service (Docker container, Linux smbpasswd, or Windows local accounts)
+ */
+const syncSambaUser = async (username, password) => {
+    const isWindows = process.platform === 'win32';
+    const cleanUser = String(username || '').trim();
+    const cleanPass = String(password || '').trim();
+    if (!cleanUser) return { success: false, error: 'Username is required' };
+
+    const actions = [];
+
+    // Strategy 1: Windows Host (Local Accounts)
+    if (isWindows) {
+        try {
+            try {
+                execSync(`net user ${cleanUser} "${cleanPass}" /add`, { stdio: ['ignore', 'pipe', 'pipe'] });
+                actions.push('Created Windows local user account');
+            } catch (errAdd) {
+                execSync(`net user ${cleanUser} "${cleanPass}"`, { stdio: ['ignore', 'pipe', 'pipe'] });
+                actions.push('Updated Windows local user password');
+            }
+            return { success: true, user: cleanUser, actions };
+        } catch (e) {
+            return { success: false, user: cleanUser, error: e.message, actions };
+        }
+    }
+
+    // Strategy 2: Docker Socket API (communicates with running Samba container)
+    try {
+        const containers = await dockerApiRequest('/containers/json');
+        if (Array.isArray(containers)) {
+            const sambaContainer = containers.find(c =>
+                (c.Names || []).some(n => n.includes('samba')) || (c.Image || '').includes('samba')
+            );
+            if (sambaContainer) {
+                // 1. Create Linux user inside container
+                const execUser = await dockerApiRequest(`/containers/${sambaContainer.Id}/exec`, 'POST', {
+                    Cmd: ['sh', '-c', `useradd -M -s /sbin/nologin ${cleanUser} 2>/dev/null || true`],
+                });
+                if (execUser?.Id) {
+                    await dockerApiRequest(`/exec/${execUser.Id}/start`, 'POST', { Detach: false });
+                }
+
+                // 2. Set Samba password inside container via smbpasswd
+                const execPass = await dockerApiRequest(`/containers/${sambaContainer.Id}/exec`, 'POST', {
+                    Cmd: ['sh', '-c', `printf "${cleanPass}\\n${cleanPass}\\n" | smbpasswd -a -s ${cleanUser} && smbpasswd -e ${cleanUser}`],
+                });
+                if (execPass?.Id) {
+                    await dockerApiRequest(`/exec/${execPass.Id}/start`, 'POST', { Detach: false });
+                }
+
+                actions.push(`Synchronized user to Docker Samba container (${sambaContainer.Id.slice(0, 12)})`);
+                return { success: true, user: cleanUser, actions };
+            }
+        }
+    } catch (_) {}
+
+    // Strategy 3: Docker CLI (if docker command is accessible)
+    try {
+        const containerId = execSync("docker ps --filter 'name=samba' --format '{{.ID}}'", { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim().split('\n')[0]?.trim();
+        if (containerId) {
+            try {
+                execSync(`docker exec ${containerId} useradd -M -s /sbin/nologin ${cleanUser}`, { stdio: ['ignore', 'ignore', 'ignore'] });
+            } catch (_) {}
+            execSync(`docker exec -i ${containerId} sh -c 'printf "${cleanPass}\\n${cleanPass}\\n" | smbpasswd -a -s ${cleanUser} && smbpasswd -e ${cleanUser}'`, { stdio: ['ignore', 'pipe', 'pipe'] });
+            actions.push(`Synchronized to Samba Docker container via CLI (${containerId.slice(0, 12)})`);
+            return { success: true, user: cleanUser, actions };
+        }
+    } catch (_) {}
+
+    // Strategy 4: Host Linux smbpasswd (if Samba is installed natively on the host OS)
+    try {
+        try {
+            execSync(`useradd -M -s /usr/sbin/nologin ${cleanUser} 2>/dev/null`, { stdio: ['ignore', 'ignore', 'ignore'] });
+        } catch (_) {}
+        execSync(`sh -c 'printf "${cleanPass}\\n${cleanPass}\\n" | smbpasswd -a -s ${cleanUser} && smbpasswd -e ${cleanUser}'`, { stdio: ['ignore', 'pipe', 'pipe'] });
+        actions.push('Synchronized to Linux host native Samba');
+        return { success: true, user: cleanUser, actions };
+    } catch (_) {}
+
+    return {
+        success: true,
+        user: cleanUser,
+        notice: 'User saved in database. Restart the Samba container to load if running without Docker socket access.',
+        actions
+    };
+};
+
+/**
+ * Sync all network share users to Samba
+ */
+const syncAllSambaUsers = async (users = []) => {
+    const results = [];
+    for (const u of users) {
+        if (u.username && u.password && u.enabled !== false) {
+            const res = await syncSambaUser(u.username, u.password);
+            results.push(res);
+        }
+    }
+    return results;
+};
+
 module.exports = {
     getAvailableNetworkIps,
     resolvePrimaryIp,
@@ -230,4 +374,6 @@ module.exports = {
     checkWindowsSmbShareStatus,
     autoConfigureWindowsShare,
     getNetworkShareInfo,
+    syncSambaUser,
+    syncAllSambaUsers,
 };

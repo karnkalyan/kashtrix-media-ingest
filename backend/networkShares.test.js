@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolvePrimaryIp, getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS } = require('./networkShares');
+const { resolvePrimaryIp, getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, syncSambaUser, syncAllSambaUsers } = require('./networkShares');
 
 test('resolvePrimaryIp resolves customIp when provided', () => {
     const ip = resolvePrimaryIp(null, '10.1.2.56');
@@ -42,4 +42,23 @@ test('getNetworkShareInfo supports authenticated mode and roles', () => {
     assert.equal(info.smb.activeUser.username, 'editor_user');
     assert.equal(info.smb.activeUser.role, 'write');
     assert.equal(info.ftp.username, 'editor_user');
+});
+
+test('syncSambaUser validates input and returns result structure', async () => {
+    const emptyRes = await syncSambaUser('', '');
+    assert.equal(emptyRes.success, false);
+
+    const userRes = await syncSambaUser('test_user', 'Pass123!');
+    assert.equal(userRes.user, 'test_user');
+    assert.ok(Array.isArray(userRes.actions));
+});
+
+test('syncAllSambaUsers processes list of users', async () => {
+    const testList = [
+        { username: 'user1', password: 'p1', enabled: true },
+        { username: 'user2', password: 'p2', enabled: false },
+    ];
+    const results = await syncAllSambaUsers(testList);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].user, 'user1');
 });

@@ -39,7 +39,7 @@ const bundledFfmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
-const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare } = require('./networkShares');
+const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare, syncSambaUser, syncAllSambaUsers } = require('./networkShares');
 const { createMediaExplorerMiddleware } = require('./webMediaExplorer');
 const { KashtrixFtpServer } = require('./ftpServer');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
@@ -5353,7 +5353,16 @@ app.post('/api/system/network-share-users', authMiddleware, async (req, res) => 
 
         const updatedUsers = [...currentUsers, newUser];
         await setJsonSetting('network_share_users', updatedUsers);
-        res.json({ success: true, user: newUser, users: updatedUsers });
+
+        // Dynamically synchronize the new user and password into the active Samba service
+        let sambaSync = null;
+        try {
+            sambaSync = await syncSambaUser(username, password);
+        } catch (sambaErr) {
+            console.warn('[NetworkShares] Samba auto-sync warning:', sambaErr.message);
+        }
+
+        res.json({ success: true, user: newUser, users: updatedUsers, sambaSync });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
@@ -5391,7 +5400,18 @@ app.put('/api/system/network-share-users/:id', authMiddleware, async (req, res) 
 
         currentUsers[userIndex] = updatedUser;
         await setJsonSetting('network_share_users', currentUsers);
-        res.json({ success: true, user: updatedUser, users: currentUsers });
+
+        // Dynamically update password in Samba if changed
+        let sambaSync = null;
+        if (password) {
+            try {
+                sambaSync = await syncSambaUser(username, password);
+            } catch (sambaErr) {
+                console.warn('[NetworkShares] Samba auto-sync warning:', sambaErr.message);
+            }
+        }
+
+        res.json({ success: true, user: updatedUser, users: currentUsers, sambaSync });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
@@ -5406,6 +5426,22 @@ app.delete('/api/system/network-share-users/:id', authMiddleware, async (req, re
         res.json({ success: true, users: updatedUsers });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+// Explicit API endpoint to trigger Samba synchronization for all users or a specific user
+app.post(['/api/system/network-share-users/sync-samba', '/api/system/network-shares/sync-samba'], authMiddleware, async (req, res) => {
+    try {
+        const { username, password } = req.body || {};
+        if (username && password) {
+            const syncResult = await syncSambaUser(username, password);
+            return res.json({ success: true, syncResult });
+        }
+        const currentUsers = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        const syncResults = await syncAllSambaUsers(currentUsers);
+        res.json({ success: true, syncResults });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
