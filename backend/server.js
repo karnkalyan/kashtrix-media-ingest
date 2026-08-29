@@ -39,7 +39,7 @@ const bundledFfmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
-const { getNetworkShareInfo } = require('./networkShares');
+const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS } = require('./networkShares');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {
@@ -2016,7 +2016,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
 
         let cmd = overrideCommand || channel.command;
         if (!cmd || cmd.includes('Error: Profile not found') || cmd.startsWith('Error:')) {
-            const dest = channel.destinations?.[0]?.url || channel.outputUrl || 'udp://239.1.1.1:5000?pkt_size=1316';
+            const dest = channel.destinations?.[0]?.url || channel.outputUrl || 'udp://224.2.2.2:5000?pkt_size=1316';
             const inUrl = channel.inputUrl || `http://127.0.0.1:${mediaPort}/live/srt-feed/index.m3u8`;
             const isMpegts = dest.startsWith('udp://') || dest.startsWith('srt://') || dest.startsWith('rtp://');
             const isLive = inUrl.startsWith('http://') || inUrl.startsWith('https://') || inUrl.startsWith('srt://') || inUrl.startsWith('udp://') || inUrl.startsWith('rtmp://');
@@ -5249,12 +5249,14 @@ app.put('/api/ingest/record/config', authMiddleware, async (req, res) => {
     }
 });
 
-// --- Network Media Sharing (SMB / FTP / HTTP) ---
+// --- Network Media Sharing (SMB / FTP / HTTP) & Network Share Users ---
 app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
     try {
         const customIp = await getJsonSetting('custom_network_share_ip', null);
-        const info = getNetworkShareInfo(req, customIp);
-        res.json({ success: true, ...info, customIp });
+        const authMode = await getJsonSetting('network_share_auth_mode', 'anonymous');
+        const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        const info = getNetworkShareInfo(req, { customIp, authMode, users });
+        res.json({ success: true, ...info, customIp, authMode, users });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -5262,10 +5264,114 @@ app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/ap
 
 app.put(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
     try {
-        const customIp = req.body?.customIp ? String(req.body.customIp).trim() : null;
-        await setJsonSetting('custom_network_share_ip', customIp || null);
-        const info = getNetworkShareInfo(req, customIp);
-        res.json({ success: true, ...info, customIp });
+        const customIp = req.body?.customIp !== undefined ? (String(req.body.customIp).trim() || null) : await getJsonSetting('custom_network_share_ip', null);
+        const authMode = req.body?.authMode === 'authenticated' ? 'authenticated' : (req.body?.authMode === 'anonymous' ? 'anonymous' : await getJsonSetting('network_share_auth_mode', 'anonymous'));
+        if (req.body?.customIp !== undefined) await setJsonSetting('custom_network_share_ip', customIp);
+        if (req.body?.authMode !== undefined) await setJsonSetting('network_share_auth_mode', authMode);
+        const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        const info = getNetworkShareInfo(req, { customIp, authMode, users });
+        res.json({ success: true, ...info, customIp, authMode, users });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+// Network Share Users CRUD API
+app.get('/api/system/network-share-users', authMiddleware, async (req, res) => {
+    try {
+        const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        res.json({ success: true, users });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/system/network-share-users', authMiddleware, async (req, res) => {
+    try {
+        const body = req.body || {};
+        const username = String(body.username || '').trim();
+        const password = String(body.password || '').trim();
+        if (!username) return res.status(400).json({ success: false, error: 'Username is required' });
+        if (!password) return res.status(400).json({ success: false, error: 'Password is required' });
+
+        const currentUsers = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        if (currentUsers.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+            return res.status(400).json({ success: false, error: `A network share user with username "${username}" already exists` });
+        }
+
+        const role = ['read', 'write', 'delete', 'update', 'admin'].includes(body.role) ? body.role : 'write';
+        const permissions = {
+            read: body.permissions?.read !== undefined ? Boolean(body.permissions.read) : true,
+            write: body.permissions?.write !== undefined ? Boolean(body.permissions.write) : (role !== 'read'),
+            delete: body.permissions?.delete !== undefined ? Boolean(body.permissions.delete) : (role === 'delete' || role === 'admin'),
+            update: body.permissions?.update !== undefined ? Boolean(body.permissions.update) : (role !== 'read'),
+        };
+
+        const newUser = {
+            id: String(body.id || `nsu-${Date.now()}`),
+            username,
+            password,
+            role,
+            permissions,
+            description: String(body.description || '').trim(),
+            enabled: body.enabled !== false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+
+        const updatedUsers = [...currentUsers, newUser];
+        await setJsonSetting('network_share_users', updatedUsers);
+        res.json({ success: true, user: newUser, users: updatedUsers });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.put('/api/system/network-share-users/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const body = req.body || {};
+        const currentUsers = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        const userIndex = currentUsers.findIndex(u => u.id === id);
+        if (userIndex === -1) return res.status(404).json({ success: false, error: 'Network share user not found' });
+
+        const existing = currentUsers[userIndex];
+        const username = body.username ? String(body.username).trim() : existing.username;
+        const password = body.password ? String(body.password).trim() : existing.password;
+        const role = body.role ? body.role : existing.role;
+        const permissions = body.permissions ? {
+            read: body.permissions.read !== undefined ? Boolean(body.permissions.read) : existing.permissions?.read ?? true,
+            write: body.permissions.write !== undefined ? Boolean(body.permissions.write) : existing.permissions?.write ?? true,
+            delete: body.permissions.delete !== undefined ? Boolean(body.permissions.delete) : existing.permissions?.delete ?? false,
+            update: body.permissions.update !== undefined ? Boolean(body.permissions.update) : existing.permissions?.update ?? true,
+        } : existing.permissions;
+
+        const updatedUser = {
+            ...existing,
+            username,
+            password,
+            role,
+            permissions,
+            description: body.description !== undefined ? String(body.description).trim() : existing.description,
+            enabled: body.enabled !== undefined ? Boolean(body.enabled) : existing.enabled,
+            updatedAt: new Date().toISOString(),
+        };
+
+        currentUsers[userIndex] = updatedUser;
+        await setJsonSetting('network_share_users', currentUsers);
+        res.json({ success: true, user: updatedUser, users: currentUsers });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.delete('/api/system/network-share-users/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const currentUsers = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
+        const updatedUsers = currentUsers.filter(u => u.id !== id);
+        await setJsonSetting('network_share_users', updatedUsers);
+        res.json({ success: true, users: updatedUsers });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }

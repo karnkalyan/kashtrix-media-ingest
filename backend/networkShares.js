@@ -56,36 +56,89 @@ const resolvePrimaryIp = (req, customIp = null) => {
 };
 
 /**
- * Generate full SMB, FTP and Web sharing info for a given IP
+ * Default network share users if none configured
  */
-const getNetworkShareInfo = (req, customIp = null) => {
+const DEFAULT_NETWORK_SHARE_USERS = [
+    {
+        id: 'nsu-media-admin',
+        username: 'media_admin',
+        password: 'Password123!',
+        role: 'admin',
+        permissions: { read: true, write: true, delete: true, update: true },
+        description: 'Full Read/Write/Delete administrator access to media storage',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'nsu-media-editor',
+        username: 'media_editor',
+        password: 'Editor123!',
+        role: 'write',
+        permissions: { read: true, write: true, delete: false, update: true },
+        description: 'Editing workstations (Read, Write & Update files)',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+    },
+    {
+        id: 'nsu-media-viewer',
+        username: 'media_viewer',
+        password: 'Viewer123!',
+        role: 'read',
+        permissions: { read: true, write: false, delete: false, update: false },
+        description: 'Read-only access for playout preview and file ingest review',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+    }
+];
+
+/**
+ * Generate full cross-platform SMB, FTP and Web sharing info
+ */
+const getNetworkShareInfo = (req, options = {}) => {
+    const customIp = options.customIp || null;
+    const authMode = options.authMode || 'anonymous'; // 'anonymous' | 'authenticated'
+    const users = Array.isArray(options.users) && options.users.length > 0 ? options.users : DEFAULT_NETWORK_SHARE_USERS;
+
     const interfaces = getAvailableNetworkIps();
     const primaryIp = resolvePrimaryIp(req, customIp);
     const port = req?.socket?.localPort || process.env.PORT || 3005;
+
+    const activeUser = users.find(u => u.enabled) || users[0] || { username: 'media_admin', password: 'Password123!' };
+    const isAuth = authMode === 'authenticated';
 
     return {
         success: true,
         primaryIp,
         interfaces,
+        authMode, // 'anonymous' | 'authenticated'
+        customIp,
+        users,
         smb: {
             parentPath: `\\\\${primaryIp}\\media`,
             recordingsPath: `\\\\${primaryIp}\\recordings`,
-            runCommand: `\\\\${primaryIp}\\media`,
+            macUrl: `smb://${primaryIp}/media`,
+            linuxMount: `mount -t cifs //${primaryIp}/media /mnt/media -o username=${isAuth ? activeUser.username : 'guest'},password=${isAuth ? '******' : ''}`,
             shareName: 'media',
-            description: 'Windows Network File Share (SMB)',
-            anonymous: true,
-            authRequired: false,
-            instructions: `Press Win + R, paste \\\\${primaryIp}\\media and press Enter to access media files directly without password.`
+            recordingsShareName: 'recordings',
+            description: 'Universal Cross-Platform Network File Share (SMB / CIFS)',
+            anonymous: !isAuth,
+            authRequired: isAuth,
+            activeUser: isAuth ? { username: activeUser.username, role: activeUser.role, permissions: activeUser.permissions } : null,
+            instructions: isAuth
+                ? `Connect to \\\\${primaryIp}\\media using Network Share username and password.`
+                : `Connect to \\\\${primaryIp}\\media directly (Anonymous / Guest access enabled).`
         },
         ftp: {
             url: `ftp://${primaryIp}/media`,
             rootUrl: `ftp://${primaryIp}/`,
             port: 21,
-            anonymous: true,
-            authRequired: false,
-            username: 'anonymous',
-            password: '',
-            instructions: `Connect to ftp://${primaryIp}/media using any FTP client or browser (Anonymous access).`
+            anonymous: !isAuth,
+            authRequired: isAuth,
+            username: isAuth ? activeUser.username : 'anonymous',
+            password: isAuth ? '******' : '',
+            instructions: isAuth
+                ? `Connect to ftp://${primaryIp}/media using assigned Network Share credentials.`
+                : `Connect to ftp://${primaryIp}/media with anonymous login (no password required).`
         },
         http: {
             url: `http://${primaryIp}:${port}/media/recordings`,
@@ -94,9 +147,10 @@ const getNetworkShareInfo = (req, customIp = null) => {
             description: 'Direct HTTP Web Access'
         },
         credentials: {
-            username: 'None (Guest / Anonymous)',
-            password: 'None (No password required)',
-            permissions: 'Read & Write Access'
+            mode: isAuth ? 'User Authentication Required' : 'Anonymous / Guest Access',
+            username: isAuth ? `${users.length} configured users (e.g. ${activeUser.username})` : 'None (Guest / Anonymous)',
+            password: isAuth ? 'Configured per network share user' : 'None (No password required)',
+            permissions: isAuth ? 'Configured per user role (Read, Write, Delete, Update)' : 'Full Read & Write Access'
         }
     };
 };
@@ -104,5 +158,6 @@ const getNetworkShareInfo = (req, customIp = null) => {
 module.exports = {
     getAvailableNetworkIps,
     resolvePrimaryIp,
+    DEFAULT_NETWORK_SHARE_USERS,
     getNetworkShareInfo,
 };

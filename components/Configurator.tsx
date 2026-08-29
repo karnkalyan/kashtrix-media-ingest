@@ -101,7 +101,7 @@ const defaultUrl = (protocol: Protocol, name: string, settings: AppSettings, str
       return `srt://127.0.0.1:9001?mode=caller&latency=200`;
     case Protocol.UDP:
     case Protocol.UDP_DVB:
-      return `udp://224.1.1.2:3000`;
+      return `udp://224.2.2.2:5000?pkt_size=1316`;
     case Protocol.HTTP_TS:
       return `${WEB_ORIGIN}/ts/${slug}.ts`;
     case Protocol.DECKLINK:

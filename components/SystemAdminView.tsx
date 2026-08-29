@@ -26,7 +26,15 @@ import {
   Trash2,
   Edit2,
   Check,
-  X
+  X,
+  Share2,
+  Folder,
+  Key,
+  Users,
+  Lock,
+  Unlock,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import Button from './ui/Button';
 import Modal from './ui/Modal';
@@ -50,6 +58,23 @@ interface SystemAdminViewProps {
   onNavigate?: (tab: string) => void;
 }
 
+interface NetworkShareUser {
+  id: string;
+  username: string;
+  password?: string;
+  role: 'read' | 'write' | 'delete' | 'update' | 'admin';
+  permissions: {
+    read: boolean;
+    write: boolean;
+    delete: boolean;
+    update: boolean;
+  };
+  description?: string;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 type AdminTab =
   | 'physical'
   | 'bonding'
@@ -58,6 +83,7 @@ type AdminTab =
   | 'dns'
   | 'statmux'
   | 'snmp-alarms'
+  | 'network-shares'
   | 'hardware'
   | 'update';
 
@@ -106,6 +132,27 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     trapReceivers: ['', '', ''],
   });
   const [alarms, setAlarms] = useState<AlarmConfigurationItem[]>(DEFAULT_ALARM_RULES as any);
+
+  // Network File Shares & User Access Roles
+  const [networkSharesInfo, setNetworkSharesInfo] = useState<any>(null);
+  const [shareUsers, setShareUsers] = useState<NetworkShareUser[]>([]);
+  const [isShareUserModalOpen, setIsShareUserModalOpen] = useState(false);
+  const [editingShareUser, setEditingShareUser] = useState<NetworkShareUser | null>(null);
+  const [shareUserForm, setShareUserForm] = useState<{
+    username: string;
+    password: string;
+    role: 'read' | 'write' | 'delete' | 'update' | 'admin';
+    permissions: { read: boolean; write: boolean; delete: boolean; update: boolean };
+    description: string;
+    enabled: boolean;
+  }>({
+    username: '',
+    password: '',
+    role: 'write',
+    permissions: { read: true, write: true, delete: false, update: true },
+    description: '',
+    enabled: true,
+  });
 
   // Hardware Monitoring State
   const [hardware, setHardware] = useState<SystemHardwareExtended | null>(null);
@@ -239,17 +286,182 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
     }
   }, [getAuthHeaders]);
 
+  const fetchNetworkShares = useCallback(async () => {
+    try {
+      const res = await fetch('/api/system/network-shares', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setNetworkSharesInfo(data);
+        if (Array.isArray(data.users)) setShareUsers(data.users);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch network share info:', e);
+    }
+  }, [getAuthHeaders]);
+
+  const handleToggleAuthMode = async (mode: 'anonymous' | 'authenticated') => {
+    try {
+      const res = await fetch('/api/system/network-shares', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ authMode: mode })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setNetworkSharesInfo(data);
+        toast.success(mode === 'authenticated' ? 'Network share authentication enabled' : 'Network share anonymous guest mode enabled');
+      } else {
+        toast.error(data.error || 'Failed to update access mode');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Error updating access mode');
+    }
+  };
+
+  const handleUpdateShareCustomIp = async (ip: string) => {
+    try {
+      const res = await fetch('/api/system/network-shares', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ customIp: ip.trim() || null })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setNetworkSharesInfo(data);
+        toast.success(ip.trim() ? `Network share IP set to ${ip.trim()}` : 'Reset to auto-detected network IP');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update network share IP');
+    }
+  };
+
+  const openAddShareUserModal = () => {
+    setEditingShareUser(null);
+    setShareUserForm({
+      username: '',
+      password: '',
+      role: 'write',
+      permissions: { read: true, write: true, delete: false, update: true },
+      description: '',
+      enabled: true,
+    });
+    setIsShareUserModalOpen(true);
+  };
+
+  const openEditShareUserModal = (user: NetworkShareUser) => {
+    setEditingShareUser(user);
+    setShareUserForm({
+      username: user.username,
+      password: user.password || '',
+      role: user.role || 'write',
+      permissions: {
+        read: user.permissions?.read !== undefined ? user.permissions.read : true,
+        write: user.permissions?.write !== undefined ? user.permissions.write : true,
+        delete: user.permissions?.delete !== undefined ? user.permissions.delete : false,
+        update: user.permissions?.update !== undefined ? user.permissions.update : true,
+      },
+      description: user.description || '',
+      enabled: user.enabled !== false,
+    });
+    setIsShareUserModalOpen(true);
+  };
+
+  const handleSaveShareUser = async () => {
+    if (!shareUserForm.username.trim()) {
+      toast.error('Username is required');
+      return;
+    }
+    if (!editingShareUser && !shareUserForm.password.trim()) {
+      toast.error('Password is required');
+      return;
+    }
+
+    try {
+      if (editingShareUser) {
+        const res = await fetch(`/api/system/network-share-users/${editingShareUser.id}`, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(shareUserForm)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setShareUsers(data.users);
+          setIsShareUserModalOpen(false);
+          setEditingShareUser(null);
+          toast.success(`Network share user "${shareUserForm.username}" updated!`);
+          fetchNetworkShares();
+        } else {
+          toast.error(data.error || 'Failed to update user');
+        }
+      } else {
+        const res = await fetch('/api/system/network-share-users', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(shareUserForm)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setShareUsers(data.users);
+          setIsShareUserModalOpen(false);
+          toast.success(`Network share user "${shareUserForm.username}" created!`);
+          fetchNetworkShares();
+        } else {
+          toast.error(data.error || 'Failed to create user');
+        }
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Error saving user');
+    }
+  };
+
+  const handleDeleteShareUser = async (id: string, username: string) => {
+    if (!window.confirm(`Are you sure you want to delete network share user "${username}"?`)) return;
+    try {
+      const res = await fetch(`/api/system/network-share-users/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShareUsers(data.users);
+        toast.success(`Network share user "${username}" deleted`);
+        fetchNetworkShares();
+      } else {
+        toast.error(data.error || 'Failed to delete user');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Error deleting user');
+    }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      toast.success(`${label} copied to clipboard!`);
+    } else {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      toast.success(`${label} copied to clipboard!`);
+    }
+  };
+
   useEffect(() => {
     fetchNetworkData();
     fetchSnmpAlarms();
     fetchHardwareExtended();
     fetchUpdateInfo();
+    fetchNetworkShares();
 
     const timer = setInterval(() => {
       if (activeTab === 'hardware') fetchHardwareExtended();
     }, 4000);
     return () => clearInterval(timer);
-  }, [fetchNetworkData, fetchSnmpAlarms, fetchHardwareExtended, fetchUpdateInfo, activeTab]);
+  }, [fetchNetworkData, fetchSnmpAlarms, fetchHardwareExtended, fetchUpdateInfo, fetchNetworkShares, activeTab]);
 
   const handleSaveInterface = async () => {
     if (!editingIface) return;
@@ -554,6 +766,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
           { id: 'dns', label: 'DNS Config', icon: Globe },
           { id: 'statmux', label: 'Statmux Config', icon: Activity },
           { id: 'snmp-alarms', label: 'SNMP & Alarms', icon: Bell },
+          { id: 'network-shares', label: 'Network Shares & Users', icon: Share2 },
           { id: 'hardware', label: 'Hardware & Info', icon: Cpu },
           { id: 'update', label: 'System Update', icon: RefreshCw },
         ].map(tab => {
@@ -1603,6 +1816,372 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
         </div>
       )}
 
+      {/* TAB 8: Network File Shares & Users */}
+      {activeTab === 'network-shares' && (
+        <div className="space-y-4 max-w-5xl">
+          {/* Top Status & Controls */}
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-2xs space-y-3.5 dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E8DFF0] pb-3 dark:border-[#311B4E]">
+              <div>
+                <h2 className="text-sm font-bold text-[#1B1024] dark:text-white flex items-center gap-2">
+                  <Share2 size={16} className="text-[#7C3AED]" />
+                  <span>Network File Sharing &amp; Storage Access (SMB / FTP / HTTP)</span>
+                </h2>
+                <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+                  Host network access for media and recording files across Windows, macOS, Linux workstations and playout servers
+                </p>
+              </div>
+
+              {/* Access Mode Selector */}
+              <div className="flex items-center gap-2 bg-[#F8F7FA] p-1.5 rounded-xl border border-[#E8DFF0] dark:bg-[#211335] dark:border-[#371F59]">
+                <button
+                  type="button"
+                  onClick={() => handleToggleAuthMode('anonymous')}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    networkSharesInfo?.authMode !== 'authenticated'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
+                  }`}
+                >
+                  <Unlock size={12} />
+                  <span>Anonymous / Guest</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleAuthMode('authenticated')}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                    networkSharesInfo?.authMode === 'authenticated'
+                      ? 'bg-[#7C3AED] text-white shadow-xs'
+                      : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
+                  }`}
+                >
+                  <Lock size={12} />
+                  <span>User Authentication</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Interface IP selector & Service status */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59] space-y-1">
+                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Active Interface IP</span>
+                <div className="flex items-center gap-2">
+                  {physicalIfaces.length > 0 ? (
+                    <select
+                      value={networkSharesInfo?.primaryIp || ''}
+                      onChange={(e) => handleUpdateShareCustomIp(e.target.value)}
+                      className="h-7 text-xs font-mono font-bold rounded-lg border border-[#E8DFF0] bg-white px-2 dark:bg-[#190E28] dark:border-[#371F59] dark:text-white outline-none w-full"
+                    >
+                      {physicalIfaces.filter(i => i.address).map(i => (
+                        <option key={i.address} value={i.address}>
+                          {i.address} ({i.interface})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="font-mono text-sm font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
+                      {networkSharesInfo?.primaryIp || '127.0.0.1'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59] space-y-1">
+                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Access Authorization</span>
+                <span className={`inline-flex items-center gap-1 text-xs font-bold ${
+                  networkSharesInfo?.authMode === 'authenticated' ? 'text-purple-600 dark:text-purple-300' : 'text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {networkSharesInfo?.authMode === 'authenticated' ? <Lock size={13} /> : <Unlock size={13} />}
+                  {networkSharesInfo?.authMode === 'authenticated' ? 'User Credentials Required' : 'Public Anonymous / Guest Access'}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59] space-y-1">
+                <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Service Ports Active</span>
+                <span className="font-mono text-xs font-bold text-slate-800 dark:text-white">
+                  SMB: 445 · FTP: 21 · HTTP: {networkSharesInfo?.http?.port || 3005}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Universal Cross-Platform Connection URLs */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* SMB / CIFS Universal Card */}
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 dark:border-emerald-900/60 dark:bg-emerald-950/20 space-y-2.5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                    <Share2 size={13} />
+                    <span>SMB / CIFS (Universal)</span>
+                  </span>
+                  <span className="text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded">
+                    Port 445
+                  </span>
+                </div>
+
+                <div className="mt-2 space-y-1.5">
+                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-emerald-200/80 dark:border-emerald-900/40 space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-slate-400">Windows File Explorer / UNC:</span>
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-slate-900 dark:text-white truncate" title={networkSharesInfo?.smb?.parentPath}>
+                        {networkSharesInfo?.smb?.parentPath || '\\\\IP\\media'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(networkSharesInfo?.smb?.parentPath, 'Windows SMB Path')}
+                        className="ml-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-emerald-200/80 dark:border-emerald-900/40 space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-slate-400">macOS / Finder:</span>
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate" title={networkSharesInfo?.smb?.macUrl}>
+                        {networkSharesInfo?.smb?.macUrl || 'smb://IP/media'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(networkSharesInfo?.smb?.macUrl, 'macOS SMB URL')}
+                        className="ml-1 px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold hover:bg-emerald-100"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[9.5px] text-emerald-900/80 dark:text-emerald-200/80 leading-tight pt-1">
+                Supports Windows, macOS (Finder &gt; Connect to Server), and Linux CIFS.
+              </p>
+            </div>
+
+            {/* FTP Protocol Card */}
+            <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3.5 dark:border-violet-900/60 dark:bg-violet-950/20 space-y-2.5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-800 dark:text-violet-300 flex items-center gap-1.5">
+                    <Folder size={13} />
+                    <span>FTP File Transfer</span>
+                  </span>
+                  <span className="text-[9px] font-bold bg-violet-100 dark:bg-violet-900/50 text-violet-800 dark:text-violet-200 px-1.5 py-0.5 rounded">
+                    Port 21
+                  </span>
+                </div>
+
+                <div className="mt-2 space-y-1.5">
+                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-violet-200/80 dark:border-violet-900/40 space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-slate-400">FTP Media URL:</span>
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-slate-900 dark:text-white truncate" title={networkSharesInfo?.ftp?.url}>
+                        {networkSharesInfo?.ftp?.url || 'ftp://IP/media'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(networkSharesInfo?.ftp?.url, 'FTP URL')}
+                        className="ml-1 px-1.5 py-0.5 rounded bg-violet-600 text-white text-[10px] font-bold hover:bg-violet-700 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-violet-200/80 dark:border-violet-900/40 space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-slate-400">Credentials Mode:</span>
+                    <span className="block text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">
+                      {networkSharesInfo?.authMode === 'authenticated' ? 'Use configured Network Share user' : 'User: anonymous (No password)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[9.5px] text-violet-900/80 dark:text-violet-200/80 leading-tight pt-1">
+                Compatible with FileZilla, Cyberduck, Adobe Premiere Media Browser, and Playout Ingest.
+              </p>
+            </div>
+
+            {/* HTTP Web Browser Card */}
+            <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3.5 dark:border-sky-900/60 dark:bg-sky-950/20 space-y-2.5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-800 dark:text-sky-300 flex items-center gap-1.5">
+                    <Globe size={13} />
+                    <span>Direct Web Access (HTTP)</span>
+                  </span>
+                  <span className="text-[9px] font-bold bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-200 px-1.5 py-0.5 rounded">
+                    Port {networkSharesInfo?.http?.port || 3005}
+                  </span>
+                </div>
+
+                <div className="mt-2 space-y-1.5">
+                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-sky-200/80 dark:border-sky-900/40 space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-slate-400">Web Media Folder:</span>
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-slate-900 dark:text-white truncate" title={networkSharesInfo?.http?.url}>
+                        {networkSharesInfo?.http?.url || 'http://IP:3005/media/recordings'}
+                      </span>
+                      <a
+                        href={networkSharesInfo?.http?.url || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ml-1 px-1.5 py-0.5 rounded bg-sky-600 text-white text-[10px] font-bold hover:bg-sky-700 transition-colors flex items-center gap-1"
+                      >
+                        <span>Open</span>
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-sky-200/80 dark:border-sky-900/40 space-y-1">
+                    <span className="text-[9px] uppercase font-bold text-slate-400">Direct Download:</span>
+                    <span className="block text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">
+                      Single-click browser media playback and download
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[9.5px] text-sky-900/80 dark:text-sky-200/80 leading-tight pt-1">
+                Zero-setup in-browser streaming and direct file download on any network device.
+              </p>
+            </div>
+          </div>
+
+          {/* Network Share Users Management Table */}
+          <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-2xs space-y-3 dark:bg-[#190E28] dark:border-[#311B4E]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8DFF0] pb-2.5 dark:border-[#311B4E]">
+              <div>
+                <h3 className="text-sm font-bold text-[#1B1024] dark:text-white flex items-center gap-2">
+                  <Users size={15} className="text-[#7C3AED]" />
+                  <span>Network Share Accounts &amp; Access Roles</span>
+                </h3>
+                <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+                  Dedicated user credentials and permissions for SMB and FTP network storage (Separate from web system logins)
+                </p>
+              </div>
+
+              <Button onClick={openAddShareUserModal}>
+                <Plus size={13} />
+                <span>Add Network User</span>
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[#E8DFF0] text-[11px] font-bold text-[#6F6078] dark:border-[#311B4E] dark:text-[#B9A5CD]">
+                    <th className="py-2 px-2.5">User / Account</th>
+                    <th className="py-2 px-2.5">Access Role</th>
+                    <th className="py-2 px-2.5">Granular Permissions</th>
+                    <th className="py-2 px-2.5">Workstation / Purpose</th>
+                    <th className="py-2 px-2.5">Status</th>
+                    <th className="py-2 px-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E8DFF0] dark:divide-[#311B4E]">
+                  {shareUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-[#F8F7FA] dark:hover:bg-[#211335]/50 transition-colors">
+                      <td className="py-2.5 px-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-purple-100 text-[#7C3AED] dark:bg-[#311754] dark:text-[#C4B5FD] font-bold text-[10px]">
+                            {user.username.charAt(0).toUpperCase()}
+                          </span>
+                          <div>
+                            <span className="font-bold text-slate-900 dark:text-white block">{user.username}</span>
+                            <span className="text-[10px] font-mono text-slate-400">••••••••</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-2.5 px-2.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
+                          user.role === 'admin' || user.role === 'delete'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
+                            : user.role === 'write' || user.role === 'update'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        }`}>
+                          {user.role === 'admin' ? 'Full Administrator' : user.role === 'write' ? 'Editor (Read/Write)' : user.role === 'read' ? 'Viewer (Read Only)' : user.role.toUpperCase()}
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-2.5">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {user.permissions?.read && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
+                              READ
+                            </span>
+                          )}
+                          {user.permissions?.write && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300">
+                              WRITE
+                            </span>
+                          )}
+                          {user.permissions?.update && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:border-purple-800 dark:text-purple-300">
+                              UPDATE
+                            </span>
+                          )}
+                          {user.permissions?.delete && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300">
+                              DELETE
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="py-2.5 px-2.5 text-[#6F6078] dark:text-[#B9A5CD] text-[11px]">
+                        {user.description || 'General Network Access'}
+                      </td>
+
+                      <td className="py-2.5 px-2.5">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          user.enabled !== false
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        }`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${user.enabled !== false ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          {user.enabled !== false ? 'Active' : 'Disabled'}
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-2.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditShareUserModal(user)}
+                            className="p-1 rounded text-slate-500 hover:text-[#7C3AED] hover:bg-purple-50 dark:hover:bg-[#25163C] transition-colors"
+                            title="Edit User & Permissions"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteShareUser(user.id, user.username)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                            title="Delete User"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {shareUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-[#6F6078] dark:text-[#B9A5CD]">
+                        No network share users configured. Click "+ Add Network User" to create credentials.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TAB 9: System Update & Firmware */}
       {activeTab === 'update' && (
         <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 shadow-2xs space-y-4 max-w-4xl dark:bg-[#190E28] dark:border-[#311B4E]">
@@ -1956,6 +2535,154 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
             <div className="flex justify-end gap-2 pt-2 border-t border-[#E8DFF0] dark:border-[#311B4E]">
               <Button variant="secondary" onClick={() => setIsRouteModalOpen(false)}>Cancel</Button>
               <Button onClick={handleSaveRoute}>Add Route</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal: Add / Edit Network Share User */}
+      {isShareUserModalOpen && (
+        <Modal
+          isOpen={isShareUserModalOpen}
+          onClose={() => setIsShareUserModalOpen(false)}
+          title={editingShareUser ? `Edit Network User — ${editingShareUser.username}` : 'Add Network Share User'}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold mb-1">Username</label>
+                <input
+                  type="text"
+                  value={shareUserForm.username}
+                  onChange={(e) => setShareUserForm({ ...shareUserForm, username: e.target.value })}
+                  className={inputClass}
+                  placeholder="editor_workstation_1"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">
+                  Password {editingShareUser && <span className="text-[10px] text-slate-400">(leave blank to keep)</span>}
+                </label>
+                <input
+                  type="password"
+                  value={shareUserForm.password}
+                  onChange={(e) => setShareUserForm({ ...shareUserForm, password: e.target.value })}
+                  className={inputClass}
+                  placeholder={editingShareUser ? '••••••••' : 'Strong password...'}
+                />
+              </div>
+
+              <div className="col-span-2">
+                <Select
+                  label="Role Preset"
+                  value={shareUserForm.role}
+                  onChange={(e) => {
+                    const r = e.target.value as any;
+                    setShareUserForm({
+                      ...shareUserForm,
+                      role: r,
+                      permissions: {
+                        read: true,
+                        write: r === 'write' || r === 'update' || r === 'admin' || r === 'delete',
+                        update: r === 'write' || r === 'update' || r === 'admin' || r === 'delete',
+                        delete: r === 'admin' || r === 'delete',
+                      }
+                    });
+                  }}
+                  options={[
+                    { value: 'admin', label: 'Full Administrator (Read, Write, Update & Delete)' },
+                    { value: 'write', label: 'Editor (Read, Write & Update)' },
+                    { value: 'read', label: 'Viewer / Playout (Read Only)' },
+                    { value: 'delete', label: 'Storage Manager (Read, Write, Delete)' },
+                  ]}
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5 rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59]">
+                <span className="block font-bold text-[11px] text-[#1B1024] dark:text-white">Granular Permission Flags</span>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shareUserForm.permissions.read}
+                      onChange={(e) => setShareUserForm({
+                        ...shareUserForm,
+                        permissions: { ...shareUserForm.permissions, read: e.target.checked }
+                      })}
+                      className="rounded text-[#7C3AED]"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">Read Files (Download &amp; Play)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shareUserForm.permissions.write}
+                      onChange={(e) => setShareUserForm({
+                        ...shareUserForm,
+                        permissions: { ...shareUserForm.permissions, write: e.target.checked }
+                      })}
+                      className="rounded text-[#7C3AED]"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">Write Files (Upload &amp; Record)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shareUserForm.permissions.update}
+                      onChange={(e) => setShareUserForm({
+                        ...shareUserForm,
+                        permissions: { ...shareUserForm.permissions, update: e.target.checked }
+                      })}
+                      className="rounded text-[#7C3AED]"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">Update Files (Modify / Rename)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shareUserForm.permissions.delete}
+                      onChange={(e) => setShareUserForm({
+                        ...shareUserForm,
+                        permissions: { ...shareUserForm.permissions, delete: e.target.checked }
+                      })}
+                      className="rounded text-[#7C3AED]"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">Delete Files (Truncate / Purge)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="col-span-2">
+                <label className="block font-semibold mb-1">Workstation / Purpose Description</label>
+                <input
+                  type="text"
+                  value={shareUserForm.description}
+                  onChange={(e) => setShareUserForm({ ...shareUserForm, description: e.target.value })}
+                  className={inputClass}
+                  placeholder="e.g. Studio Edit Suite 2, VOD Archive Ingest"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={shareUserForm.enabled}
+                    onChange={(e) => setShareUserForm({ ...shareUserForm, enabled: e.target.checked })}
+                    className="rounded text-[#7C3AED]"
+                  />
+                  <span className="font-semibold text-slate-800 dark:text-white">Account Active &amp; Allowed Network Access</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-[#E8DFF0] dark:border-[#311B4E]">
+              <Button variant="secondary" onClick={() => setIsShareUserModalOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveShareUser}>{editingShareUser ? 'Update User' : 'Create User'}</Button>
             </div>
           </div>
         </Modal>

@@ -353,8 +353,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   const [networkShares, setNetworkShares] = useState<{
     primaryIp: string;
     customIp?: string | null;
+    authMode?: 'anonymous' | 'authenticated';
     interfaces: Array<{ name: string; address: string; internal: boolean }>;
-    smb: { parentPath: string; recordingsPath: string; runCommand: string; instructions: string };
+    smb: { parentPath: string; recordingsPath: string; macUrl?: string; linuxMount?: string; runCommand?: string; instructions: string };
     ftp: { url: string; rootUrl: string; instructions: string };
     http: { url: string; parentUrl: string };
     credentials: { username: string; password: string; permissions: string };
@@ -1778,7 +1779,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-violet-700 dark:text-violet-300">
                           <FiShare2 size={11} />
-                          <span>Network Run (SMB · Win+R):</span>
+                          <span>Network Share (SMB):</span>
                         </div>
                         <p className="font-mono font-bold text-slate-900 dark:text-white truncate mt-0.5" title={networkShares.smb.parentPath}>
                           {networkShares.smb.parentPath}
@@ -1786,9 +1787,9 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(networkShares.smb.parentPath, "Windows Run SMB path (\\\\IP\\media)")}
+                        onClick={() => copyToClipboard(networkShares.smb.parentPath, "Network Share SMB path (\\\\IP\\media)")}
                         className="flex items-center gap-1 rounded-lg bg-violet-600 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-violet-700 shrink-0"
-                        title="Copy to clipboard for Windows Run (Win+R) or File Explorer"
+                        title="Copy Network Share path"
                       >
                         <FiCopy size={11} />
                         <span>Copy</span>
@@ -3271,7 +3272,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Network Media Folder Access (SMB / Windows Run & FTP) */}
+          {/* Network Media Folder Access (SMB / Universal & FTP) */}
           {networkShares && (
             <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50/80 via-white to-purple-50/60 p-4 dark:border-violet-800/60 dark:from-violet-950/30 dark:via-[#1E1130] dark:to-[#25163C] shadow-xs space-y-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-200/80 pb-2.5 dark:border-violet-800/50">
@@ -3281,10 +3282,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   </span>
                   <div>
                     <h4 className="text-[13px] font-extrabold text-slate-900 dark:text-white">
-                      Direct Network Access (SMB / Windows Run &amp; FTP)
+                      Universal Network Media Share (SMB · FTP · Web)
                     </h4>
                     <p className="text-[10px] text-slate-500 dark:text-[#B9A5CD]">
-                      Access the parent <code className="font-mono font-bold text-violet-700 dark:text-violet-300">media</code> folder directly from network workstations (No username/password required)
+                      Access parent <code className="font-mono font-bold text-violet-700 dark:text-violet-300">media</code> folder directly across Windows, macOS, Linux, and FTP clients (User roles configured in System Admin)
                     </p>
                   </div>
                 </div>
@@ -3315,41 +3316,47 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
               {/* Network Share URL Cards */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {/* Windows Explorer / Run (Win+R) SMB Share */}
+                {/* SMB / CIFS Universal Share */}
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20 space-y-2 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                         <FiShare2 size={12} />
-                        <span>Windows Run / SMB Share</span>
+                        <span>SMB / CIFS Share (Universal)</span>
                       </span>
                       <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 px-1.5 py-0.2 rounded">
-                        No Password
+                        Port 445
                       </span>
                     </div>
                     <div className="mt-1.5 space-y-1">
                       <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-emerald-200/80 dark:border-emerald-900/40">
-                        <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-white truncate" title={networkShares.smb.parentPath}>
-                          {networkShares.smb.parentPath}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-[8.5px] uppercase font-bold text-slate-400 block">Windows / UNC:</span>
+                          <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-white truncate block" title={networkShares.smb.parentPath}>
+                            {networkShares.smb.parentPath}
+                          </span>
+                        </div>
                         <button
                           type="button"
                           onClick={() => copyToClipboard(networkShares.smb.parentPath, "Parent media SMB path (\\\\IP\\media)")}
                           className="ml-2 px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 transition-colors shrink-0"
-                          title="Copy \\IP\media for Windows Run"
+                          title="Copy \\IP\media"
                         >
                           Copy
                         </button>
                       </div>
                       <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-emerald-200/80 dark:border-emerald-900/40">
-                        <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate" title={networkShares.smb.recordingsPath}>
-                          {networkShares.smb.recordingsPath}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-[8.5px] uppercase font-bold text-slate-400 block">macOS / Finder:</span>
+                          <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate block" title={networkShares.smb.macUrl || `smb://${networkShares.primaryIp}/media`}>
+                            {networkShares.smb.macUrl || `smb://${networkShares.primaryIp}/media`}
+                          </span>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(networkShares.smb.recordingsPath, "Recordings SMB path (\\\\IP\\recordings)")}
+                          onClick={() => copyToClipboard(networkShares.smb.macUrl || `smb://${networkShares.primaryIp}/media`, "macOS SMB URL")}
                           className="ml-2 px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-800 dark:text-emerald-300 text-[9px] font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors shrink-0"
-                          title="Copy \\IP\recordings"
+                          title="Copy smb:// URL"
                         >
                           Copy
                         </button>
@@ -3357,7 +3364,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     </div>
                   </div>
                   <p className="text-[9.5px] text-emerald-900/90 dark:text-emerald-200/90 pt-1 leading-tight">
-                    💡 <strong>How to open:</strong> Press <kbd className="px-1 py-0.2 rounded bg-white dark:bg-black/40 border text-[9px] font-bold">Win + R</kbd>, paste <code className="font-mono font-bold">{networkShares.smb.parentPath}</code>, and press <strong>Enter</strong>.
+                    💡 Connect via File Explorer, Finder (Go &gt; Connect to Server), or Linux CIFS.
                   </p>
                 </div>
 
@@ -3367,17 +3374,20 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-800 dark:text-violet-300 flex items-center gap-1.5">
                         <FiFolder size={12} />
-                        <span>FTP Network Access</span>
+                        <span>FTP &amp; Web Browser Access</span>
                       </span>
                       <span className="text-[9px] font-bold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/50 px-1.5 py-0.2 rounded">
-                        Anonymous
+                        Port 21
                       </span>
                     </div>
                     <div className="mt-1.5 space-y-1">
                       <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-violet-200/80 dark:border-violet-900/40">
-                        <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-white truncate" title={networkShares.ftp.url}>
-                          {networkShares.ftp.url}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-[8.5px] uppercase font-bold text-slate-400 block">FTP URL:</span>
+                          <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-white truncate block" title={networkShares.ftp.url}>
+                            {networkShares.ftp.url}
+                          </span>
+                        </div>
                         <button
                           type="button"
                           onClick={() => copyToClipboard(networkShares.ftp.url, "FTP URL (ftp://IP/media)")}
@@ -3388,9 +3398,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                         </button>
                       </div>
                       <div className="flex items-center justify-between bg-white/90 dark:bg-[#1E1130] p-1.5 rounded-lg border border-violet-200/80 dark:border-violet-900/40">
-                        <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate" title={networkShares.http.url}>
-                          {networkShares.http.url}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-[8.5px] uppercase font-bold text-slate-400 block">Direct Web URL:</span>
+                          <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate block" title={networkShares.http.url}>
+                            {networkShares.http.url}
+                          </span>
+                        </div>
                         <a
                           href={networkShares.http.url}
                           target="_blank"
@@ -3405,7 +3418,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                     </div>
                   </div>
                   <p className="text-[9.5px] text-violet-900/90 dark:text-violet-200/90 pt-1 leading-tight">
-                    📁 <strong>FTP Client / Browser:</strong> Connect via FileZilla, Cyberduck, or browser with username <code className="font-bold">anonymous</code> (no password).
+                    📁 Compatible with FileZilla, Adobe Premiere, browser download, and Playout Ingest.
                   </p>
                 </div>
               </div>
