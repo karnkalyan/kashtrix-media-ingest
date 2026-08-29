@@ -5510,6 +5510,13 @@ app.get('/api/file-manager/list', authMiddleware, async (req, res) => {
             const itemRelative = currentPath ? `${currentPath}/${entry.name}` : entry.name;
             const ext = path.extname(entry.name).toLowerCase();
             const fileType = getFileManagerFileType(entry.name, isDir);
+            const isPlayable = ['video', 'broadcast-video', 'audio', 'image', 'hls'].includes(fileType) ||
+                ['.mp4', '.mov', '.mkv', '.m3u8', '.ts', '.mxf', '.avi', '.webm', '.flv', '.wmv', '.mp3', '.wav', '.flac', '.aac', '.png', '.jpg', '.jpeg', '.webp'].includes(ext);
+
+            let previewUrl = `/media/${itemRelative}`;
+            if (['.mxf', '.ts'].includes(ext) || fileType === 'broadcast-video') {
+                previewUrl = `/recording-preview/${encodeURIComponent(itemRelative)}/index.m3u8`;
+            }
 
             items.push({
                 name: entry.name,
@@ -5521,7 +5528,8 @@ app.get('/api/file-manager/list', authMiddleware, async (req, res) => {
                 type: fileType,
                 ext,
                 url: `/media/${itemRelative}`,
-                canPlay: ['video', 'audio', 'image', 'hls'].includes(fileType) || ['.mp4', '.mov', '.mkv', '.m3u8', '.ts', '.mp3', '.wav', '.png', '.jpg', '.jpeg'].includes(ext),
+                previewUrl,
+                canPlay: isPlayable,
             });
         }
 

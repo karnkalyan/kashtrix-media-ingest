@@ -42,6 +42,7 @@ interface FileItem {
   type: 'folder' | 'video' | 'broadcast-video' | 'hls' | 'audio' | 'image' | 'document' | 'other';
   ext: string;
   url: string;
+  previewUrl?: string;
   canPlay?: boolean;
 }
 
@@ -716,7 +717,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                 </div>
               ) : (
                 <KashtrixMediaPlayer
-                  src={previewFile.url}
+                  src={previewFile.previewUrl || previewFile.url}
                   title={previewFile.name}
                   isLive={false}
                   autoPlay={true}
