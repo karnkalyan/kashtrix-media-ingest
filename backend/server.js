@@ -42,7 +42,6 @@ const systemApi = require('./systemInfoApi'); // Import system API functions
 const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare, syncSambaUser, syncAllSambaUsers } = require('./networkShares');
 const { createMediaExplorerMiddleware, formatBytes } = require('./webMediaExplorer');
 const { KashtrixFtpServer } = require('./ftpServer');
-const { MEDIA_ROOT } = require('./storagePaths');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {

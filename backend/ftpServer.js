@@ -56,13 +56,13 @@ class KashtrixFtpServer {
         });
     }
 
-    stop() {
+    async stop() {
         if (this.server) {
             for (const socket of this.connections) {
                 try { socket.destroy(); } catch (_) {}
             }
             this.connections.clear();
-            this.server.close();
+            await new Promise((resolve) => this.server.close(resolve));
             this.isRunning = false;
             this.server = null;
             console.log('[FTP] Embedded FTP Server stopped.');
