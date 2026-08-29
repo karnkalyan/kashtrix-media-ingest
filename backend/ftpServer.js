@@ -19,6 +19,17 @@ function formatFtpLsDate(date) {
     return `${mon} ${day} ${hours}:${mins}`;
 }
 
+function formatFactDate(date) {
+    const d = new Date(date);
+    const YYYY = d.getUTCFullYear();
+    const MM = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const DD = String(d.getUTCDate()).padStart(2, '0');
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const ss = String(d.getUTCSeconds()).padStart(2, '0');
+    return `${YYYY}${MM}${DD}${hh}${mm}${ss}`;
+}
+
 /**
  * Built-in Lightweight FTP Server for Kashtrix StreamOps
  * Compliant with RFC 959 (PASV, EPSV, LIST, RETR, STOR, DELE, RNFR, RNTO, MKD, etc.)
@@ -206,7 +217,7 @@ class KashtrixFtpServer {
                 break;
 
             case 'FEAT':
-                socket.write('211-Features supported:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n211 End\r\n');
+                socket.write('211-Features supported:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n MLSD\r\n MLST type*;size*;modify*;\r\n211 End\r\n');
                 break;
 
             case 'OPTS':
@@ -360,6 +371,83 @@ class KashtrixFtpServer {
                     });
                 } else {
                     send(425, 'Use PASV first.');
+                }
+                break;
+            }
+
+            case 'MLSD': {
+                if (!checkPermission('read')) {
+                    send(550, 'Permission denied: Read access required.');
+                    break;
+                }
+
+                let targetDir = session.cwd;
+                if (arg && !arg.startsWith('-')) {
+                    targetDir = arg.startsWith('/') ? arg : path.posix.join(session.cwd, arg);
+                }
+                const localDir = resolveLocalPath(targetDir);
+
+                const sendMlsd = (dataSocket) => {
+                    try {
+                        if (!fs.existsSync(localDir)) {
+                            dataSocket.end();
+                            send(550, 'Directory not found.');
+                            return;
+                        }
+
+                        const files = fs.readdirSync(localDir);
+                        let listing = '';
+                        for (const file of files) {
+                            try {
+                                const filePath = path.join(localDir, file);
+                                const stat = fs.statSync(filePath);
+                                const isDir = stat.isDirectory();
+                                const type = isDir ? 'dir' : 'file';
+                                const modDate = formatFactDate(stat.mtime);
+                                listing += `type=${type};modify=${modDate};size=${stat.size}; ${file}\r\n`;
+                            } catch (_) {}
+                        }
+
+                        dataSocket.write(listing, () => {
+                            dataSocket.end();
+                            send(226, 'MLSD listing send OK.');
+                        });
+                    } catch (e) {
+                        dataSocket.end();
+                        send(550, `Error reading directory: ${e.message}`);
+                    }
+                };
+
+                send(150, 'Opening BINARY mode data connection for MLSD listing.');
+                if (session.pasvSocket) {
+                    sendMlsd(session.pasvSocket);
+                    session.pasvSocket = null;
+                } else if (session.pasvServer) {
+                    session.pasvServer.once('connection', (ds) => {
+                        sendMlsd(ds);
+                    });
+                } else {
+                    send(425, 'Use PASV first.');
+                }
+                break;
+            }
+
+            case 'MLST': {
+                const target = arg ? (arg.startsWith('/') ? arg : path.posix.join(session.cwd, arg)) : session.cwd;
+                const localPath = resolveLocalPath(target);
+                try {
+                    if (fs.existsSync(localPath)) {
+                        const stat = fs.statSync(localPath);
+                        const isDir = stat.isDirectory();
+                        const type = isDir ? 'dir' : 'file';
+                        const modDate = formatFactDate(stat.mtime);
+                        const baseName = path.basename(localPath) || target;
+                        send(250, `- Listing ${target}\r\n type=${type};modify=${modDate};size=${stat.size}; ${baseName}\r\n250 End`);
+                    } else {
+                        send(550, 'File or directory not found.');
+                    }
+                } catch (e) {
+                    send(550, `MLST error: ${e.message}`);
                 }
                 break;
             }

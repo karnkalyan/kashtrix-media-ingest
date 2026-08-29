@@ -537,16 +537,6 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                       <FiDownload size={13} />
                     </a>
                   )}
-                  {onNavigateToTranscode && !item.isDirectory && (
-                    <button
-                      type="button"
-                      onClick={() => onNavigateToTranscode({ name: item.name, path: item.path })}
-                      className="p-1.5 rounded-lg bg-purple-50 text-[#7C3AED] hover:bg-purple-100 dark:bg-[#311754] dark:text-[#C4B5FD] transition-colors"
-                      title="Send to Transcode Studio"
-                    >
-                      <FiVideo size={13} />
-                    </button>
-                  )}
                 </div>
 
                 <div className="flex items-center gap-1">
