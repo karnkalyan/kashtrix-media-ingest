@@ -27,6 +27,7 @@ const {
     normalizeLocalStorageSetting,
     resolveLocalStoragePath,
 } = require('./storagePaths');
+const { ensureInfiniteVodLoop, resolveChannelInputPath } = require('./channelInputPaths');
 
 const PrismaStore = require('./prismaStore');
 
@@ -2032,21 +2033,24 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
 
         const parts = parseArgsStringToArgv(cmd);
         const bin = parts[0] === 'ffmpeg' ? ffmpegPath : parts[0];
-        const args = parts.slice(1);
+        let args = parts.slice(1);
 
-        // Resolve any VOD or relative input files to verified paths
+        // A VOD channel is a continuous playout service. Enforce looping here
+        // as well so channels saved by older clients do not stop at EOF.
+        if (/vod/i.test(String(channel.inputType || ''))) {
+            args = ensureInfiniteVodLoop(args);
+        }
+
+        // Resolve VOD and recording inputs, including commands saved by older
+        // clients as media/vod/C:\\... or media/vod/media/recordings/....
         for (let i = 0; i < args.length; i++) {
             if (args[i - 1] === '-i') {
                 const inputVal = args[i];
-                if (!inputVal.includes('://') && !fs.existsSync(inputVal)) {
-                    const base = path.basename(inputVal);
-                    const candidate1 = path.join(MEDIA_ROOT, 'vod', base);
-                    const candidate2 = path.join(__dirname, 'media', 'vod', base);
-                    const candidate3 = path.join(PROJECT_ROOT, 'media', 'vod', base);
-                    if (fs.existsSync(candidate1)) args[i] = candidate1;
-                    else if (fs.existsSync(candidate2)) args[i] = candidate2;
-                    else if (fs.existsSync(candidate3)) args[i] = candidate3;
-                }
+                args[i] = resolveChannelInputPath(inputVal, {
+                    projectRoot: PROJECT_ROOT,
+                    mediaRoot: MEDIA_ROOT,
+                    serverDir: __dirname,
+                });
             }
         }
 

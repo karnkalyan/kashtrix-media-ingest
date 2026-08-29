@@ -27,6 +27,22 @@ import { DEFAULT_PROFILES } from "../constants";
 const API_BASE = "";
 const VOD_BASE_PATH = "media/vod/";
 
+export const resolveVodInputUrl = (inputUrl: string): string => {
+  const value = String(inputUrl || "").trim();
+  if (!value) return VOD_BASE_PATH;
+
+  const isUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+  const isAbsolutePath =
+    /^[a-z]:[\\/]/i.test(value) ||
+    /^[/\\]{2}[^/\\]/.test(value) ||
+    value.startsWith("/");
+  const isManagedMediaPath =
+    /^(?:\.\.?[\\/])?media[\\/](?:vod|recordings)[\\/]/i.test(value);
+
+  if (isUrl || isAbsolutePath || isManagedMediaPath) return value;
+  return `${VOD_BASE_PATH}${value.replace(/^[/\\]+/, "")}`;
+};
+
 interface AppState {
   channels: Channel[];
   profiles: TranscodingProfile[];
@@ -611,7 +627,9 @@ export const generateCommand = (
       inputFlags = `-thread_queue_size 2048 -f v4l2 -i ${quote(dev)}`;
     }
   } else if (channel.inputType === InputType.VOD) {
-    inputFlags = `-re -i ${quote(`${VOD_BASE_PATH}${channel.inputUrl}`)}`;
+    // VOD channels are continuous playout services. Restart the input at EOF
+    // instead of allowing FFmpeg (and therefore the channel) to stop.
+    inputFlags = `-re -stream_loop -1 -i ${quote(resolveVodInputUrl(channel.inputUrl))}`;
   } else if (channel.inputType === InputType.LIVE) {
     const url = channel.inputUrl.startsWith("rtmp")
       ? channel.inputUrl

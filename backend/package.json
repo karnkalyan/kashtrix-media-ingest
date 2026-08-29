@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test decklinkCapture.test.js getDevices.test.js securityPolicy.test.js superadminBootstrap.test.js recordingLifecycle.test.js recordingProfiles.test.js recordingPreview.test.js licensePolicy.test.js secureLicenseRuntime.test.js storagePaths.test.js",
+    "test": "node --test channelInputPaths.test.js decklinkCapture.test.js getDevices.test.js securityPolicy.test.js superadminBootstrap.test.js recordingLifecycle.test.js recordingProfiles.test.js recordingPreview.test.js licensePolicy.test.js secureLicenseRuntime.test.js storagePaths.test.js",
     "bootstrap:superadmin": "node scripts/bootstrap-superadmin.cjs",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "db:push": "node scripts/remove-legacy-license-storage.cjs && prisma db push --schema prisma/schema.prisma --accept-data-loss",
