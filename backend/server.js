@@ -40,7 +40,7 @@ const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
 const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare, syncSambaUser, syncAllSambaUsers } = require('./networkShares');
-const { createMediaExplorerMiddleware } = require('./webMediaExplorer');
+const { createMediaExplorerMiddleware, formatBytes } = require('./webMediaExplorer');
 const { KashtrixFtpServer } = require('./ftpServer');
 const { MEDIA_ROOT } = require('./storagePaths');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
@@ -5441,6 +5441,220 @@ app.post(['/api/system/network-share-users/sync-samba', '/api/system/network-sha
         const currentUsers = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
         const syncResults = await syncAllSambaUsers(currentUsers);
         res.json({ success: true, syncResults });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// --- Integrated Media File Manager API ---
+const resolveSafeMediaPath = (subPath = '') => {
+    const raw = String(subPath || '').trim().replace(/^[\\\/]+/, '');
+    const resolved = path.resolve(MEDIA_ROOT, raw);
+    const relative = path.relative(MEDIA_ROOT, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        throw new Error('Access denied: Path outside media directory');
+    }
+    return { resolved, relative: relative ? relative.replace(/\\/g, '/') : '' };
+};
+
+const getFileManagerFileType = (filename, isDirectory) => {
+    if (isDirectory) return 'folder';
+    const ext = path.extname(filename).toLowerCase();
+    if (['.mp4', '.mkv', '.mov', '.avi', '.flv', '.wmv', '.webm'].includes(ext)) return 'video';
+    if (['.mxf', '.ts'].includes(ext)) return 'broadcast-video';
+    if (['.m3u8'].includes(ext)) return 'hls';
+    if (['.mp3', '.aac', '.wav', '.flac', '.ogg', '.m4a'].includes(ext)) return 'audio';
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) return 'image';
+    if (['.json', '.txt', '.log', '.xml', '.vtt', '.srt'].includes(ext)) return 'document';
+    return 'other';
+};
+
+app.get('/api/file-manager/list', authMiddleware, async (req, res) => {
+    try {
+        const queryPath = req.query.path || '';
+        const search = String(req.query.search || '').trim().toLowerCase();
+        const { resolved: targetDir, relative: currentPath } = resolveSafeMediaPath(queryPath);
+
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+        }
+
+        const stat = fs.statSync(targetDir);
+        if (!stat.isDirectory()) {
+            return res.status(400).json({ success: false, error: 'Path is not a directory' });
+        }
+
+        const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+        let totalSize = 0;
+        let totalFiles = 0;
+        let totalFolders = 0;
+
+        const items = [];
+        for (const entry of entries) {
+            if (entry.name.startsWith('.')) continue; // ignore hidden files
+            if (search && !entry.name.toLowerCase().includes(search)) continue;
+
+            const entryFsPath = path.join(targetDir, entry.name);
+            let itemStat = { size: 0, mtime: new Date() };
+            try {
+                itemStat = fs.statSync(entryFsPath);
+            } catch (_) {}
+
+            const isDir = entry.isDirectory();
+            if (isDir) {
+                totalFolders++;
+            } else {
+                totalFiles++;
+                totalSize += itemStat.size;
+            }
+
+            const itemRelative = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+            const ext = path.extname(entry.name).toLowerCase();
+            const fileType = getFileManagerFileType(entry.name, isDir);
+
+            items.push({
+                name: entry.name,
+                path: itemRelative,
+                isDirectory: isDir,
+                size: itemStat.size,
+                sizeFormatted: isDir ? '—' : formatBytes(itemStat.size),
+                modified: itemStat.mtime.toISOString(),
+                type: fileType,
+                ext,
+                url: `/media/${itemRelative}`,
+                canPlay: ['video', 'audio', 'image', 'hls'].includes(fileType) || ['.mp4', '.mov', '.mkv', '.m3u8', '.ts', '.mp3', '.wav', '.png', '.jpg', '.jpeg'].includes(ext),
+            });
+        }
+
+        // Sort: directories first, then alphabetically
+        items.sort((a, b) => {
+            if (a.isDirectory && !b.isDirectory) return -1;
+            if (!a.isDirectory && b.isDirectory) return 1;
+            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        // Build breadcrumbs
+        const segments = currentPath.split('/').filter(Boolean);
+        const breadcrumbs = [{ name: 'Media Storage', path: '' }];
+        let accum = '';
+        for (const seg of segments) {
+            accum = accum ? `${accum}/${seg}` : seg;
+            breadcrumbs.push({ name: seg, path: accum });
+        }
+
+        res.json({
+            success: true,
+            currentPath,
+            breadcrumbs,
+            items,
+            stats: {
+                totalFiles,
+                totalFolders,
+                totalSize,
+                totalSizeFormatted: formatBytes(totalSize),
+            },
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/file-manager/mkdir', authMiddleware, async (req, res) => {
+    try {
+        const { path: parentPath = '', name } = req.body || {};
+        const folderName = String(name || '').trim().replace(/[\\\/:\*\?"<>\|]/g, '');
+        if (!folderName) return res.status(400).json({ success: false, error: 'Folder name is required' });
+
+        const targetSub = parentPath ? `${parentPath}/${folderName}` : folderName;
+        const { resolved: newDirPath } = resolveSafeMediaPath(targetSub);
+
+        if (fs.existsSync(newDirPath)) {
+            return res.status(400).json({ success: false, error: 'A folder or file with this name already exists' });
+        }
+
+        fs.mkdirSync(newDirPath, { recursive: true });
+        res.json({ success: true, message: `Folder "${folderName}" created successfully` });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.delete('/api/file-manager/delete', authMiddleware, async (req, res) => {
+    try {
+        const targetPath = req.body?.path;
+        if (!targetPath) return res.status(400).json({ success: false, error: 'Path is required' });
+
+        const { resolved: fsPath } = resolveSafeMediaPath(targetPath);
+        if (!fs.existsSync(fsPath)) {
+            return res.status(404).json({ success: false, error: 'Target not found' });
+        }
+
+        const stat = fs.statSync(fsPath);
+        if (stat.isDirectory()) {
+            fs.rmSync(fsPath, { recursive: true, force: true });
+        } else {
+            fs.unlinkSync(fsPath);
+        }
+
+        res.json({ success: true, message: 'Deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/file-manager/rename', authMiddleware, async (req, res) => {
+    try {
+        const { oldPath, newName } = req.body || {};
+        const cleanName = String(newName || '').trim().replace(/[\\\/:\*\?"<>\|]/g, '');
+        if (!oldPath || !cleanName) return res.status(400).json({ success: false, error: 'Old path and new name are required' });
+
+        const { resolved: oldFsPath } = resolveSafeMediaPath(oldPath);
+        if (!fs.existsSync(oldFsPath)) {
+            return res.status(404).json({ success: false, error: 'Item not found' });
+        }
+
+        const parentDir = path.dirname(oldFsPath);
+        const newFsPath = path.join(parentDir, cleanName);
+
+        if (fs.existsSync(newFsPath)) {
+            return res.status(400).json({ success: false, error: 'An item with this name already exists' });
+        }
+
+        fs.renameSync(oldFsPath, newFsPath);
+        res.json({ success: true, message: 'Renamed successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+const fileManagerStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        try {
+            const destPath = req.query.path || req.body?.path || '';
+            const { resolved } = resolveSafeMediaPath(destPath);
+            if (!fs.existsSync(resolved)) {
+                fs.mkdirSync(resolved, { recursive: true });
+            }
+            cb(null, resolved);
+        } catch (e) {
+            cb(e, MEDIA_ROOT);
+        }
+    },
+    filename: (req, file, cb) => {
+        const cleanName = file.originalname.replace(/[^a-zA-Z0-9_\.\-\s]/g, '_');
+        cb(null, cleanName);
+    }
+});
+const fileManagerUpload = multer({ storage: fileManagerStorage, limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
+
+app.post('/api/file-manager/upload', authMiddleware, fileManagerUpload.array('files', 50), (req, res) => {
+    try {
+        const files = req.files || [];
+        res.json({
+            success: true,
+            message: `Successfully uploaded ${files.length} file(s)`,
+            uploaded: files.map(f => f.filename),
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

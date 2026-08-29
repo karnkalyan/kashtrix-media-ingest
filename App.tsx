@@ -41,6 +41,7 @@ import {
   FiMove,
   FiPlayCircle,
   FiRefreshCw,
+  FiFolder,
 } from "react-icons/fi";
 import { FaBroadcastTower } from "react-icons/fa";
 import ChannelDashboard from "./components/JobQueue";
@@ -56,6 +57,7 @@ import CodeField from "./components/ui/CodeField";
 import Tabs from "./components/ui/Tabs";
 import KashtrixDashboard from "./components/KashtrixDashboard";
 import RecordingLibrary from "./components/RecordingLibrary";
+import FileManagerView from "./components/FileManagerView";
 import EventsAndAlerts from "./components/EventsAndAlerts";
 import UserManagementView from "./components/UserManagementView";
 import TranscodeStudio from "./components/TranscodeStudio";
@@ -77,6 +79,7 @@ type ActiveView =
   | "monitor"
   | "ingest"
   | "recordings"
+  | "file-manager"
   | "events"
   | "system-admin"
   | "users"
@@ -1237,6 +1240,17 @@ const navItems: NavItem[] = [
     iconColor: "text-[#EA580C]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]",
     licenseModule: "ingest-server",
+    allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
+  },
+  {
+    id: "file-manager",
+    label: "File Manager",
+    icon: FiFolder,
+    group: "Media & Archive",
+    iconColor: "text-[#0D9488]",
+    iconShadow: "drop-shadow-[0_4px_6px_rgba(13,148,136,0.45)]",
+    badge: "FILES",
+    badgeColor: "bg-[#0D9488]",
     allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
   },
   {
@@ -2651,6 +2665,7 @@ const App: React.FC = () => {
         "monitor",
         "ingest",
         "recordings",
+        "file-manager",
         "events",
         "system-admin",
         "users",
@@ -2998,6 +3013,15 @@ const App: React.FC = () => {
                 if (file && file.name) {
                   setPreSelectedTranscodeFile(file);
                 }
+                setActiveView("transcode");
+              }}
+            />
+          )}
+          {activeView === "file-manager" && (
+            <FileManagerView
+              token={engine.auth.token}
+              onNavigateToTranscode={(file) => {
+                setPreSelectedTranscodeFile({ name: file.name, path: file.path, type: "recording" });
                 setActiveView("transcode");
               }}
             />

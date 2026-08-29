@@ -1981,7 +1981,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
           </div>
 
           {/* Universal Cross-Platform Connection URLs */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* SMB / CIFS Universal Card */}
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5 dark:border-emerald-900/60 dark:bg-emerald-950/20 space-y-2.5 flex flex-col justify-between">
               <div>
@@ -2074,51 +2074,6 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               </div>
               <p className="text-[9.5px] text-violet-900/80 dark:text-violet-200/80 leading-tight pt-1">
                 Compatible with FileZilla, Cyberduck, Adobe Premiere Media Browser, and Playout Ingest.
-              </p>
-            </div>
-
-            {/* HTTP Web Browser Card */}
-            <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3.5 dark:border-sky-900/60 dark:bg-sky-950/20 space-y-2.5 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-800 dark:text-sky-300 flex items-center gap-1.5">
-                    <Globe size={13} />
-                    <span>Direct Web Access (HTTP)</span>
-                  </span>
-                  <span className="text-[9px] font-bold bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-200 px-1.5 py-0.5 rounded">
-                    Port {networkSharesInfo?.http?.port || 3005}
-                  </span>
-                </div>
-
-                <div className="mt-2 space-y-1.5">
-                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-sky-200/80 dark:border-sky-900/40 space-y-1">
-                    <span className="text-[9px] uppercase font-bold text-slate-400">Web Media Folder:</span>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-xs text-slate-900 dark:text-white truncate" title={networkSharesInfo?.http?.url}>
-                        {networkSharesInfo?.http?.url || 'http://IP:3005/media/recordings'}
-                      </span>
-                      <a
-                        href={networkSharesInfo?.http?.url || '#'}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-1 px-1.5 py-0.5 rounded bg-sky-600 text-white text-[10px] font-bold hover:bg-sky-700 transition-colors flex items-center gap-1"
-                      >
-                        <span>Open</span>
-                        <ExternalLink size={10} />
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-sky-200/80 dark:border-sky-900/40 space-y-1">
-                    <span className="text-[9px] uppercase font-bold text-slate-400">Direct Download:</span>
-                    <span className="block text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">
-                      Single-click browser media playback and download
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-[9.5px] text-sky-900/80 dark:text-sky-200/80 leading-tight pt-1">
-                Zero-setup in-browser streaming and direct file download on any network device.
               </p>
             </div>
           </div>
