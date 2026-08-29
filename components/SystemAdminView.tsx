@@ -1903,6 +1903,53 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                 </span>
               </div>
             </div>
+
+            {/* Windows Host SMB Share Status Banner */}
+            {networkSharesInfo?.windowsStatus?.isWindows && !networkSharesInfo?.windowsStatus?.isShared && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 dark:border-amber-900/60 dark:bg-amber-950/30 text-xs space-y-2">
+                <div className="flex items-center justify-between font-bold text-amber-900 dark:text-amber-200">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={15} className="text-amber-600" />
+                    <span>Windows Host Setup Required for SMB Share (\\{networkSharesInfo?.primaryIp}\media)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/system/setup-windows-share', { method: 'POST', headers: getAuthHeaders() });
+                        const data = await res.json();
+                        if (data.success) {
+                          toast.success(data.message);
+                          fetchNetworkShares();
+                        } else {
+                          toast.error(data.error || 'Administrator privileges required to create Windows share');
+                        }
+                      } catch (e: any) {
+                        toast.error(e?.message || 'Failed to auto-configure Windows share');
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded bg-amber-600 text-white font-bold text-[11px] hover:bg-amber-700 transition-colors shadow-xs"
+                  >
+                    Auto-Configure SMB Share
+                  </button>
+                </div>
+                <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                  On bare-metal Windows hosts, Windows requires the media folder to be shared once. Run as Administrator in CMD or PowerShell:
+                </p>
+                <div className="flex items-center justify-between bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-amber-200 dark:border-amber-900/60">
+                  <code className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate">
+                    {networkSharesInfo?.windowsStatus?.setupCommand || 'net share media="C:\\Kashtrix\\media" /grant:Everyone,FULL /unlimited'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(networkSharesInfo?.windowsStatus?.setupCommand || '', 'Windows Setup Command')}
+                    className="ml-2 px-2 py-0.5 rounded bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors shrink-0"
+                  >
+                    Copy Command
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Universal Cross-Platform Connection URLs */}

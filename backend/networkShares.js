@@ -91,6 +91,68 @@ const DEFAULT_NETWORK_SHARE_USERS = [
     }
 ];
 
+const { execSync } = require('child_process');
+
+/**
+ * Check if the Windows OS SMB share for media is currently active
+ */
+const checkWindowsSmbShareStatus = (mediaPath = null) => {
+    const isWindows = process.platform === 'win32';
+    if (!isWindows) {
+        return { isWindows: false, isShared: true };
+    }
+
+    try {
+        const output = execSync('net share', { encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] });
+        const lines = output.split('\n');
+        const mediaShareActive = lines.some(line => line.trim().toLowerCase().startsWith('media '));
+        const recordingsShareActive = lines.some(line => line.trim().toLowerCase().startsWith('recordings '));
+
+        return {
+            isWindows: true,
+            isShared: mediaShareActive,
+            mediaShareActive,
+            recordingsShareActive,
+            mediaPath: mediaPath || 'C:\\Kashtrix\\media',
+            setupCommand: `net share media="${mediaPath || 'C:\\Kashtrix\\media'}" /grant:Everyone,FULL /unlimited`,
+            recordingsSetupCommand: `net share recordings="${mediaPath ? mediaPath + '\\recordings' : 'C:\\Kashtrix\\media\\recordings'}" /grant:Everyone,FULL /unlimited`,
+        };
+    } catch (e) {
+        return {
+            isWindows: true,
+            isShared: false,
+            error: e.message,
+            setupCommand: `net share media="${mediaPath || 'C:\\Kashtrix\\media'}" /grant:Everyone,FULL /unlimited`,
+        };
+    }
+};
+
+/**
+ * Attempt to automatically configure Windows SMB shares
+ */
+const autoConfigureWindowsShare = (mediaPath) => {
+    if (process.platform !== 'win32') {
+        return { success: true, message: 'Non-Windows platform; Samba handled via Docker/systemd' };
+    }
+    const resolvedMedia = mediaPath || 'C:\\Kashtrix\\media';
+    const resolvedRecordings = resolvedMedia + '\\recordings';
+
+    try {
+        execSync(`net share media="${resolvedMedia}" /grant:Everyone,FULL /unlimited`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+        execSync(`net share recordings="${resolvedRecordings}" /grant:Everyone,FULL /unlimited`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+        return { success: true, message: 'Windows SMB shares (media & recordings) created successfully!' };
+    } catch (e) {
+        return {
+            success: false,
+            error: e.message,
+            needsAdmin: true,
+            setupCommand: `net share media="${resolvedMedia}" /grant:Everyone,FULL /unlimited`,
+            recordingsSetupCommand: `net share recordings="${resolvedRecordings}" /grant:Everyone,FULL /unlimited`,
+            scriptPath: 'scripts/setup-windows-share.bat'
+        };
+    }
+};
+
 /**
  * Generate full cross-platform SMB, FTP and Web sharing info
  */
@@ -98,6 +160,7 @@ const getNetworkShareInfo = (req, options = {}) => {
     const customIp = options.customIp || null;
     const authMode = options.authMode || 'anonymous'; // 'anonymous' | 'authenticated'
     const users = Array.isArray(options.users) && options.users.length > 0 ? options.users : DEFAULT_NETWORK_SHARE_USERS;
+    const mediaPath = options.mediaPath || null;
 
     const interfaces = getAvailableNetworkIps();
     const primaryIp = resolvePrimaryIp(req, customIp);
@@ -105,6 +168,7 @@ const getNetworkShareInfo = (req, options = {}) => {
 
     const activeUser = users.find(u => u.enabled) || users[0] || { username: 'media_admin', password: 'Password123!' };
     const isAuth = authMode === 'authenticated';
+    const windowsStatus = checkWindowsSmbShareStatus(mediaPath);
 
     return {
         success: true,
@@ -113,6 +177,7 @@ const getNetworkShareInfo = (req, options = {}) => {
         authMode, // 'anonymous' | 'authenticated'
         customIp,
         users,
+        windowsStatus,
         smb: {
             parentPath: `\\\\${primaryIp}\\media`,
             recordingsPath: `\\\\${primaryIp}\\recordings`,
@@ -123,6 +188,7 @@ const getNetworkShareInfo = (req, options = {}) => {
             description: 'Universal Cross-Platform Network File Share (SMB / CIFS)',
             anonymous: !isAuth,
             authRequired: isAuth,
+            isShared: windowsStatus.isShared,
             activeUser: isAuth ? { username: activeUser.username, role: activeUser.role, permissions: activeUser.permissions } : null,
             instructions: isAuth
                 ? `Connect to \\\\${primaryIp}\\media using Network Share username and password.`
@@ -159,5 +225,7 @@ module.exports = {
     getAvailableNetworkIps,
     resolvePrimaryIp,
     DEFAULT_NETWORK_SHARE_USERS,
+    checkWindowsSmbShareStatus,
+    autoConfigureWindowsShare,
     getNetworkShareInfo,
 };

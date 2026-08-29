@@ -355,6 +355,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
     customIp?: string | null;
     authMode?: 'anonymous' | 'authenticated';
     interfaces: Array<{ name: string; address: string; internal: boolean }>;
+    windowsStatus?: { isWindows: boolean; isShared: boolean; setupCommand?: string };
     smb: { parentPath: string; recordingsPath: string; macUrl?: string; linuxMount?: string; runCommand?: string; instructions: string };
     ftp: { url: string; rootUrl: string; instructions: string };
     http: { url: string; parentUrl: string };
@@ -3313,6 +3314,52 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Windows Host SMB Setup Banner if bare-metal Windows */}
+              {networkShares.windowsStatus?.isWindows && !networkShares.windowsStatus?.isShared && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30 text-[11px] space-y-2">
+                  <div className="flex items-center justify-between font-bold text-amber-900 dark:text-amber-200">
+                    <div className="flex items-center gap-1.5">
+                      <FiAlertCircle size={14} className="text-amber-600 shrink-0" />
+                      <span>Windows Host SMB Share Setup Required (\\{networkShares.primaryIp}\media)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await callApi("/api/system/setup-windows-share", { method: "POST" });
+                          if (res.success) {
+                            toast.success(res.message);
+                            loadNetworkShares();
+                          } else {
+                            toast.error(res.error || "Administrator privileges required to create Windows share");
+                          }
+                        } catch (e: any) {
+                          toast.error(e?.message || "Failed to auto-configure Windows share");
+                        }
+                      }}
+                      className="px-2 py-0.5 rounded bg-amber-600 text-white font-bold text-[10px] hover:bg-amber-700 transition-colors shrink-0 shadow-xs"
+                    >
+                      Auto-Configure Share
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-amber-800 dark:text-amber-300 leading-tight">
+                    On Windows bare-metal hosts, Windows requires the folder to be shared once. Run as Administrator in CMD/PowerShell:
+                  </p>
+                  <div className="flex items-center justify-between bg-white dark:bg-[#1E1130] p-1.5 rounded-lg border border-amber-200 dark:border-amber-900/60">
+                    <code className="font-mono text-[10px] text-slate-800 dark:text-slate-200 truncate">
+                      {networkShares.windowsStatus?.setupCommand || 'net share media="C:\\Kashtrix\\media" /grant:Everyone,FULL /unlimited'}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(networkShares.windowsStatus?.setupCommand || '', "Windows Setup Command")}
+                      className="ml-2 px-2 py-0.5 rounded bg-amber-600 text-white text-[9.5px] font-bold hover:bg-amber-700 transition-colors shrink-0"
+                    >
+                      Copy Command
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Network Share URL Cards */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

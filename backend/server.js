@@ -39,7 +39,7 @@ const bundledFfmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const multer = require('multer');
 
 const systemApi = require('./systemInfoApi'); // Import system API functions
-const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS } = require('./networkShares');
+const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare } = require('./networkShares');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {
@@ -5255,8 +5255,8 @@ app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/ap
         const customIp = await getJsonSetting('custom_network_share_ip', null);
         const authMode = await getJsonSetting('network_share_auth_mode', 'anonymous');
         const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
-        const info = getNetworkShareInfo(req, { customIp, authMode, users });
-        res.json({ success: true, ...info, customIp, authMode, users });
+        const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT });
+        res.json({ success: true, ...info, customIp, authMode, users, mediaPath: MEDIA_ROOT });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -5269,10 +5269,19 @@ app.put(['/api/ingest/record/network-shares', '/api/system/network-shares', '/ap
         if (req.body?.customIp !== undefined) await setJsonSetting('custom_network_share_ip', customIp);
         if (req.body?.authMode !== undefined) await setJsonSetting('network_share_auth_mode', authMode);
         const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
-        const info = getNetworkShareInfo(req, { customIp, authMode, users });
-        res.json({ success: true, ...info, customIp, authMode, users });
+        const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT });
+        res.json({ success: true, ...info, customIp, authMode, users, mediaPath: MEDIA_ROOT });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/system/setup-windows-share', authMiddleware, async (req, res) => {
+    try {
+        const result = autoConfigureWindowsShare(MEDIA_ROOT);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
