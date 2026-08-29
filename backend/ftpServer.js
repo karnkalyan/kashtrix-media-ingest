@@ -3,6 +3,22 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const FTP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatFtpLsDate(date) {
+    const d = new Date(date);
+    const now = new Date();
+    const mon = FTP_MONTHS[d.getMonth()];
+    const day = String(d.getDate()).padStart(2, ' ');
+    const diff = Math.abs(now.getTime() - d.getTime());
+    const sixMonths = 180 * 24 * 60 * 60 * 1000;
+    if (diff > sixMonths) {
+        return `${mon} ${day}  ${d.getFullYear()}`;
+    }
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    return `${mon} ${day} ${hours}:${mins}`;
+}
+
 /**
  * Built-in Lightweight FTP Server for Kashtrix StreamOps
  * Compliant with RFC 959 (PASV, EPSV, LIST, RETR, STOR, DELE, RNFR, RNTO, MKD, etc.)
@@ -318,7 +334,7 @@ class KashtrixFtpServer {
                                     const isDir = stat.isDirectory();
                                     const mode = isDir ? 'drwxr-xr-x' : '-rw-r--r--';
                                     const size = stat.size.toString().padStart(12, ' ');
-                                    const dateStr = stat.mtime.toLocaleDateString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                                    const dateStr = formatFtpLsDate(stat.mtime);
                                     listing += `${mode} 1 owner group ${size} ${dateStr} ${file}\r\n`;
                                 }
                             } catch (_) {}
@@ -510,6 +526,28 @@ class KashtrixFtpServer {
                     }
                 } catch (_) {
                     send(550, 'Could not get file size.');
+                }
+                break;
+            }
+
+            case 'MDTM': {
+                const filePath = resolveLocalPath(arg.startsWith('/') ? arg : path.posix.join(session.cwd, arg));
+                try {
+                    if (fs.existsSync(filePath)) {
+                        const stat = fs.statSync(filePath);
+                        const d = new Date(stat.mtime);
+                        const YYYY = d.getUTCFullYear();
+                        const MM = String(d.getUTCMonth() + 1).padStart(2, '0');
+                        const DD = String(d.getUTCDate()).padStart(2, '0');
+                        const hh = String(d.getUTCHours()).padStart(2, '0');
+                        const mm = String(d.getUTCMinutes()).padStart(2, '0');
+                        const ss = String(d.getUTCSeconds()).padStart(2, '0');
+                        send(213, `${YYYY}${MM}${DD}${hh}${mm}${ss}`);
+                    } else {
+                        send(550, 'File not found.');
+                    }
+                } catch (_) {
+                    send(550, 'File not found.');
                 }
                 break;
             }

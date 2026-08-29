@@ -455,9 +455,16 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         setLoading(false);
         setError(null);
         initAudioAnalyser();
+        if (video.videoWidth && video.videoHeight) {
+          const res = `${video.videoWidth}x${video.videoHeight}`;
+          setDetectedResolution(res);
+          if (onResolutionDetectedRef.current) {
+            onResolutionDetectedRef.current(res, '');
+          }
+        }
       };
       const onErr = () => {
-        setError('Unable to load video file (file may be empty 0 B or interrupted)');
+        setError('Unable to load video file (file format unsupported or corrupted)');
         setLoading(false);
       };
       video.addEventListener('loadeddata', onLoaded, { once: true });
@@ -466,30 +473,14 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       video.addEventListener('playing', onLoaded, { once: true });
       video.addEventListener('error', onErr, { once: true });
 
-      // Fetch file as blob to prevent exposing the raw direct backend URL in the video DOM
-      fetch(src)
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.blob();
-        })
-        .then((blob) => {
-          const blobUrl = URL.createObjectURL(blob);
-          objectUrlRef.current = blobUrl;
-          if (videoRef.current) {
-            videoRef.current.src = blobUrl;
-            videoRef.current.load();
-            if (autoPlayRef.current) videoRef.current.play().catch(() => {});
-          }
-        })
-        .catch(() => {
-          if (videoRef.current) {
-            videoRef.current.src = src;
-            videoRef.current.load();
-            if (autoPlayRef.current) videoRef.current.play().catch(() => {});
-          }
-        });
+      video.src = src;
+      video.load();
+      if (autoPlayRef.current) {
+        video.muted = muted;
+        video.play().catch(() => {});
+      }
     }
-  }, [src, initAudioAnalyser, isLiveStream]);
+  }, [src, initAudioAnalyser, isLiveStream, muted]);
 
   useEffect(() => {
     loadStream();
@@ -657,16 +648,23 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
             </span>
           )}
 
-          {/* Realtime Signal Status Badge (Red/Green) */}
-          {isSignalActive ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 px-2 py-0.5 text-[10px] font-bold text-emerald-300 shadow-xs">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              {signalLabel || 'Received Signal'}
-            </span>
+          {/* Realtime Signal Status Badge (for live) or Storage Status Badge (for archive) */}
+          {isLiveStream ? (
+            isSignalActive ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 px-2 py-0.5 text-[10px] font-bold text-emerald-300 shadow-xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {signalLabel || 'Received Signal'}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 shadow-xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                Loss Signal
+              </span>
+            )
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 shadow-xs">
-              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-              Loss Signal
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/20 border border-sky-500/50 px-2 py-0.5 text-[10px] font-bold text-sky-300 shadow-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+              Direct Storage File
             </span>
           )}
 
@@ -756,7 +754,9 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
             <FiTv className="absolute text-purple-300" size={16} />
           </div>
-          <p className="mt-3 text-xs font-semibold text-purple-200">Connecting video stream…</p>
+          <p className="mt-3 text-xs font-semibold text-purple-200">
+            {isLiveStream ? 'Connecting video stream…' : 'Loading media file…'}
+          </p>
         </div>
       )}
 
