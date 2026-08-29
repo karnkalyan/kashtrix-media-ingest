@@ -41,9 +41,8 @@ services:
       FFPROBE_PATH: /usr/local/bin/ffprobe
     ports:
       - "1935:1935"
-    expose:
-      - "3005"
-      - "8080"
+      - "3005:3005"
+      - "8080:8080"
     volumes:
       - recording-data:/app/media
       - recording-data:/media
@@ -79,11 +78,16 @@ services:
     ports:
       - "139:139"
       - "445:445"
-    environment:
-      - TZ=UTC
-      - WORKGROUP=WORKGROUP
-      - SHARE=media;/media;yes;no;yes;all;none;;Kashtrix Media Storage;recordings;/media/recordings;yes;no;yes;all;none;;Kashtrix Recordings Storage
-      - GLOBAL=map to guest = Bad User; guest account = root; server min protocol = SMB2; follow symlinks = yes; wide links = yes; unix extensions = no
+    command: >
+      -s "media;/media;yes;no;yes;all;none;;Kashtrix Media Storage"
+      -s "recordings;/media/recordings;yes;no;yes;all;none;;Kashtrix Recordings Storage"
+      -g "map to guest = Bad User"
+      -g "guest account = root"
+      -g "server min protocol = SMB2"
+      -g "ntlm auth = yes"
+      -g "follow symlinks = yes"
+      -g "wide links = yes"
+      -g "unix extensions = no"
     volumes:
       - recording-data:/media
     networks:

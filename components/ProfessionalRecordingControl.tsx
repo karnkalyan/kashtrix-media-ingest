@@ -3295,11 +3295,17 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   <span className="text-[10px] font-semibold text-slate-500 dark:text-[#B9A5CD]">Interface IP:</span>
                   <div className="flex items-center gap-1">
                     {(() => {
+                      const browserHost = typeof window !== 'undefined' ? window.location.hostname : '';
+                      const isDockerInternal = (ip: string) => ip?.startsWith('172.17.') || ip?.startsWith('172.18.') || ip?.startsWith('172.19.') || ip?.startsWith('172.20.');
+
                       const rawList = [
-                        ...(networkShares.interfaces || []).map((i) => ({ address: i.address, label: `${i.address} (${i.name})` })),
-                        ...(typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
-                          ? [{ address: window.location.hostname, label: `${window.location.hostname} (Current Host)` }]
-                          : [])
+                        ...(browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1'
+                          ? [{ address: browserHost, label: `${browserHost} (Host Network IP · Recommended)` }]
+                          : []),
+                        ...(networkShares.interfaces || []).map((i) => ({
+                          address: i.address,
+                          label: isDockerInternal(i.address) ? `${i.address} (${i.name} · Docker Bridge)` : `${i.address} (${i.name})`
+                        })),
                       ].filter(i => i.address && i.address !== '127.0.0.1');
 
                       const seen = new Set();
@@ -3309,9 +3315,11 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                         return true;
                       });
 
+                      const selectedValue = networkShares.customIp || (isDockerInternal(networkShares.primaryIp) && browserHost && !isDockerInternal(browserHost) ? browserHost : (networkShares.primaryIp || browserHost || '127.0.0.1'));
+
                       return candidateIps.length > 0 ? (
                         <select
-                          value={networkShares.primaryIp}
+                          value={selectedValue}
                           onChange={(e) => handleUpdateCustomIp(e.target.value)}
                           className="h-7 text-[11px] font-mono font-bold rounded-lg border border-violet-300 bg-white px-2 dark:bg-[#25163C] dark:border-violet-700 dark:text-white outline-none"
                         >
@@ -3323,7 +3331,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                         </select>
                       ) : (
                         <span className="font-mono font-bold text-[11px] text-violet-700 dark:text-violet-300 px-2 py-0.5 bg-white dark:bg-[#25163C] rounded border border-violet-200 dark:border-violet-700">
-                          {networkShares.primaryIp}
+                          {selectedValue}
                         </span>
                       );
                     })()}

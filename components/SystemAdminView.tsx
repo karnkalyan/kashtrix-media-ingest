@@ -1867,12 +1867,21 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                 <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Active Interface IP</span>
                 <div className="flex items-center gap-2">
                   {(() => {
+                    const browserHost = typeof window !== 'undefined' ? window.location.hostname : '';
+                    const isDockerInternal = (ip: string) => ip?.startsWith('172.17.') || ip?.startsWith('172.18.') || ip?.startsWith('172.19.') || ip?.startsWith('172.20.');
+
                     const rawList = [
-                      ...(networkSharesInfo?.interfaces || []).map((i: any) => ({ address: i.address, label: `${i.address} (${i.name})` })),
-                      ...physicalIfaces.filter(i => i.address).map(i => ({ address: i.address, label: `${i.address} (${i.interface})` })),
-                      ...(typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
-                        ? [{ address: window.location.hostname, label: `${window.location.hostname} (Current Browser Host)` }]
-                        : [])
+                      ...(browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1'
+                        ? [{ address: browserHost, label: `${browserHost} (Host Network IP · Recommended)` }]
+                        : []),
+                      ...(networkSharesInfo?.interfaces || []).map((i: any) => ({
+                        address: i.address,
+                        label: isDockerInternal(i.address) ? `${i.address} (${i.name} · Docker Bridge)` : `${i.address} (${i.name})`
+                      })),
+                      ...physicalIfaces.filter(i => i.address).map(i => ({
+                        address: i.address,
+                        label: isDockerInternal(i.address) ? `${i.address} (${i.interface} · Docker Bridge)` : `${i.address} (${i.interface})`
+                      })),
                     ].filter(i => i.address && i.address !== '127.0.0.1');
 
                     const seen = new Set();
@@ -1882,9 +1891,11 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                       return true;
                     });
 
+                    const selectedValue = networkSharesInfo?.customIp || (isDockerInternal(networkSharesInfo?.primaryIp) && browserHost && !isDockerInternal(browserHost) ? browserHost : (networkSharesInfo?.primaryIp || browserHost || '127.0.0.1'));
+
                     return candidateIps.length > 0 ? (
                       <select
-                        value={networkSharesInfo?.primaryIp || (typeof window !== 'undefined' ? window.location.hostname : '')}
+                        value={selectedValue}
                         onChange={(e) => handleUpdateShareCustomIp(e.target.value)}
                         className="h-7 text-xs font-mono font-bold rounded-lg border border-[#E8DFF0] bg-white px-2 dark:bg-[#190E28] dark:border-[#371F59] dark:text-white outline-none w-full"
                       >
@@ -1896,7 +1907,7 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                       </select>
                     ) : (
                       <span className="font-mono text-sm font-bold text-[#7C3AED] dark:text-[#C4B5FD]">
-                        {networkSharesInfo?.primaryIp || (typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1')}
+                        {selectedValue}
                       </span>
                     );
                   })()}
