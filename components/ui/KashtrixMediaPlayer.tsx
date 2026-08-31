@@ -78,6 +78,11 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   const [audioMeterVisible, setAudioMeterVisible] = useState(showAudioMeter);
   const [realtimeRecording, setRealtimeRecording] = useState(false);
 
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+
   useEffect(() => {
     if (showAudioMeter !== undefined) {
       setAudioMeterVisible(showAudioMeter);
@@ -192,8 +197,13 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
     };
   }, [src, title]);
 
-  // Update volume and mute without rebuilding audio graph or reloading stream
+  // Update volume and mute synchronously across HTMLVideoElement, Web Audio GainNode & AudioContext
   useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.muted = muted;
+      video.volume = muted ? 0 : volume;
+    }
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = muted ? 0 : volume;
     }
@@ -227,7 +237,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         const splitter = ctx.createChannelSplitter(2);
         const merger = ctx.createChannelMerger(2);
         const gainNode = ctx.createGain();
-        gainNode.gain.value = muted ? 0 : volume;
+        gainNode.gain.value = mutedRef.current ? 0 : volumeRef.current;
         gainNodeRef.current = gainNode;
 
         if (!sourceNodeRef.current) {
@@ -237,18 +247,20 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         }
 
         if (sourceNodeRef.current) {
-          sourceNodeRef.current.connect(splitter);
-          splitter.connect(leftAnalyser, 0);
-          splitter.connect(rightAnalyser, 1 > splitter.numberOfOutputs - 1 ? 0 : 1);
+          try {
+            sourceNodeRef.current.connect(splitter);
+            splitter.connect(leftAnalyser, 0);
+            splitter.connect(rightAnalyser, 1 > splitter.numberOfOutputs - 1 ? 0 : 1);
 
-          leftAnalyser.connect(merger, 0, 0);
-          rightAnalyser.connect(merger, 0, 1);
-          merger.connect(gainNode);
-          gainNode.connect(ctx.destination);
+            leftAnalyser.connect(merger, 0, 0);
+            rightAnalyser.connect(merger, 0, 1);
+            merger.connect(gainNode);
+            gainNode.connect(ctx.destination);
+          } catch {}
         }
       }
 
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended' && !mutedRef.current && volumeRef.current > 0) {
         audioContextRef.current.resume().catch(() => {});
       }
 
@@ -366,8 +378,14 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
           setLoading(false);
           initAudioAnalyser();
           if (autoPlayRef.current) {
-            video.muted = true;
-            video.play().catch(() => {});
+            // Apply current muted/volume state for autoplay
+            video.muted = mutedRef.current;
+            video.volume = mutedRef.current ? 0 : volumeRef.current;
+            video.play().catch(() => {
+              // If unmuted autoplay fails due to browser autoplay policy, fall back to muted autoplay
+              video.muted = true;
+              video.play().catch(() => {});
+            });
           }
         });
 
@@ -441,7 +459,14 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
           setLoading(false);
           initAudioAnalyser();
         });
-        if (autoPlayRef.current) video.play().catch(() => {});
+        if (autoPlayRef.current) {
+          video.muted = mutedRef.current;
+          video.volume = mutedRef.current ? 0 : volumeRef.current;
+          video.play().catch(() => {
+            video.muted = true;
+            video.play().catch(() => {});
+          });
+        }
       } else {
         setError('HLS playback is not supported by your browser');
       }
@@ -476,11 +501,15 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       video.src = src;
       video.load();
       if (autoPlayRef.current) {
-        video.muted = muted;
-        video.play().catch(() => {});
+        video.muted = mutedRef.current;
+        video.volume = mutedRef.current ? 0 : volumeRef.current;
+        video.play().catch(() => {
+          video.muted = true;
+          video.play().catch(() => {});
+        });
       }
     }
-  }, [src, initAudioAnalyser, isLiveStream, muted]);
+  }, [src, isLiveStream, initAudioAnalyser]);
 
   useEffect(() => {
     loadStream();
@@ -493,6 +522,12 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+    };
+  }, [loadStream]);
+
+  // Clean up animation frame and AudioContext only on full unmount
+  useEffect(() => {
+    return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -501,7 +536,7 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         audioContextRef.current = null;
       }
     };
-  }, [loadStream]);
+  }, []);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -509,6 +544,8 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
       audioContextRef.current.resume().catch(() => {});
     }
     if (videoRef.current.paused) {
+      videoRef.current.muted = muted;
+      videoRef.current.volume = muted ? 0 : volume;
       videoRef.current.play().then(() => {
         setIsPlaying(true);
         initAudioAnalyser();
@@ -520,12 +557,24 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   };
 
   const toggleMute = () => {
-    if (!videoRef.current) return;
+    const video = videoRef.current;
     const nextMuted = !muted;
+    const effectiveVol = nextMuted ? 0 : (volume > 0 ? volume : 1);
+
     setMuted(nextMuted);
-    if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = nextMuted ? 0 : volume;
+    if (!nextMuted && volume === 0) {
+      setVolume(1);
     }
+
+    if (video) {
+      video.muted = nextMuted;
+      video.volume = effectiveVol;
+    }
+
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = nextMuted ? 0 : effectiveVol;
+    }
+
     if (audioContextRef.current?.state === 'suspended') {
       audioContextRef.current.resume().catch(() => {});
     }
@@ -533,13 +582,22 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
   };
 
   const handleVolumeChange = (newVol: number) => {
-    setVolume(newVol);
-    if (newVol > 0 && muted) {
-      setMuted(false);
+    const video = videoRef.current;
+    const clampedVol = Math.max(0, Math.min(1, newVol));
+    const nextMuted = clampedVol === 0;
+
+    setVolume(clampedVol);
+    setMuted(nextMuted);
+
+    if (video) {
+      video.muted = nextMuted;
+      video.volume = clampedVol;
     }
+
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = (newVol > 0 && !muted) ? newVol : 0;
+      gainNodeRef.current.gain.value = nextMuted ? 0 : clampedVol;
     }
+
     if (audioContextRef.current?.state === 'suspended') {
       audioContextRef.current.resume().catch(() => {});
     }
@@ -632,6 +690,22 @@ export const KashtrixMediaPlayer: React.FC<KashtrixMediaPlayerProps> = ({
         className={`w-full bg-black object-contain ${isFullscreen ? 'h-full max-h-screen' : 'h-full'}`}
         style={isFullscreen ? { maxHeight: '100vh', height: '100vh' } : { maxHeight }}
       />
+
+      {/* Quick Unmute Floating Action (Visible when muted & playing) */}
+      {muted && isPlaying && !loading && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
+          }}
+          className="absolute left-3.5 bottom-14 z-25 inline-flex items-center gap-1.5 rounded-full bg-black/80 px-3 py-1.5 text-xs font-semibold text-white shadow-xl ring-1 ring-[#7C3AED]/50 backdrop-blur-md transition-all hover:bg-[#7C3AED] hover:scale-105"
+          title="Click to Unmute Audio"
+        >
+          <FiVolumeX size={14} className="text-amber-300" />
+          <span>Click to Unmute Audio</span>
+        </button>
+      )}
 
       {/* Top Header Bar Overlay */}
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent px-3.5 py-2.5 opacity-90 transition-opacity group-hover:opacity-100">

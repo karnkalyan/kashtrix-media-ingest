@@ -39,6 +39,8 @@ const buildRecordingHlsArgs = (filePath, playlistPath, segmentPattern, mediaInfo
 
     return [
         '-hide_banner', '-loglevel', 'warning',
+        '-fflags', '+genpts+discardcorrupt',
+        '-avoid_negative_ts', 'make_zero',
         '-probesize', '5000000',
         '-analyzeduration', '5000000',
         '-i', filePath,

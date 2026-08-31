@@ -2412,6 +2412,11 @@ const devicePreviewInputArgs = (videoDevice, audioDevice, options = {}) => {
             }
             const videoInput = (options.videoInput && options.videoInput !== 'unset' && options.videoInput !== 'auto') ? options.videoInput : 'sdi';
             if (videoInput) args.push('-video_input', videoInput);
+            args.push(
+                '-audio_input', 'embedded',
+                '-channels', '8',
+                '-audio_depth', '32',
+            );
             if (options.rawFormat) args.push('-raw_format', options.rawFormat);
             args.push('-i', dev);
             return args;

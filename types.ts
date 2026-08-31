@@ -863,6 +863,7 @@ export interface RtmpSecuritySettings {
   authMode: 'flexible' | 'key_only' | 'credentials_only';
   singlePublisherPerKey: boolean;
   playbackSecurityEnabled?: boolean;
+  httpPort?: number | string;
   keys: RtmpStreamKey[];
   accounts: RtmpPublisherAccount[];
 }
