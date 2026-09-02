@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test channelInputPaths.test.js recordingProcessControl.test.js decklinkCapture.test.js getDevices.test.js securityPolicy.test.js superadminBootstrap.test.js recordingLifecycle.test.js recordingProfiles.test.js recordingPreview.test.js licensePolicy.test.js secureLicenseRuntime.test.js storagePaths.test.js networkShares.test.js ftpServer.test.js",
+    "test": "node --test channelInputPaths.test.js recordingProcessControl.test.js decklinkCapture.test.js getDevices.test.js securityPolicy.test.js superadminBootstrap.test.js recordingLifecycle.test.js recordingProfiles.test.js recordingPreview.test.js licensePolicy.test.js secureLicenseRuntime.test.js storagePaths.test.js networkShares.test.js ftpServer.test.js youtubeManager.test.js",
     "bootstrap:superadmin": "node scripts/bootstrap-superadmin.cjs",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "db:push": "node scripts/remove-legacy-license-storage.cjs && prisma db push --schema prisma/schema.prisma --accept-data-loss",
@@ -29,7 +29,8 @@
     "multer": "^2.0.2",
     "node-media-server": "^4.2.4",
     "systeminformation": "^5.27.10",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "ytdlp-nodejs": "^3.4.5"
   },
   "devDependencies": {
     "prisma": "^6.2.1"

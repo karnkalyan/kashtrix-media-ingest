@@ -203,19 +203,18 @@ const {
     getRecordingProfileSummaries,
 } = require('./recordingProfiles');
 
-// yt-dlp cross-platform binary resolution
-const resolveYtDlpPath = () => {
-    if (process.platform === 'win32') return 'yt-dlp.exe';
-    const candidates = [
-        '/usr/local/bin/yt-dlp',
-        '/usr/bin/yt-dlp',
-        path.join(os.homedir(), '.local', 'bin', 'yt-dlp'),
-    ];
-    for (const p of candidates) {
-        if (fs.existsSync(p)) return p;
-    }
-    return 'yt-dlp'; // fallback to PATH
-};
+const {
+    isYouTubeUrl,
+    isYouTubeChannel,
+    getYtDlpBinaryPath,
+    ensureYtDlpAvailable,
+    updateYtDlp,
+    parsePipedCommand,
+    spawnYouTubePipeline,
+} = require('./youtubeManager');
+
+// yt-dlp cross-platform binary resolution via ytdlp-nodejs
+const resolveYtDlpPath = () => getYtDlpBinaryPath();
 const ytdlpPath = resolveYtDlpPath();
 
 // URL sanitization for security
@@ -2039,6 +2038,49 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
 
         ensureOutputDirectories(cmd);
 
+        // Handle YouTube Ingest Pipeline (piped yt-dlp to ffmpeg or inputType === youtube)
+        const piped = parsePipedCommand(cmd);
+        if (piped.isPiped || isYouTubeChannel(channel)) {
+            let ytArgs = [];
+            let ffmpegCommandStr = cmd;
+
+            if (piped.isPiped) {
+                const ytParts = parseArgsStringToArgv(piped.ytDlpCmd);
+                ytArgs = ytParts.slice(1);
+                ffmpegCommandStr = piped.ffmpegCmd;
+            }
+
+            const ffmpegParts = parseArgsStringToArgv(ffmpegCommandStr);
+            let ffmpegArgs = ffmpegParts[0] === 'ffmpeg' ? ffmpegParts.slice(1) : ffmpegParts;
+
+            // Ensure -i pipe:0 exists in ffmpegArgs
+            if (!ffmpegArgs.includes('-i')) {
+                ffmpegArgs = ['-i', 'pipe:0', ...ffmpegArgs];
+            }
+
+            const pipeline = spawnYouTubePipeline({
+                channelId,
+                channelName: channel.name,
+                inputUrl: channel.inputUrl,
+                ytArgs,
+                ffmpegPath,
+                ffmpegArgs,
+                cwd: PROJECT_ROOT,
+                onStats: (stats) => broadcastStats(channelId, stats),
+                onClose: (code) => {
+                    delete runningProcesses[channelId];
+                    broadcastStats(channelId, { status: 'stopped', uptime: 0, speed: 0 });
+                },
+                onError: (err) => {
+                    delete runningProcesses[channelId];
+                    broadcastStats(channelId, { status: 'stopped', uptime: 0, speed: 0 });
+                },
+            });
+
+            runningProcesses[channelId] = pipeline.ffmpegProc;
+            return res.json({ ok: true, message: `Channel ${channel.name} started (YouTube Engine)`, pid: pipeline.pid });
+        }
+
         const parts = parseArgsStringToArgv(cmd);
         const bin = parts[0] === 'ffmpeg' ? ffmpegPath : parts[0];
         let args = parts.slice(1);
@@ -2117,6 +2159,12 @@ app.post('/api/channels/stop', authMiddleware, async (req, res) => {
     const { channelId } = req.body;
     const proc = runningProcesses[channelId];
     if (proc) {
+        if (typeof proc.killPipeline === 'function') {
+            try { proc.killPipeline('SIGKILL'); } catch (_) {}
+        }
+        if (proc.ytChildProc) {
+            try { proc.ytChildProc.kill?.('SIGKILL'); } catch (_) {}
+        }
         try {
             proc.stdin?.write?.('q');
             setTimeout(() => {
@@ -2130,6 +2178,24 @@ app.post('/api/channels/stop', authMiddleware, async (req, res) => {
     }
     broadcastStats(channelId, { status: 'stopped', uptime: 0, speed: 0 });
     res.json({ ok: true, message: 'Channel stopped' });
+});
+
+app.get('/api/ytdlp/status', authMiddleware, async (req, res) => {
+    try {
+        const info = await ensureYtDlpAvailable();
+        res.json({ ok: true, ...info });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+app.post('/api/ytdlp/update', authMiddleware, async (req, res) => {
+    try {
+        const result = await updateYtDlp();
+        res.json({ ok: result.success, ...result });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
 });
 
 app.post('/api/ffprobe-ts-programs', authMiddleware, async (req, res) => {
@@ -8506,6 +8572,13 @@ const apiServer = server.listen(API_PORT, () => {
     startIngestStatsBroadcast();
     startStorageMonitoring();
     startMuxStatsBroadcast();
+    ensureYtDlpAvailable().then(info => {
+        if (info.available) {
+            console.log(`[yt-dlp] Cross-platform engine ready: ${info.path} (v${info.version || 'active'})`);
+        } else {
+            console.warn(`[yt-dlp] Engine warning: ${info.error || 'Binary not ready'}`);
+        }
+    }).catch(err => console.warn(`[yt-dlp] Startup check notice: ${err.message}`));
     kashtrixFtpServer.start().catch(err => console.warn('[FTP] Startup notice:', err.message));
 
     void secureLicense.start().then(async license => {

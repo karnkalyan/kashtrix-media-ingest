@@ -648,7 +648,7 @@ export const generateCommand = (
 
   const youtubePrefix =
     channel.inputType === InputType.YOUTUBE
-      ? `yt-dlp --no-update -f b -o - ${quote(channel.inputUrl)} | `
+      ? `yt-dlp --no-update -f bv*+ba/b -o - ${quote(channel.inputUrl)} | `
       : "";
 
   const mapOptions: string[] = [];
