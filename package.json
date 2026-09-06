@@ -13,7 +13,10 @@
     "update": "node scripts/kashtrix-streamops-update.cjs",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node backend/server.js"
+    "start": "node backend/server.js",
+    "record:start": "node scripts/record-client.cjs start",
+    "record:stop": "node scripts/record-client.cjs stop",
+    "record:status": "node scripts/record-client.cjs status"
   },
   "bin": {
     "kashtrix-streamops": "./scripts/kashtrix-streamops-update.cjs"

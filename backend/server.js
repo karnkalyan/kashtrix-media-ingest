@@ -42,6 +42,7 @@ const systemApi = require('./systemInfoApi'); // Import system API functions
 const { getNetworkShareInfo, DEFAULT_NETWORK_SHARE_USERS, autoConfigureWindowsShare, syncSambaUser, syncAllSambaUsers } = require('./networkShares');
 const { createMediaExplorerMiddleware, formatBytes } = require('./webMediaExplorer');
 const { KashtrixFtpServer } = require('./ftpServer');
+const { KashtrixTcpCommandServer } = require('./tcpCommandServer');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {
@@ -603,6 +604,7 @@ const defaultSettings = {
     mediaPort: MEDIA_PORT,
     httpPort: 8100,
     apiPort: API_PORT,
+    tcpControlPort: 9999,
     storageSafetyEnabled: true,
     storageThresholdPercent: 90,
     storageCriticalThresholdPercent: 95,
@@ -622,6 +624,7 @@ const getSettings = () => {
         mediaPort: clampPort(settings.mediaPort, MEDIA_PORT),
         httpPort: clampPort(settings.httpPort, 8100),
         apiPort: clampPort(settings.apiPort, API_PORT),
+        tcpControlPort: clampPort(settings.tcpControlPort, 9999),
         storageSafetyEnabled: settings.storageSafetyEnabled !== false,
         storageThresholdPercent: !isNaN(threshold) && threshold >= 50 && threshold <= 99 ? threshold : 90,
         storageCriticalThresholdPercent: !isNaN(criticalThreshold) && criticalThreshold >= 60 && criticalThreshold <= 99 ? criticalThreshold : 95,
@@ -6500,19 +6503,24 @@ app.put(['/api/ingest/record/presets/default', '/api/recording/presets/default']
     }
 });
 
-app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
-    const { app: appName, stream, ...requestedOptions } = req.body || {};
-    if (!appName || !stream) return res.status(400).json({ error: 'app and stream are required' });
+const startActiveRecording = async ({
+    appName,
+    stream,
+    options: requestedOptions = {},
+    initiatedBy = { username: 'tcp-client', role: 'admin' },
+    req = null
+} = {}) => {
+    if (!appName || !stream) return { success: false, statusCode: 400, error: 'app and stream are required' };
 
     const liveIngestSelected = activeSessions.has(getRecordingKey(appName, stream));
     const options = liveIngestSelected
         ? { ...requestedOptions, sourceType: 'ingest', videoDevice: '', audioDevice: '' }
-        : requestedOptions;
+        : { ...requestedOptions };
 
-    options.initiatedBy = {
-        userId: req.user?.id,
-        username: req.user?.sub,
-        role: req.user?.role,
+    options.initiatedBy = initiatedBy || {
+        userId: req?.user?.id,
+        username: req?.user?.sub || 'tcp-client',
+        role: req?.user?.role || 'admin',
     };
 
     // Physical capture-device concurrency comes from the signed numeric
@@ -6523,13 +6531,15 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
         const currentRecordingCount = Array.from(activeRecordings.values())
             .filter(recording => recording.options?.sourceType === 'device').length;
         if (maxDevices < 1 || currentRecordingCount >= maxDevices) {
-            return res.status(403).json({
+            return {
+                success: false,
+                statusCode: 403,
                 error: maxDevices < 1
                     ? 'Device recording is not licensed. Set RECORDING_DEVICES above zero in Secure License Manager.'
                     : `Recording device limit reached (${currentRecordingCount}/${maxDevices}). Upgrade the secure license entitlement for more simultaneous devices.`,
                 currentCount: currentRecordingCount,
                 maxDevices,
-            });
+            };
         }
     }
 
@@ -6539,17 +6549,22 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
             targetDir = resolveLocalStoragePath(options.storagePath);
         }
     } catch (error) {
-        return res.status(400).json({ error: error.message });
+        return { success: false, statusCode: 400, error: error.message };
     }
     const diskStatus = checkStorageDiskCapacity(targetDir);
     if (!diskStatus.canRecord) {
-        return res.status(400).json({
+        return {
+            success: false,
+            statusCode: 400,
             error: `Cannot start recording: Storage disk full or below 10% reserve deadline (${diskStatus.usePercent.toFixed(1)}% used, only ${diskStatus.availableFmt} free remaining). Minimum 5-10% free space required.`,
             storage: diskStatus,
-        });
+        };
     }
 
-    if (options.sourceType !== 'device' && !activeSessions.has(getRecordingKey(appName, stream))) return res.status(409).json({ error: 'The selected ingest stream is not live' });
+    if (options.sourceType !== 'device' && !activeSessions.has(getRecordingKey(appName, stream))) {
+        return { success: false, statusCode: 409, error: 'The selected ingest stream is not live' };
+    }
+
     if (options.sourceType === 'device') {
         const devices = await scanCaptureDevices();
         options.rawVideoDevice = options.videoDevice;
@@ -6558,14 +6573,15 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
         if (options.audioDevice) options.audioDevice = resolveCaptureDevice(devices, options.audioDevice);
 
         if (options.videoDevice && Array.isArray(devices.video) && devices.video.length > 0 && !devices.video.includes(options.videoDevice)) {
-            return res.status(400).json({ error: 'Selected video capture device is not available on the server' });
+            return { success: false, statusCode: 400, error: 'Selected video capture device is not available on the server' };
         }
         if (options.audioDevice && Array.isArray(devices.audio) && devices.audio.length > 0 && !devices.audio.includes(options.audioDevice)) {
-            return res.status(400).json({ error: 'Selected audio capture device is not available on the server' });
+            return { success: false, statusCode: 400, error: 'Selected audio capture device is not available on the server' };
         }
 
         await releaseDevicePreviewsForRecording(options);
     }
+
     try {
         const active = await beginRecording(appName, stream, options);
         const recordingKey = getRecordingKey(active.appName, active.stream);
@@ -6576,9 +6592,9 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
                 await finishRecording(recordingKey, 'SIGTERM', false);
             }
             await logAuditTrail({
-                userId: req.user?.id,
-                username: req.user?.sub,
-                userRole: req.user?.role,
+                userId: options.initiatedBy?.userId,
+                username: options.initiatedBy?.username,
+                userRole: options.initiatedBy?.role,
                 action: 'RECORDING_START_FAILED',
                 entityType: 'RECORDING',
                 entityId: recordingKey,
@@ -6591,14 +6607,17 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
                 status: 'FAILURE',
                 req
             });
-            return res.status(422).json({
+            return {
+                success: false,
+                statusCode: 422,
                 error: formatUserFriendlyFfmpegError(startError.message || active.lastError) || 'FFmpeg could not write media from the selected source',
-            });
+            };
         }
+
         await logAuditTrail({
-            userId: req.user?.id,
-            username: req.user?.sub,
-            userRole: req.user?.role,
+            userId: options.initiatedBy?.userId,
+            username: options.initiatedBy?.username,
+            userRole: options.initiatedBy?.role,
             action: 'RECORDING_STARTED',
             entityType: 'RECORDING',
             entityId: recordingKey,
@@ -6642,12 +6661,20 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
             status: 'SUCCESS',
             req
         });
-        res.status(201).json({ success: true, message: 'Recording started', recordIds: active.outputs.map(item => item.recordId), recording: getActiveRecordingPayload(active.appName, active.stream) });
+
+        return {
+            success: true,
+            statusCode: 201,
+            message: 'Recording started',
+            key: recordingKey,
+            recordIds: active.outputs.map(item => item.recordId),
+            recording: getActiveRecordingPayload(active.appName, active.stream),
+        };
     } catch (error) {
         await logAuditTrail({
-            userId: req.user?.id,
-            username: req.user?.sub,
-            userRole: req.user?.role,
+            userId: options.initiatedBy?.userId,
+            username: options.initiatedBy?.username,
+            userRole: options.initiatedBy?.role,
             action: 'RECORDING_START_FAILED',
             entityType: 'RECORDING',
             entityId: `${appName}/${stream}`,
@@ -6659,8 +6686,27 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requi
             status: 'FAILURE',
             req
         });
-        res.status(409).json({ error: error.message });
+        return { success: false, statusCode: 409, error: error.message };
     }
+};
+
+app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
+    const { app: appName, stream, ...requestedOptions } = req.body || {};
+    const result = await startActiveRecording({
+        appName,
+        stream,
+        options: requestedOptions,
+        initiatedBy: {
+            userId: req.user?.id,
+            username: req.user?.sub,
+            role: req.user?.role,
+        },
+        req
+    });
+    if (!result.success) {
+        return res.status(result.statusCode || 400).json(result);
+    }
+    res.status(result.statusCode || 201).json(result);
 });
 
 const findActiveRecordingTarget = ({ appName, stream, requestedKey }) => {
@@ -6773,51 +6819,112 @@ app.post('/api/ingest/record/resume', authMiddleware, requireActiveLicense, requ
     setRecordingPaused(req, res, false)
 ));
 
-app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
-    const { app: appName, stream, key: requestedKey } = req.body || {};
-    let targetKey = requestedKey;
-    if (!targetKey && appName && stream) {
-        // beginRecording sanitizes both key segments before storing them. Apply
-        // the same normalization here so friendly DirectShow names containing
-        // spaces resolve to the correct recorder (especially when several
-        // capture devices are recording at once).
-        targetKey = getRecordingKey(
-            cleanStreamPart(appName, 'live'),
-            cleanStreamPart(stream, 'stream'),
-        );
-    }
-    let data = targetKey ? activeRecordings.get(targetKey) : null;
-    if (!data && (targetKey || stream)) {
-        for (const [k, v] of activeRecordings.entries()) {
-            if (k === targetKey || k === `${appName}/${stream}` || k.endsWith(`/${stream}`) || (stream && k.includes(stream)) || (appName && k.startsWith(`${appName}/`))) {
-                targetKey = k;
-                data = v;
-                break;
-            }
-        }
-    }
-    if (!data && activeRecordings.size === 1) {
-        targetKey = activeRecordings.keys().next().value;
-        data = activeRecordings.get(targetKey);
-    }
+const stopActiveRecording = async ({
+    appName,
+    stream,
+    key: requestedKey,
+    initiatedBy = { username: 'tcp-client', role: 'admin' },
+    req = null
+} = {}) => {
+    const { targetKey, data } = findActiveRecordingTarget({ appName, stream, requestedKey });
 
-    if (!data || !targetKey) return res.json({ success: false, error: 'No active recording found' });
+    if (!data || !targetKey) {
+        return { success: false, error: 'No active recording found' };
+    }
 
     const result = await finishRecording(targetKey, 'SIGTERM', true);
     if (!result?.completedOutputs?.length) {
-        return res.status(422).json({
+        return {
             success: false,
+            statusCode: 422,
             error: result?.failedOutputs?.[0]?.error || result?.lastError || 'Recording stopped, but no playable media file was created',
             details: result?.failedOutputs || [],
-        });
+            key: targetKey,
+        };
     }
 
-    res.json({
+    await logAuditTrail({
+        userId: initiatedBy?.userId || req?.user?.id,
+        username: initiatedBy?.username || req?.user?.sub || 'tcp-client',
+        userRole: initiatedBy?.role || req?.user?.role || 'admin',
+        action: 'RECORDING_STOPPED',
+        entityType: 'RECORDING',
+        entityId: targetKey,
+        details: { key: targetKey, completedOutputs: result.completedOutputs.length },
+        status: 'SUCCESS',
+        req
+    });
+
+    return {
         success: true,
         message: 'Recording stopped and media file verified',
         key: targetKey,
         recordings: result.completedOutputs,
+    };
+};
+
+const stopAllActiveRecordings = async ({
+    initiatedBy = { username: 'tcp-client', role: 'admin' },
+    req = null
+} = {}) => {
+    const keys = Array.from(activeRecordings.keys());
+    if (keys.length === 0) {
+        return { success: true, message: 'No active recordings to stop', stoppedCount: 0, results: [] };
+    }
+    const results = [];
+    for (const key of keys) {
+        try {
+            const res = await stopActiveRecording({ key, initiatedBy, req });
+            results.push(res);
+        } catch (err) {
+            results.push({ success: false, key, error: err.message });
+        }
+    }
+    const stoppedCount = results.filter(r => r.success).length;
+    return {
+        success: stoppedCount > 0,
+        message: `Stopped ${stoppedCount} of ${keys.length} active recording(s)`,
+        stoppedCount,
+        totalCount: keys.length,
+        results,
+    };
+};
+
+app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
+    const { app: appName, stream, key: requestedKey } = req.body || {};
+    const result = await stopActiveRecording({
+        appName,
+        stream,
+        key: requestedKey,
+        initiatedBy: {
+            userId: req.user?.id,
+            username: req.user?.sub,
+            role: req.user?.role,
+        },
+        req
     });
+    if (!result.success) {
+        const status = result.error === 'No active recording found' ? 200 : (result.statusCode || 422);
+        return res.status(status).json(result);
+    }
+    res.json(result);
+});
+
+// --- TCP Automation & Command Control Server (Start / Stop Recording) ---
+const TCP_CONTROL_PORT = clampPort(process.env.TCP_CONTROL_PORT || getSettings().tcpControlPort, 9999);
+const kashtrixTcpServer = new KashtrixTcpCommandServer({
+    port: TCP_CONTROL_PORT,
+    startRecording: (args) => startActiveRecording(args),
+    stopRecording: (args) => stopActiveRecording(args),
+    stopAllRecordings: (args) => stopAllActiveRecordings(args),
+    getActiveRecordings: () => Array.from(activeRecordings.values()).map(r => ({
+        key: getRecordingKey(r.appName, r.stream),
+        app: r.appName,
+        stream: r.stream,
+        startTime: r.startTime,
+        isPaused: r.isPaused,
+        outputsCount: (r.outputs || []).length,
+    })),
 });
 
 app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, requireRole('admin', 'operator', 'archive'), async (req, res) => {
@@ -9156,6 +9263,9 @@ const gracefulShutdown = async (signal) => {
     }
 
     try {
+        if (typeof kashtrixTcpServer !== 'undefined' && kashtrixTcpServer) {
+            await kashtrixTcpServer.stop().catch(() => {});
+        }
         secureLicense.close();
         server.close();
         mediaServer.close();
@@ -9202,6 +9312,7 @@ const apiServer = server.listen(API_PORT, () => {
         }
     }).catch(err => console.warn(`[yt-dlp] Startup check notice: ${err.message}`));
     kashtrixFtpServer.start().catch(err => console.warn('[FTP] Startup notice:', err.message));
+    kashtrixTcpServer.start().catch(err => console.warn('[TCP Control] Startup notice:', err.message));
 
     void secureLicense.start().then(async license => {
         console.log(`[License] Secure client state: ${license.status}`);
