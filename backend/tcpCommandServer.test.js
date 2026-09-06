@@ -147,3 +147,79 @@ test('KashtrixTcpCommandServer handles JSON commands and STOP_ALL', async () => 
         await server.stop();
     }
 });
+
+test('KashtrixTcpCommandServer handles Easy OnAIR playout triggers (no newlines, CR only, null bytes, quotes)', async () => {
+    let stoppedAllCount = 0;
+    let stoppedSingleCalls = [];
+
+    const server = new KashtrixTcpCommandServer({
+        port: 19994,
+        host: '127.0.0.1',
+        stopRecording: async (args) => {
+            stoppedSingleCalls.push(args);
+            return { success: true, key: args.key || `${args.appName}/${args.stream}` };
+        },
+        stopAllRecordings: async () => {
+            stoppedAllCount++;
+            return { success: true, stoppedCount: 1 };
+        },
+        getActiveRecordings: () => [{ key: 'device/cam1', app: 'device', stream: 'cam1' }],
+    });
+    await server.start();
+
+    // Helper that sends RAW bytes without appending any newline
+    const sendRawTcp = (rawString, disconnectImmediately = false) => {
+        return new Promise((resolve, reject) => {
+            const socket = net.createConnection({ port: 19994, host: '127.0.0.1' }, () => {
+                socket.write(rawString);
+                if (disconnectImmediately) {
+                    socket.end(); // Immediate disconnect without waiting for response
+                }
+            });
+            let data = '';
+            socket.on('data', (chunk) => {
+                data += chunk.toString('utf8');
+                socket.end();
+            });
+            socket.on('close', () => resolve(data.trim()));
+            socket.on('error', reject);
+            setTimeout(() => { socket.destroy(); resolve(data.trim()); }, 1500);
+        });
+    };
+
+    try {
+        // 1. Bare "STOP_ALL" with 50ms auto-flush (reads response)
+        const res1 = await sendRawTcp('STOP_ALL');
+        assert.ok(res1.includes('OK: STOPPED_ALL'), `Expected OK: STOPPED_ALL, got: ${res1}`);
+        assert.equal(stoppedAllCount, 1);
+
+        // 2. "STOP ALL" with space and quotes '"STOP ALL"'
+        const res2 = await sendRawTcp('"STOP ALL"');
+        assert.ok(res2.includes('OK: STOPPED_ALL'), `Expected OK: STOPPED_ALL, got: ${res2}`);
+        assert.equal(stoppedAllCount, 2);
+
+        // 3. "STOP_ALL\r" (Mac / classic playout carriage return)
+        const res3 = await sendRawTcp('STOP_ALL\r');
+        assert.ok(res3.includes('OK: STOPPED_ALL'), `Expected OK: STOPPED_ALL, got: ${res3}`);
+        assert.equal(stoppedAllCount, 3);
+
+        // 4. "STOP_ALL\0" (Null-terminated C/Delphi string)
+        const res4 = await sendRawTcp('STOP_ALL\0');
+        assert.ok(res4.includes('OK: STOPPED_ALL'), `Expected OK: STOPPED_ALL, got: ${res4}`);
+        assert.equal(stoppedAllCount, 4);
+
+        // 5. Bare "STOP" when 1 recording is active
+        const res5 = await sendRawTcp('STOP');
+        assert.ok(res5.includes('OK: RECORDING_STOPPED'), `Expected OK: RECORDING_STOPPED, got: ${res5}`);
+        assert.equal(stoppedSingleCalls.length, 1);
+
+        // 6. Fire-and-forget: sends "STOP_ALL" and immediately disconnects without waiting
+        await sendRawTcp('STOP_ALL', true);
+        // Give server 50ms to finish disconnect flush
+        await new Promise(r => setTimeout(r, 60));
+        assert.equal(stoppedAllCount, 5);
+    } finally {
+        await server.stop();
+    }
+});
+

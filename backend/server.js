@@ -6833,15 +6833,21 @@ const stopActiveRecording = async ({
     }
 
     const result = await finishRecording(targetKey, 'SIGTERM', true);
-    if (!result?.completedOutputs?.length) {
+    const stillActive = activeRecordings.has(targetKey);
+    if (stillActive) {
         return {
             success: false,
-            statusCode: 422,
-            error: result?.failedOutputs?.[0]?.error || result?.lastError || 'Recording stopped, but no playable media file was created',
-            details: result?.failedOutputs || [],
+            statusCode: 500,
+            error: 'Failed to terminate recording process',
             key: targetKey,
         };
     }
+
+    const completed = result?.completedOutputs || [];
+    const failed = result?.failedOutputs || [];
+    const warning = completed.length === 0
+        ? (failed[0]?.error || result?.lastError || 'Recording process stopped (media verification incomplete or short duration)')
+        : null;
 
     await logAuditTrail({
         userId: initiatedBy?.userId || req?.user?.id,
@@ -6850,16 +6856,18 @@ const stopActiveRecording = async ({
         action: 'RECORDING_STOPPED',
         entityType: 'RECORDING',
         entityId: targetKey,
-        details: { key: targetKey, completedOutputs: result.completedOutputs.length },
+        details: { key: targetKey, completedOutputs: completed.length, warning },
         status: 'SUCCESS',
         req
     });
 
     return {
         success: true,
-        message: 'Recording stopped and media file verified',
+        message: warning ? `Recording stopped: ${warning}` : 'Recording stopped and media file verified',
         key: targetKey,
-        recordings: result.completedOutputs,
+        warning: warning || undefined,
+        recordings: completed,
+        details: failed,
     };
 };
 
@@ -6882,7 +6890,7 @@ const stopAllActiveRecordings = async ({
     }
     const stoppedCount = results.filter(r => r.success).length;
     return {
-        success: stoppedCount > 0,
+        success: true,
         message: `Stopped ${stoppedCount} of ${keys.length} active recording(s)`,
         stoppedCount,
         totalCount: keys.length,

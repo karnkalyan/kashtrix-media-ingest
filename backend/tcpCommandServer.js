@@ -54,45 +54,127 @@ class KashtrixTcpCommandServer {
         });
     }
 
+    cleanCommandLine(raw) {
+        if (!raw) return '';
+        let str = String(raw).trim();
+        // Remove null bytes, non-printable control chars, and ASCII controls except standard spaces
+        str = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+        // Remove UTF-8 BOM
+        if (str.charCodeAt(0) === 0xFEFF) {
+            str = str.slice(1);
+        }
+        str = str.trim();
+        // Remove surrounding single or double quotes (common in automation text fields)
+        if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+            str = str.slice(1, -1).trim();
+        }
+        // Remove trailing semicolon e.g. STOP_ALL;
+        if (str.endsWith(';')) {
+            str = str.slice(0, -1).trim();
+        }
+        // If formatted as key-value e.g. cmd=STOP_ALL, command=STOP_ALL, action=STOP_ALL
+        const kvMatch = str.match(/^(?:cmd|command|action)\s*[:=]\s*(.+)$/i);
+        if (kvMatch) {
+            str = kvMatch[1].trim();
+        }
+        return str;
+    }
+
     handleClient(socket) {
         this.connections.add(socket);
         const clientAddress = `${socket.remoteAddress || 'unknown'}:${socket.remotePort || '0'}`;
         this.logger.log(`[TCP Command Server] Client connected from ${clientAddress}`);
 
         let buffer = '';
+        let flushTimeout = null;
 
-        socket.on('data', async (chunk) => {
-            buffer += chunk.toString('utf8');
-            let newlineIndex;
-            while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-                const line = buffer.slice(0, newlineIndex).trim();
-                buffer = buffer.slice(newlineIndex + 1);
-                if (line.length > 0) {
-                    try {
-                        await this.processCommand(socket, line, clientAddress);
-                    } catch (err) {
-                        this.logger.error('[TCP Command Server] Command execution error:', err);
-                        if (!socket.destroyed) {
-                            socket.write(`ERROR: Internal error processing command: ${err.message}\r\n`);
-                        }
-                    }
+        const executeCommandString = async (rawInput) => {
+            const clean = this.cleanCommandLine(rawInput);
+            if (!clean) return;
+            this.logger.log(`[TCP Command Server] [${clientAddress}] Processing command: "${clean}"`);
+            try {
+                await this.processCommand(socket, clean, clientAddress);
+            } catch (err) {
+                this.logger.error(`[TCP Command Server] [${clientAddress}] Execution error:`, err.message);
+                if (!socket.destroyed) {
+                    try { socket.write(`ERROR: Internal error: ${err.message}\r\n`); } catch (_) {}
                 }
             }
+        };
+
+        const processDelimitedLines = async () => {
+            // Support multiple delimiters: \r\n, \n, \r, \0, ;
+            let match;
+            while ((match = buffer.match(/[\r\n\0;]/))) {
+                const delimIndex = match.index;
+                const line = buffer.slice(0, delimIndex);
+                let nextIndex = delimIndex + 1;
+                // Treat CRLF as a single delimiter
+                if (buffer[delimIndex] === '\r' && buffer[nextIndex] === '\n') {
+                    nextIndex++;
+                }
+                buffer = buffer.slice(nextIndex);
+                if (line.trim().length > 0) {
+                    await executeCommandString(line);
+                }
+            }
+        };
+
+        const flushRemainingBuffer = async (reason = 'flush') => {
+            if (flushTimeout) {
+                clearTimeout(flushTimeout);
+                flushTimeout = null;
+            }
+            if (buffer.trim().length > 0) {
+                const remaining = buffer;
+                buffer = '';
+                this.logger.log(`[TCP Command Server] [${clientAddress}] ${reason}: "${remaining.trim()}"`);
+                await executeCommandString(remaining);
+            }
+        };
+
+        socket.on('data', async (chunk) => {
+            const rawChunk = chunk.toString('utf8');
+            this.logger.log(`[TCP Command Server] [${clientAddress}] Raw data (${chunk.length} bytes): ${JSON.stringify(rawChunk)}`);
+            buffer += rawChunk;
+
+            if (flushTimeout) {
+                clearTimeout(flushTimeout);
+                flushTimeout = null;
+            }
+
+            await processDelimitedLines();
+
+            // If client sends command without a trailing newline (e.g. Easy OnAIR, EMS Playout, vMix TCP),
+            // wait 50ms for any more chunks, then automatically execute whatever is in the buffer!
+            if (buffer.trim().length > 0) {
+                flushTimeout = setTimeout(async () => {
+                    flushTimeout = null;
+                    await flushRemainingBuffer('Inactivity auto-flush');
+                }, 50);
+            }
+        });
+
+        socket.on('end', async () => {
+            await flushRemainingBuffer('Disconnect auto-flush (end)');
+        });
+
+        socket.on('close', async () => {
+            await flushRemainingBuffer('Disconnect auto-flush (close)');
+            this.connections.delete(socket);
+            this.logger.log(`[TCP Command Server] Client disconnected from ${clientAddress}`);
         });
 
         socket.on('error', (err) => {
-            if (err.code !== 'ECONNRESET') {
+            const isBenign = err.code === 'ECONNRESET' || err.code === 'EPIPE' || (err.message && err.message.includes('ended by the other party'));
+            if (!isBenign) {
                 this.logger.warn(`[TCP Command Server] Socket error (${clientAddress}):`, err.message);
             }
-        });
-
-        socket.on('close', () => {
-            this.connections.delete(socket);
         });
     }
 
     async processCommand(socket, rawLine, clientAddress) {
-        const line = rawLine.trim();
+        const line = this.cleanCommandLine(rawLine);
         if (!line) return;
 
         // Check for JSON command payload
@@ -101,33 +183,43 @@ class KashtrixTcpCommandServer {
                 const payload = JSON.parse(line);
                 const result = await this.handleJsonCommand(payload, clientAddress);
                 if (!socket.destroyed) {
-                    socket.write(JSON.stringify(result) + '\n');
+                    try { socket.write(JSON.stringify(result) + '\n'); } catch (_) {}
                 }
                 return;
             } catch (jsonErr) {
                 if (!socket.destroyed) {
-                    socket.write(JSON.stringify({ success: false, error: `Invalid JSON: ${jsonErr.message}` }) + '\n');
+                    try { socket.write(JSON.stringify({ success: false, error: `Invalid JSON: ${jsonErr.message}` }) + '\n'); } catch (_) {}
                 }
                 return;
             }
         }
 
-        // Plain text command handling
-        const parts = line.split(/\s+/);
+        // Normalize compound command aliases (e.g. STOP ALL, STOPALL, STOP-ALL, STOP RECORDING)
+        let normalizedLine = line;
+        const upperLine = line.toUpperCase();
+        if (upperLine === 'STOP ALL' || upperLine === 'STOP-ALL' || upperLine === 'STOPALL') {
+            normalizedLine = 'STOP_ALL';
+        } else if (upperLine.startsWith('STOP RECORDING')) {
+            normalizedLine = line.replace(/STOP\s+RECORDING/i, 'STOP');
+        } else if (upperLine.startsWith('START RECORDING')) {
+            normalizedLine = line.replace(/START\s+RECORDING/i, 'START');
+        }
+
+        const parts = normalizedLine.split(/\s+/);
         const command = parts[0].toUpperCase();
         const args = parts.slice(1);
 
         switch (command) {
             case 'PING':
-                socket.write('PONG\r\n');
+                this.safeWrite(socket, 'PONG\r\n');
                 break;
 
             case 'HELP':
-                socket.write([
+                this.safeWrite(socket, [
                     '--- KASHTRIX STREAMOPS TCP CONTROL PROTOCOL ---',
                     'Commands:',
                     '  STOP [app] [stream]               - Stop recording (or single active recording)',
-                    '  STOP_ALL                          - Stop all active recordings',
+                    '  STOP_ALL (or STOP ALL)            - Stop all active recordings',
                     '  START <app> <stream> [format]     - Start recording (e.g. START live news mp4)',
                     '  STATUS                            - List active recordings and session details',
                     '  PING                              - Connection keep-alive',
@@ -143,7 +235,7 @@ class KashtrixTcpCommandServer {
             case 'LIST': {
                 const recordings = typeof this.getActiveRecordings === 'function' ? this.getActiveRecordings() : [];
                 if (!recordings || recordings.length === 0) {
-                    socket.write('NO_ACTIVE_RECORDINGS\r\n');
+                    this.safeWrite(socket, 'NO_ACTIVE_RECORDINGS\r\n');
                 } else {
                     const lines = [`ACTIVE RECORDINGS (${recordings.length}):`];
                     for (const r of recordings) {
@@ -151,21 +243,26 @@ class KashtrixTcpCommandServer {
                         const status = r.isPaused ? 'PAUSED' : 'RECORDING';
                         lines.push(`- Key: ${r.key || `${r.app}/${r.stream}`} | Status: ${status} | Uptime: ${uptime} | Outputs: ${r.outputsCount || 1}`);
                     }
-                    socket.write(lines.join('\r\n') + '\r\n');
+                    this.safeWrite(socket, lines.join('\r\n') + '\r\n');
                 }
                 break;
             }
 
-            case 'STOP':
-            case 'STOP_RECORDING': {
+            case 'STOP': {
+                // Check if user specified "STOP ALL"
                 if (args[0] && args[0].toUpperCase() === 'ALL') {
-                    const result = await this.stopAllRecordings({ initiatedBy: { username: 'tcp-client', role: 'admin' } });
-                    if (result.success) {
-                        socket.write(`OK: STOPPED_ALL count=${result.stoppedCount || 0}\r\n`);
-                    } else {
-                        socket.write(`ERROR: ${result.error || 'Failed to stop all recordings'}\r\n`);
-                    }
+                    await this.handleStopAll(socket);
                     break;
+                }
+
+                // If no arguments given, check active recordings
+                if (args.length === 0) {
+                    const active = typeof this.getActiveRecordings === 'function' ? this.getActiveRecordings() : [];
+                    // If multiple recordings active and bare STOP sent, stop all of them
+                    if (active.length > 1) {
+                        await this.handleStopAll(socket);
+                        break;
+                    }
                 }
 
                 let appName;
@@ -195,32 +292,31 @@ class KashtrixTcpCommandServer {
                 });
 
                 if (result.success) {
-                    socket.write(`OK: RECORDING_STOPPED key=${result.key || `${appName || 'live'}/${streamName || 'stream'}`}\r\n`);
+                    const keyStr = result.key || `${appName || 'live'}/${streamName || 'stream'}`;
+                    const resp = `OK: RECORDING_STOPPED key=${keyStr}\r\n`;
+                    this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                    this.safeWrite(socket, resp);
                 } else {
-                    socket.write(`ERROR: ${result.error || 'Failed to stop recording'}\r\n`);
+                    const resp = `ERROR: ${result.error || 'Failed to stop recording'}\r\n`;
+                    this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                    this.safeWrite(socket, resp);
                 }
                 break;
             }
 
             case 'STOP_ALL': {
-                const result = await this.stopAllRecordings({ initiatedBy: { username: 'tcp-client', role: 'admin' } });
-                if (result.success) {
-                    socket.write(`OK: STOPPED_ALL count=${result.stoppedCount || 0}\r\n`);
-                } else {
-                    socket.write(`ERROR: ${result.error || 'Failed to stop all recordings'}\r\n`);
-                }
+                await this.handleStopAll(socket);
                 break;
             }
 
-            case 'START':
-            case 'START_RECORDING': {
+            case 'START': {
                 if (args.length < 2) {
-                    socket.write('ERROR: Syntax: START <app> <stream> [format]\r\n');
+                    this.safeWrite(socket, 'ERROR: Syntax: START <app> <stream> [format]\r\n');
                     break;
                 }
-                const appName = args[0];
+                const appName = args[0].toLowerCase();
                 const streamName = args[1];
-                const format = args[2] || 'mp4';
+                const format = (args[2] || 'mp4').toLowerCase();
 
                 const options = {
                     formats: [format],
@@ -238,27 +334,56 @@ class KashtrixTcpCommandServer {
                 });
 
                 if (result.success) {
-                    socket.write(`OK: RECORDING_STARTED key=${result.key || `${appName}/${streamName}`}\r\n`);
+                    const resp = `OK: RECORDING_STARTED key=${result.key || `${appName}/${streamName}`}\r\n`;
+                    this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                    this.safeWrite(socket, resp);
                 } else {
-                    socket.write(`ERROR: ${result.error || 'Failed to start recording'}\r\n`);
+                    const resp = `ERROR: ${result.error || 'Failed to start recording'}\r\n`;
+                    this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                    this.safeWrite(socket, resp);
                 }
                 break;
             }
 
             case 'QUIT':
             case 'EXIT':
-                socket.end('BYE\r\n');
+                if (!socket.destroyed) {
+                    try { socket.end('BYE\r\n'); } catch (_) {}
+                }
                 break;
 
             default:
-                socket.write(`ERROR: Unknown command "${command}". Type HELP for available commands.\r\n`);
+                this.safeWrite(socket, `ERROR: Unknown command "${command}". Type HELP for available commands.\r\n`);
                 break;
         }
     }
 
+    async handleStopAll(socket) {
+        const result = await this.stopAllRecordings({ initiatedBy: { username: 'tcp-client', role: 'admin' } });
+        const count = result.stoppedCount || 0;
+        let resp;
+        if (result.success) {
+            resp = `OK: STOPPED_ALL count=${count}${count === 0 ? ' (No active recordings)' : ''}\r\n`;
+        } else {
+            resp = `ERROR: ${result.error || result.message || 'Failed to stop all recordings'}\r\n`;
+        }
+        this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+        this.safeWrite(socket, resp);
+    }
+
+    safeWrite(socket, data) {
+        if (!socket || socket.destroyed || !socket.writable) return;
+        try {
+            socket.write(data);
+        } catch (_) {}
+    }
+
     async handleJsonCommand(payload, clientAddress) {
         const rawCmd = payload.command || payload.action || '';
-        const command = String(rawCmd).toUpperCase().trim();
+        let command = String(rawCmd).toUpperCase().trim();
+        if (command === 'STOP ALL' || command === 'STOPALL') command = 'STOP_ALL';
+        if (command.startsWith('STOP RECORDING')) command = 'STOP';
+        if (command.startsWith('START RECORDING')) command = 'START';
 
         if (command === 'PING') {
             return { success: true, response: 'PONG' };
@@ -280,7 +405,7 @@ class KashtrixTcpCommandServer {
             };
         }
 
-        if (command === 'STOP' || command === 'STOP_RECORDING') {
+        if (command === 'STOP') {
             return await this.stopRecording({
                 appName: payload.app || payload.appName,
                 stream: payload.stream || payload.streamName,
@@ -295,7 +420,7 @@ class KashtrixTcpCommandServer {
             });
         }
 
-        if (command === 'START' || command === 'START_RECORDING') {
+        if (command === 'START') {
             const appName = payload.app || payload.appName || 'live';
             const stream = payload.stream || payload.streamName;
             if (!stream) {
