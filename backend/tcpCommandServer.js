@@ -5,6 +5,8 @@ class KashtrixTcpCommandServer {
         this.port = Number(options.port || process.env.TCP_CONTROL_PORT || 9999);
         this.host = options.host || '0.0.0.0';
         this.startRecording = options.startRecording || (async () => ({ success: false, error: 'startRecording not configured' }));
+        this.startRecordingByPreset = options.startRecordingByPreset || null;
+        this.getRecordingPresets = options.getRecordingPresets || null;
         this.stopRecording = options.stopRecording || (async () => ({ success: false, error: 'stopRecording not configured' }));
         this.stopAllRecordings = options.stopAllRecordings || (async () => ({ success: false, error: 'stopAllRecordings not configured' }));
         this.getActiveRecordings = options.getActiveRecordings || (() => []);
@@ -78,6 +80,35 @@ class KashtrixTcpCommandServer {
             str = kvMatch[1].trim();
         }
         return str;
+    }
+
+    matchPreset(presets, query) {
+        if (!Array.isArray(presets) || !query) return null;
+        const q = String(query).trim().toLowerCase();
+
+        // 1. Exact match by name
+        let found = presets.find(p => (p.name || '').trim().toLowerCase() === q);
+        if (found) return found;
+
+        // 2. Exact match by ID
+        found = presets.find(p => (p.id || '').trim().toLowerCase() === q);
+        if (found) return found;
+
+        // 3. Strip surrounding quotes or "PRESET" prefix/suffix
+        const stripped = q.replace(/^["']|["']$/g, '').replace(/^preset[\s:-]+/i, '').replace(/[\s:-]+preset$/i, '').trim();
+        if (stripped) {
+            found = presets.find(p => (p.name || '').trim().toLowerCase() === stripped);
+            if (found) return found;
+        }
+
+        // 4. Substring or prefix match
+        found = presets.find(p => {
+            const name = (p.name || '').toLowerCase();
+            return name.startsWith(stripped) || name.includes(stripped) || stripped.includes(name);
+        });
+        if (found) return found;
+
+        return null;
     }
 
     handleClient(socket) {
@@ -220,16 +251,35 @@ class KashtrixTcpCommandServer {
                     'Commands:',
                     '  STOP [app] [stream]               - Stop recording (or single active recording)',
                     '  STOP_ALL (or STOP ALL)            - Stop all active recordings',
-                    '  START <app> <stream> [format]     - Start recording (e.g. START live news mp4)',
+                    '  START [presetName]                - Start recording using preset (e.g. START AP1 Final)',
+                    '  START PRESET <name>               - Start recording using preset',
+                    '  START <app> <stream> [format]     - Start recording stream (e.g. START live news mp4)',
+                    '  PRESETS                           - List all available recording presets',
                     '  STATUS                            - List active recordings and session details',
                     '  PING                              - Connection keep-alive',
                     '  HELP                              - Display this command manual',
                     '  QUIT / EXIT                       - Disconnect session',
-                    'JSON syntax supported: {"command": "STOP", "app": "live", "stream": "main"}',
+                    'JSON syntax supported: {"command": "START", "preset": "AP1 Final"}',
                     '-----------------------------------------------',
                     ''
                 ].join('\r\n'));
                 break;
+
+            case 'PRESETS': {
+                const presets = typeof this.getRecordingPresets === 'function' ? await this.getRecordingPresets() : [];
+                if (!presets || presets.length === 0) {
+                    this.safeWrite(socket, 'NO_PRESETS_FOUND\r\n');
+                } else {
+                    const lines = [`AVAILABLE RECORDING PRESETS (${presets.length}):`];
+                    for (const p of presets) {
+                        const src = p.sourceType === 'device' ? `Device (${p.videoDevice || 'auto'})` : `Ingest (${p.selectedStreamKey || 'auto'})`;
+                        const fmt = p.config?.format || (Array.isArray(p.config?.formats) ? p.config.formats.join(',') : 'mp4');
+                        lines.push(`- "${p.name}" | Source: ${src} | Format: ${fmt} | Res: ${p.config?.resolution || 'source'}`);
+                    }
+                    this.safeWrite(socket, lines.join('\r\n') + '\r\n');
+                }
+                break;
+            }
 
             case 'STATUS':
             case 'LIST': {
@@ -310,6 +360,46 @@ class KashtrixTcpCommandServer {
             }
 
             case 'START': {
+                // Check if user requested a preset:
+                // e.g. "START AP1 Final", "START PRESET AP1 Final", "START 'AP1 Final'"
+                if (typeof this.getRecordingPresets === 'function' && args.length > 0) {
+                    const isExplicitPreset = args[0].toUpperCase() === 'PRESET';
+                    const presetQuery = isExplicitPreset ? args.slice(1).join(' ').trim() : args.join(' ').trim();
+
+                    if (presetQuery) {
+                        const presets = await this.getRecordingPresets();
+                        const foundPreset = this.matchPreset(presets, presetQuery);
+                        if (foundPreset) {
+                            this.logger.log(`[TCP Command Server] [${clientAddress}] Starting recording with preset: "${foundPreset.name}" (ID: ${foundPreset.id})`);
+                            const result = typeof this.startRecordingByPreset === 'function'
+                                ? await this.startRecordingByPreset(foundPreset, { username: 'tcp-client', role: 'admin' })
+                                : await this.startRecording({
+                                    appName: foundPreset.sourceType === 'device' ? 'device' : 'live',
+                                    stream: foundPreset.sourceType === 'device' ? (foundPreset.videoDevice || foundPreset.name) : (foundPreset.selectedStreamKey || 'stream'),
+                                    options: { ...(foundPreset.config || {}), presetName: foundPreset.name, presetId: foundPreset.id },
+                                    initiatedBy: { username: 'tcp-client', role: 'admin' }
+                                });
+
+                            if (result.success) {
+                                const resp = `OK: RECORDING_STARTED key=${result.key || foundPreset.name} preset="${foundPreset.name}"\r\n`;
+                                this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                                this.safeWrite(socket, resp);
+                            } else {
+                                const resp = `ERROR: ${result.error || 'Failed to start recording with preset'}\r\n`;
+                                this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                                this.safeWrite(socket, resp);
+                            }
+                            break;
+                        } else if (isExplicitPreset) {
+                            const names = presets.map(p => `"${p.name}"`).slice(0, 8).join(', ');
+                            const resp = `ERROR: Preset "${presetQuery}" not found. Available presets: ${names || 'None'}\r\n`;
+                            this.logger.log(`[TCP Command Server] ${resp.trim()}`);
+                            this.safeWrite(socket, resp);
+                            break;
+                        }
+                    }
+                }
+
                 let appName;
                 let streamName;
                 let format = 'mp4';
@@ -442,7 +532,44 @@ class KashtrixTcpCommandServer {
             });
         }
 
+        if (command === 'PRESETS') {
+            const presets = typeof this.getRecordingPresets === 'function' ? await this.getRecordingPresets() : [];
+            return {
+                success: true,
+                count: presets.length,
+                presets: presets.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    sourceType: p.sourceType,
+                    videoDevice: p.videoDevice,
+                    selectedStreamKey: p.selectedStreamKey,
+                    format: p.config?.format || (Array.isArray(p.config?.formats) ? p.config.formats[0] : 'mp4'),
+                    resolution: p.config?.resolution,
+                    videoBitrate: p.config?.videoBitrate,
+                }))
+            };
+        }
+
         if (command === 'START') {
+            if (payload.preset || payload.presetName) {
+                const query = payload.preset || payload.presetName;
+                if (typeof this.getRecordingPresets === 'function') {
+                    const presets = await this.getRecordingPresets();
+                    const found = this.matchPreset(presets, query);
+                    if (found) {
+                        return typeof this.startRecordingByPreset === 'function'
+                            ? await this.startRecordingByPreset(found, { username: 'tcp-client-json', role: 'admin' })
+                            : await this.startRecording({
+                                appName: found.sourceType === 'device' ? 'device' : 'live',
+                                stream: found.sourceType === 'device' ? (found.videoDevice || found.name) : (found.selectedStreamKey || 'stream'),
+                                options: { ...(found.config || {}), presetName: found.name, presetId: found.id },
+                                initiatedBy: { username: 'tcp-client-json', role: 'admin' }
+                            });
+                    }
+                    return { success: false, error: `Preset "${query}" not found` };
+                }
+            }
+
             const appName = payload.app || payload.appName || 'live';
             const stream = payload.stream || payload.streamName;
             if (!stream) {

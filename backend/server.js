@@ -6940,11 +6940,81 @@ app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, requir
     res.json(result);
 });
 
+const startRecordingByPreset = async (preset, initiatedBy = { username: 'tcp-client', role: 'admin' }, req = null) => {
+    if (!preset) return { success: false, error: 'Preset is required' };
+    const config = preset.config || {};
+    const sourceType = preset.sourceType || config.sourceType || 'ingest';
+
+    let appName;
+    let stream;
+
+    if (sourceType === 'device') {
+        appName = 'device';
+        stream = preset.videoDevice || config.videoDevice;
+        if (!stream && activeDevicePreviewState?.active && activeDevicePreviewState?.videoDevice) {
+            stream = activeDevicePreviewState.videoDevice;
+        }
+        if (!stream) {
+            return {
+                success: false,
+                error: `Preset "${preset.name}" is configured for device recording, but no video device is selected or currently previewing.`,
+            };
+        }
+    } else {
+        const streamKey = preset.selectedStreamKey || config.selectedStreamKey || '';
+        if (streamKey.includes('/')) {
+            const [a, s] = streamKey.split('/');
+            appName = a;
+            stream = s;
+        } else if (streamKey) {
+            appName = 'live';
+            stream = streamKey;
+        } else {
+            const liveKeys = Array.from(activeSessions.keys());
+            if (liveKeys.length > 0) {
+                const [a, s] = liveKeys[0].split('/');
+                appName = a;
+                stream = s;
+            } else {
+                appName = 'live';
+                stream = 'stream';
+            }
+        }
+    }
+
+    const format = config.format || (Array.isArray(config.formats) && config.formats[0]) || 'mp4';
+    const formats = Array.isArray(config.formats) && config.formats.length > 0 ? config.formats : [format];
+
+    const options = {
+        ...config,
+        format,
+        formats,
+        sourceType,
+        videoDevice: preset.videoDevice || config.videoDevice,
+        audioDevice: preset.audioDevice || config.audioDevice,
+        continuous: true,
+        presetId: preset.id,
+        presetName: preset.name,
+        storageType: config.storageType || 'local',
+        storagePath: config.storagePath,
+    };
+
+    return await startActiveRecording({
+        appName,
+        stream,
+        options,
+        initiatedBy,
+        req,
+    });
+};
+
 // --- TCP Automation & Command Control Server (Start / Stop Recording) ---
 const TCP_CONTROL_PORT = clampPort(process.env.TCP_CONTROL_PORT || getSettings().tcpControlPort, 9999);
 const kashtrixTcpServer = new KashtrixTcpCommandServer({
     port: TCP_CONTROL_PORT,
     startRecording: (args) => startActiveRecording(args),
+    startRecordingByPreset: (preset, meta) => startRecordingByPreset(preset, meta),
+    getRecordingPresets: () => getRecordingPresets(),
     stopRecording: (args) => stopActiveRecording(args),
     stopAllRecordings: (args) => stopAllActiveRecordings(args),
     getActiveRecordings: () => Array.from(activeRecordings.values()).map(r => ({

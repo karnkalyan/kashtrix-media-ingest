@@ -223,3 +223,83 @@ test('KashtrixTcpCommandServer handles Easy OnAIR playout triggers (no newlines,
     }
 });
 
+test('KashtrixTcpCommandServer handles START with Preset name (e.g. START AP1 Final, PRESETS list)', async () => {
+    const mockPresets = [
+        {
+            id: 'preset-ap1-final',
+            name: 'AP1 Final',
+            sourceType: 'ingest',
+            selectedStreamKey: 'live/ap1',
+            config: { format: 'mp4', resolution: '1920x1080', videoBitrate: 15000 }
+        },
+        {
+            id: 'preset-decklink-master',
+            name: 'DeckLink Master',
+            sourceType: 'device',
+            videoDevice: 'DeckLink Quad 1',
+            config: { format: 'mov', videoBitrate: 50000 }
+        }
+    ];
+
+    let startedPreset = null;
+
+    const server = new KashtrixTcpCommandServer({
+        port: 19995,
+        host: '127.0.0.1',
+        getRecordingPresets: async () => mockPresets,
+        startRecordingByPreset: async (preset) => {
+            startedPreset = preset;
+            return { success: true, key: preset.selectedStreamKey || preset.name };
+        },
+    });
+    await server.start();
+
+    const sendTcp = (cmd) => {
+        return new Promise((resolve, reject) => {
+            const socket = net.createConnection({ port: 19995, host: '127.0.0.1' }, () => {
+                socket.write(`${cmd}\n`);
+            });
+            let data = '';
+            socket.on('data', chunk => {
+                data += chunk.toString('utf8');
+                socket.end();
+            });
+            socket.on('close', () => resolve(data.trim()));
+            socket.on('error', reject);
+            setTimeout(() => { socket.destroy(); resolve(data.trim()); }, 2000);
+        });
+    };
+
+    try {
+        // 1. List presets
+        const presetsList = await sendTcp('PRESETS');
+        assert.ok(presetsList.includes('AP1 Final'));
+        assert.ok(presetsList.includes('DeckLink Master'));
+
+        // 2. Start by direct preset name: "START AP1 Final"
+        const startRes1 = await sendTcp('START AP1 Final');
+        assert.ok(startRes1.includes('OK: RECORDING_STARTED'));
+        assert.ok(startRes1.includes('preset="AP1 Final"'));
+        assert.equal(startedPreset?.id, 'preset-ap1-final');
+
+        // 3. Start with PRESET keyword: "START PRESET DeckLink Master"
+        const startRes2 = await sendTcp('START PRESET DeckLink Master');
+        assert.ok(startRes2.includes('OK: RECORDING_STARTED'));
+        assert.ok(startRes2.includes('preset="DeckLink Master"'));
+        assert.equal(startedPreset?.id, 'preset-decklink-master');
+
+        // 4. Invalid preset name gives helpful list
+        const invalidRes = await sendTcp('START PRESET NonExistentPreset');
+        assert.ok(invalidRes.includes('ERROR: Preset "NonExistentPreset" not found'));
+        assert.ok(invalidRes.includes('Available presets'));
+
+        // 5. JSON START with preset
+        const jsonRes = await sendTcp(JSON.stringify({ command: 'START', preset: 'AP1 Final' }));
+        const jsonObj = JSON.parse(jsonRes);
+        assert.equal(jsonObj.success, true);
+    } finally {
+        await server.stop();
+    }
+});
+
+
