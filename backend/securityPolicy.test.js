@@ -34,6 +34,23 @@ test('JWT role claims are ignored in favor of persisted MySQL role', () => {
   assert.equal(identity.role, 'user');
 });
 
+test('refresh tokens are rejected for standard API authorization', () => {
+  assert.throws(
+    () => resolvePersistedIdentity(
+      { sub: 'operator', type: 'refresh' },
+      username => ({ username, role: 'USER' }),
+    ),
+    /Invalid token type for authorization/
+  );
+
+  const valid = resolvePersistedIdentity(
+    { sub: 'operator', type: 'access' },
+    username => ({ username, role: 'USER' }),
+  );
+  assert.equal(valid.sub, 'operator');
+  assert.equal(valid.type, 'access');
+});
+
 test('admin and user payloads cannot assign superadmin', () => {
   assert.equal(parseManagedRole('admin'), 'admin');
   assert.equal(parseManagedRole('user'), 'user');

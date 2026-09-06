@@ -368,6 +368,7 @@ export interface AuthUser {
 
 export interface AuthState {
   token: string | null;
+  refreshToken?: string | null;
   user: AuthUser | null;
   license: LicenseInfo;
 }

@@ -559,10 +559,28 @@ const resolveAuthenticatedUser = async (claims) => {
     return resolvePersistedIdentity(claims, subject => subject === user.username ? user : null);
 };
 const authenticateToken = async (token) => resolveAuthenticatedUser(verifyToken(token));
-const signAuthToken = (user) => signToken({
+const ACCESS_TOKEN_EXPIRY = 2 * 60 * 60; // 2 hours
+const REFRESH_TOKEN_EXPIRY = 30 * 24 * 60 * 60; // 30 days
+const signAccessToken = (user) => signToken({
     sub: user.username,
-    exp: Math.floor(Date.now() / 1000) + (8 * 60 * 60),
+    type: 'access',
+    exp: Math.floor(Date.now() / 1000) + ACCESS_TOKEN_EXPIRY,
 });
+const signRefreshToken = (user) => signToken({
+    sub: user.username,
+    type: 'refresh',
+    exp: Math.floor(Date.now() / 1000) + REFRESH_TOKEN_EXPIRY,
+});
+const signAuthTokens = (user) => {
+    const accessToken = signAccessToken(user);
+    const refreshToken = signRefreshToken(user);
+    return {
+        token: accessToken,
+        accessToken,
+        refreshToken,
+    };
+};
+const signAuthToken = (user) => signAccessToken(user);
 const getJsonSetting = async (key, fallback) => {
     try {
         const row = await db.prisma.kvStore.findUnique({ where: { key } });
@@ -1440,6 +1458,7 @@ app.get('/api/ingest/recordings/file/:fileName', (req, res) => {
 
 const publicPaths = new Set([
     '/api/auth/login',
+    '/api/auth/refresh',
     '/api/license/status',
     '/api/system/stats',
     '/api/systeminfo',
@@ -1581,7 +1600,55 @@ app.post('/api/auth/login', async (req, res) => {
         status: 'SUCCESS',
         req
     });
-    res.json({ token: signAuthToken(persistedUser), user: persistedUser, license: getLicense() });
+    const tokens = signAuthTokens(persistedUser);
+    res.json({ ...tokens, user: persistedUser, license: getLicense() });
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization || '';
+        const rawToken = req.body?.refreshToken || (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (req.query?.refreshToken || ''));
+        const refreshToken = String(rawToken || '').trim();
+
+        if (!refreshToken) {
+            return res.status(400).json({ error: 'Refresh token is required' });
+        }
+
+        let claims;
+        try {
+            claims = verifyToken(refreshToken);
+        } catch (err) {
+            return res.status(401).json({ error: err.message || 'Invalid or expired refresh token' });
+        }
+
+        if (claims.type && claims.type !== 'refresh') {
+            return res.status(401).json({ error: 'Provided token is not a valid refresh token' });
+        }
+
+        const username = String(claims.sub || '').trim();
+        if (!username) {
+            return res.status(401).json({ error: 'Token subject is missing' });
+        }
+
+        await db.refreshUsers();
+        const user = db.findUserByUsername(username);
+        if (!user || user.is_active === false) {
+            return res.status(401).json({ error: 'User no longer exists or is inactive' });
+        }
+
+        const persistedUser = { username: user.username, role: normalizeUserRole(user.role) };
+        const tokens = signAuthTokens(persistedUser);
+
+        res.json({
+            success: true,
+            ...tokens,
+            user: persistedUser,
+            license: getLicense(),
+        });
+    } catch (err) {
+        console.error('[Auth] Refresh token error:', err.message);
+        res.status(500).json({ error: 'Failed to refresh token' });
+    }
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
@@ -1692,7 +1759,7 @@ app.put('/api/auth/account', authMiddleware, async (req, res) => {
     try {
         await db.updateUser(currentUser.id, { username: nextUsername, passwordHash: nextHash });
         const nextUser = { username: nextUsername, role: normalizeUserRole(currentUser.role) };
-        res.json({ token: signAuthToken(nextUser), user: nextUser });
+        res.json({ ...signAuthTokens(nextUser), user: nextUser });
     } catch (error) {
         res.status(409).json({ error: 'Username already exists' });
     }

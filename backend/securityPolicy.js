@@ -26,11 +26,14 @@ const parseManagedRole = role => {
 };
 
 const resolvePersistedIdentity = (claims, findUser) => {
+  if (claims?.type && claims.type !== 'access') {
+    throw new Error('Invalid token type for authorization');
+  }
   const username = String(claims?.sub || '').trim();
   if (!username) throw new Error('Token subject is missing');
   const user = findUser(username);
   if (!user) throw new Error('Authenticated user no longer exists');
-  return { id: user.id, sub: user.username, role: normalizeUserRole(user.lastName || user.role), exp: claims.exp };
+  return { id: user.id, sub: user.username, role: normalizeUserRole(user.lastName || user.role), exp: claims.exp, type: claims.type || 'access' };
 };
 
 const isSuperadmin = user => normalizeUserRole(user?.role) === 'superadmin';

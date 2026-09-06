@@ -100,12 +100,13 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
   const downloadTokenParam = savedToken ? `&token=${encodeURIComponent(savedToken)}` : '';
 
   const getHeaders = useCallback((): HeadersInit => {
+    const currentToken = token || localStorage.getItem('kte-auth-token') || localStorage.getItem('token') || localStorage.getItem('jwt');
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    if (savedToken) {
-      headers['Authorization'] = `Bearer ${savedToken}`;
+    if (currentToken) {
+      headers['Authorization'] = `Bearer ${currentToken}`;
     }
     return headers;
-  }, [savedToken]);
+  }, [token]);
 
   const loadDirectory = useCallback(async (pathQuery: string = currentPath) => {
     setLoading(true);

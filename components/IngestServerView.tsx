@@ -291,6 +291,9 @@ export const IngestServerView: React.FC<Props> = ({
   const [rtmpKeysCount, setRtmpKeysCount] = useState(0);
 
   const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
+    if (typeof api === 'function') {
+      return api(endpoint, options);
+    }
     const token = localStorage.getItem('kte-auth-token');
     const headers = {
       ...(options.headers || {}),
@@ -300,7 +303,7 @@ export const IngestServerView: React.FC<Props> = ({
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Server error');
     return data;
-  }, []);
+  }, [api]);
 
   const fetchSecurityStatus = useCallback(async () => {
     try {
@@ -315,16 +318,12 @@ export const IngestServerView: React.FC<Props> = ({
 
   const fetchStorageStatus = useCallback(async () => {
     try {
-      const token = localStorage.getItem('kte-auth-token');
-      const res = await fetch('/api/storage/status', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await apiCall('/api/storage/status');
+      if (data) {
         setStorageStatus(data);
       }
     } catch {}
-  }, []);
+  }, [apiCall]);
 
   const fetchData = useCallback(async () => {
     try {

@@ -904,32 +904,122 @@ const reducer = (state: AppState, action: Action): AppState => {
   }
 };
 
+const AUTH_TOKEN_KEY = "kte-auth-token";
+const REFRESH_TOKEN_KEY = "kte-refresh-token";
+
+const getTokenExpiresInSeconds = (token: string | null): number => {
+  if (!token) return 0;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return 0;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const payload = JSON.parse(json);
+    if (!payload.exp) return 0;
+    return payload.exp - Math.floor(Date.now() / 1000);
+  } catch {
+    return 0;
+  }
+};
+
 const useEngine = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [isHydrated, setIsHydrated] = useState(false);
   const [auth, setAuth] = useState<AuthState>(() => ({
-    token: localStorage.getItem("kte-auth-token"),
+    token: localStorage.getItem(AUTH_TOKEN_KEY),
+    refreshToken: localStorage.getItem(REFRESH_TOKEN_KEY),
     user: null,
     license: unlicensedLicense,
   }));
   const [isAuthChecking, setIsAuthChecking] = useState(
-    () => Boolean(localStorage.getItem("kte-auth-token")),
-  );
-  const headers = useMemo(
-    () => ({
-      "Content-Type": "application/json",
-      ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
-    }),
-    [auth.token],
+    () => Boolean(localStorage.getItem(AUTH_TOKEN_KEY)),
   );
 
+  const refreshPromiseRef = useRef<Promise<string | null> | null>(null);
+
+  const refreshAuthToken = useCallback(async (): Promise<string | null> => {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+    const storedRefresh = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!storedRefresh) {
+      return null;
+    }
+
+    const refreshPromise = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: storedRefresh }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.token) {
+          console.warn("[Auth] Refresh token expired or invalid:", data.error || res.status);
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          setAuth({ token: null, refreshToken: null, user: null, license: unlicensedLicense });
+          return null;
+        }
+
+        const newAccessToken = data.token || data.accessToken;
+        const newRefreshToken = data.refreshToken || storedRefresh;
+        localStorage.setItem(AUTH_TOKEN_KEY, newAccessToken);
+        localStorage.setItem(REFRESH_TOKEN_KEY, newRefreshToken);
+        setAuth((prev) => ({
+          ...prev,
+          token: newAccessToken,
+          refreshToken: newRefreshToken,
+          user: data.user || prev.user,
+          license: data.license || prev.license,
+        }));
+        return newAccessToken;
+      } catch (err) {
+        console.warn("[Auth] Network error during token refresh:", err);
+        return null;
+      } finally {
+        refreshPromiseRef.current = null;
+      }
+    })();
+
+    refreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
+  }, []);
+
   const api = useCallback(
-    async (path: string, init: RequestInit = {}) => {
+    async (path: string, init: RequestInit = {}, isRetry = false): Promise<any> => {
+      const currentToken = localStorage.getItem(AUTH_TOKEN_KEY) || auth.token;
+      const requestHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
+        ...((init.headers as Record<string, string>) || {}),
+      };
+
       const response = await fetch(`${API_BASE}${path}`, {
         ...init,
-        headers: { ...headers, ...(init.headers || {}) },
+        headers: requestHeaders,
       });
+
+      // Intercept 401 Unauthorized: automatically refresh token and retry the request seamlessly
+      // (crucial for long recordings or extended sessions so user is never prompted for login)
+      if (
+        response.status === 401 &&
+        !isRetry &&
+        path !== "/api/auth/login" &&
+        path !== "/api/auth/refresh"
+      ) {
+        const refreshedToken = await refreshAuthToken();
+        if (refreshedToken) {
+          return api(path, init, true);
+        }
+      }
+
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 403 && body.license) {
@@ -949,11 +1039,39 @@ const useEngine = () => {
         );
       return body;
     },
-    [headers],
+    [auth.token, refreshAuthToken],
   );
 
+  // Proactive session refresh: keeps the session sliding and active during long recordings
+  // by automatically renewing access token if less than 20 minutes remain
+  useEffect(() => {
+    const checkAndRefresh = async () => {
+      const activeToken = localStorage.getItem(AUTH_TOKEN_KEY) || auth.token;
+      const remainingSecs = getTokenExpiresInSeconds(activeToken);
+      const hasRefreshToken = Boolean(localStorage.getItem(REFRESH_TOKEN_KEY));
+      if (hasRefreshToken && (remainingSecs <= 20 * 60 || !activeToken)) {
+        await refreshAuthToken();
+      }
+    };
+
+    const intervalId = window.setInterval(checkAndRefresh, 2 * 60 * 1000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void checkAndRefresh();
+      }
+    };
+    window.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onVisibilityChange);
+    };
+  }, [auth.token, refreshAuthToken]);
+
   const hydrate = useCallback(async () => {
-    if (!auth.token) {
+    if (!auth.token && !localStorage.getItem(AUTH_TOKEN_KEY)) {
       setIsAuthChecking(false);
       return;
     }
@@ -967,8 +1085,9 @@ const useEngine = () => {
       }
     } catch (error) {
       if ((error as Error & { status?: number }).status === 401) {
-        localStorage.removeItem("kte-auth-token");
-        setAuth({ token: null, user: null, license: unlicensedLicense });
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        setAuth({ token: null, refreshToken: null, user: null, license: unlicensedLicense });
         setIsHydrated(false);
       } else {
         setIsHydrated(true);
@@ -1106,9 +1225,13 @@ const useEngine = () => {
         throw new Error(body.error || `Login failed (${res.status})`);
       return body;
     });
-    localStorage.setItem("kte-auth-token", payload.token);
+    localStorage.setItem(AUTH_TOKEN_KEY, payload.token);
+    if (payload.refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, payload.refreshToken);
+    }
     setAuth({
       token: payload.token,
+      refreshToken: payload.refreshToken || null,
       user: payload.user,
       license: payload.license,
     });
@@ -1116,8 +1239,9 @@ const useEngine = () => {
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("kte-auth-token");
-    setAuth({ token: null, user: null, license: unlicensedLicense });
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    setAuth({ token: null, refreshToken: null, user: null, license: unlicensedLicense });
     setIsHydrated(false);
     setIsAuthChecking(false);
   }, []);
@@ -1282,8 +1406,16 @@ const useEngine = () => {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      localStorage.setItem("kte-auth-token", next.token);
-      setAuth((prev) => ({ ...prev, token: next.token, user: next.user }));
+      localStorage.setItem(AUTH_TOKEN_KEY, next.token);
+      if (next.refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, next.refreshToken);
+      }
+      setAuth((prev) => ({
+        ...prev,
+        token: next.token,
+        refreshToken: next.refreshToken || prev.refreshToken,
+        user: next.user,
+      }));
       return next;
     },
     [api],
@@ -1523,6 +1655,7 @@ const useEngine = () => {
     isAuthChecking,
     login,
     logout,
+    refreshAuthToken,
     activateLicense,
     resetLicense,
     changeAccount,
