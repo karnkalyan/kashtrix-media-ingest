@@ -61,6 +61,7 @@ interface FileManagerStats {
 interface FileManagerViewProps {
   token?: string | null;
   onNavigateToTranscode?: (file: { name: string; path: string }) => void;
+  userRole?: string;
 }
 
 const QUICK_SHORTCUTS = [
@@ -71,7 +72,9 @@ const QUICK_SHORTCUTS = [
   { label: 'Raw Ingest', path: 'recorded', icon: FiFolder, color: 'text-emerald-500' },
 ];
 
-export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavigateToTranscode }) => {
+export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavigateToTranscode, userRole }) => {
+  const normalizedRole = (userRole || '').toLowerCase().trim();
+  const canManageFiles = ['superadmin', 'admin', 'operator', 'archive'].includes(normalizedRole);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([{ name: 'Media Storage', path: '' }]);
   const [items, setItems] = useState<FileItem[]>([]);
@@ -93,15 +96,16 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
   const uploadAbortRef = useRef<(() => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const savedToken = token || localStorage.getItem('kte-auth-token') || localStorage.getItem('token') || localStorage.getItem('jwt');
+  const downloadTokenParam = savedToken ? `&token=${encodeURIComponent(savedToken)}` : '';
 
   const getHeaders = useCallback((): HeadersInit => {
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
-    const savedToken = token || localStorage.getItem('token') || localStorage.getItem('jwt');
     if (savedToken) {
       headers['Authorization'] = `Bearer ${savedToken}`;
     }
     return headers;
-  }, [token]);
+  }, [savedToken]);
 
   const loadDirectory = useCallback(async (pathQuery: string = currentPath) => {
     setLoading(true);
@@ -136,6 +140,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
 
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageFiles) {
+      return toast.error('Permission denied: Viewer role cannot create folders');
+    }
     if (!newFolderName.trim()) return;
     try {
       const res = await fetch('/api/file-manager/mkdir', {
@@ -158,6 +165,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
   };
 
   const confirmDelete = async () => {
+    if (!canManageFiles) {
+      return toast.error('Permission denied: Viewer role cannot delete files');
+    }
     if (!deletingItem) return;
     setDeleteLoading(true);
     try {
@@ -183,6 +193,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
 
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageFiles) {
+      return toast.error('Permission denied: Viewer role cannot rename files');
+    }
     if (!renamingItem || !newItemName.trim()) return;
     try {
       const res = await fetch('/api/file-manager/rename', {
@@ -205,6 +218,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canManageFiles) {
+      return toast.error('Permission denied: Viewer role cannot upload files');
+    }
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -300,28 +316,32 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
               <span>Refresh</span>
             </Button>
 
-            <Button
-              variant="secondary"
-              onClick={() => setIsMkdirOpen(true)}
-            >
-              <FiPlus size={14} />
-              <span>New Folder</span>
-            </Button>
+            {canManageFiles && (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setIsMkdirOpen(true)}
+                >
+                  <FiPlus size={14} />
+                  <span>New Folder</span>
+                </Button>
 
-            <Button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              <FiUpload size={14} />
-              <span>{uploading ? 'Uploading...' : 'Upload Files'}</span>
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              onChange={handleFileUpload}
-              className="hidden"
-            />
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  <FiUpload size={14} />
+                  <span>{uploading ? 'Uploading...' : 'Upload Files'}</span>
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -460,16 +480,18 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
               Upload recordings, broadcast masters, or media files to start managing and streaming.
             </p>
           </div>
-          <div className="flex gap-2 pt-2">
-            <Button onClick={() => fileInputRef.current?.click()}>
-              <FiUpload size={14} />
-              <span>Upload Files</span>
-            </Button>
-            <Button variant="secondary" onClick={() => setIsMkdirOpen(true)}>
-              <FiPlus size={14} />
-              <span>New Folder</span>
-            </Button>
-          </div>
+          {canManageFiles && (
+            <div className="flex gap-2 pt-2">
+              <Button onClick={() => fileInputRef.current?.click()}>
+                <FiUpload size={14} />
+                <span>Upload Files</span>
+              </Button>
+              <Button variant="secondary" onClick={() => setIsMkdirOpen(true)}>
+                <FiPlus size={14} />
+                <span>New Folder</span>
+              </Button>
+            </div>
+          )}
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
@@ -529,7 +551,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                   )}
                   {!item.isDirectory && (
                     <a
-                      href={`${item.url}?download=1`}
+                      href={`${item.url}?download=1${downloadTokenParam}`}
                       download={item.name}
                       className="p-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-950/60 dark:text-sky-300 transition-colors"
                       title="Download File"
@@ -539,27 +561,29 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                   )}
                 </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenamingItem(item);
-                      setNewItemName(item.name);
-                    }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Rename"
-                  >
-                    <FiEdit2 size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeletingItem(item)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
-                    title="Delete"
-                  >
-                    <FiTrash2 size={13} />
-                  </button>
-                </div>
+                {canManageFiles && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingItem(item);
+                        setNewItemName(item.name);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Rename"
+                    >
+                      <FiEdit2 size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingItem(item)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                      title="Delete"
+                    >
+                      <FiTrash2 size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -627,7 +651,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                         )}
                         {!item.isDirectory && (
                           <a
-                            href={`${item.url}?download=1`}
+                            href={`${item.url}?download=1${downloadTokenParam}`}
                             download={item.name}
                             className="p-1 rounded text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950"
                             title="Download"
@@ -635,25 +659,29 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ token, onNavig
                             <FiDownload size={13} />
                           </a>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRenamingItem(item);
-                            setNewItemName(item.name);
-                          }}
-                          className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
-                          title="Rename"
-                        >
-                          <FiEdit2 size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingItem(item)}
-                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950"
-                          title="Delete"
-                        >
-                          <FiTrash2 size={13} />
-                        </button>
+                        {canManageFiles && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenamingItem(item);
+                                setNewItemName(item.name);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              title="Rename"
+                            >
+                              <FiEdit2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingItem(item)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950"
+                              title="Delete"
+                            >
+                              <FiTrash2 size={13} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

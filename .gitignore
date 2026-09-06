@@ -48,6 +48,8 @@ coverage/
 .cache/
 tmp/
 temp/
+scratch/
+backend/scratch/
 
 # Editor directories and files
 .vscode/*

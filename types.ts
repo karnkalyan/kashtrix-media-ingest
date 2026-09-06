@@ -198,6 +198,9 @@ export interface IngestRecordingOptions {
   rawFormat?: string;
   nvencInterlaceMode?: 'auto' | 'native' | 'deinterlace';
   unlockStandardOverride?: boolean;
+  presetId?: string;
+  presetName?: string;
+  presetDetails?: any;
   profileOverrides?: Record<string, {
     videoCodec?: 'h264' | 'hevc' | 'v210' | 'mpeg2video' | string;
     videoBitrate?: number;
@@ -355,6 +358,7 @@ export interface AppSettings {
   storageThresholdPercent?: number;
   storageCriticalThresholdPercent?: number;
   storageMinFreeMb?: number;
+  timezone?: string;
 }
 
 export interface AuthUser {

@@ -108,6 +108,7 @@ interface Props {
   licenseStatus?: string;
   mode?: 'recording' | 'live';
   api?: (endpoint: string, options?: RequestInit) => Promise<any>;
+  userRole?: string;
 }
 
 const formatBitrate = (kbps: number) => {
@@ -222,7 +223,11 @@ export const IngestServerView: React.FC<Props> = ({
   licenseStatus,
   mode = 'live',
   api,
+  userRole,
 }) => {
+  const normalizedRole = (userRole || '').toLowerCase().trim();
+  const canOperate = ['superadmin', 'admin', 'operator'].includes(normalizedRole);
+  const canDelete = ['superadmin', 'admin', 'operator', 'archive'].includes(normalizedRole);
   const [selectedStreamKey, setSelectedStreamKey] = useState<string>('');
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectedStream, setInspectedStream] = useState<any>(null);
@@ -432,6 +437,9 @@ export const IngestServerView: React.FC<Props> = ({
   }, [fetchData, fetchConfig, fetchRecordingProfiles, refreshDevices, fetchStorageStatus]);
 
   const saveConfig = async () => {
+    if (!canOperate) {
+      return toast.error('Permission denied: Viewer role cannot modify recording configuration');
+    }
     setSavingConfig(true);
     try {
       const token = localStorage.getItem('kte-auth-token');
@@ -491,6 +499,9 @@ export const IngestServerView: React.FC<Props> = ({
   };
 
   const handleStartControlRecording = async () => {
+    if (!canOperate) {
+      return toast.error('Permission denied: Viewer role cannot start recordings');
+    }
     if (licenseStatus === 'expired') {
       return toast.error('Cannot start recording: License has expired. Please activate a valid license.');
     }
@@ -513,6 +524,24 @@ export const IngestServerView: React.FC<Props> = ({
     try {
       await startRecording(appName, streamName, {
         ...config,
+        presetId: config.presetId,
+        presetName: config.presetName,
+        presetDetails: config.presetDetails || {
+          videoCodec: config.videoCodec,
+          audioCodec: config.audioCodec,
+          videoBitrate: config.videoBitrate,
+          audioBitrate: config.audioBitrate,
+          resolution: config.resolution,
+          framerate: config.framerate,
+          encoder: config.encoder,
+          preset: config.preset,
+          pixelFormat: config.pixelFormat,
+          formats: config.formats,
+          rateControl: config.rateControl,
+          formatCode: config.formatCode,
+          storageType: config.storageType,
+          storagePath: config.storagePath
+        },
         sourceType,
         videoDevice,
         audioDevice,
@@ -541,6 +570,9 @@ export const IngestServerView: React.FC<Props> = ({
   }, [localStreams, recordings]);
 
   const handleToggleRecord = async (app: string, stream: string) => {
+    if (!canOperate) {
+      return toast.error('Permission denied: Operator role required to control recording');
+    }
     const key = `${app}/${stream}`;
     const isRecording = !!(recordingStatuses[key] || activeRecordingKeys[key]);
     if (!isRecording) {
@@ -798,6 +830,9 @@ export const IngestServerView: React.FC<Props> = ({
   };
 
   const confirmDeleteRecording = async () => {
+    if (!canDelete) {
+      return toast.error('Permission denied: Viewer role cannot delete recordings');
+    }
     if (!deletingRec) return;
     setDeleteLoading(true);
     try {
@@ -846,6 +881,9 @@ export const IngestServerView: React.FC<Props> = ({
   const isCurrentRecordingPaused = Boolean(currentActiveRecording?.is_paused || currentActiveRecording?.isPaused);
 
   const handleStopControlRecording = async () => {
+    if (!canOperate) {
+      return toast.error('Permission denied: Operator role required to control recording');
+    }
     const selected = sourceType === 'device'
       ? (videoDevice || audioDevice || 'device')
       : selectedStreamKey;
@@ -868,6 +906,9 @@ export const IngestServerView: React.FC<Props> = ({
   };
 
   const handleRecordingPauseChange = async (pause: boolean, targetApp?: string, targetStream?: string) => {
+    if (!canOperate) {
+      return toast.error('Permission denied: Operator role required to control recording');
+    }
     const selected = targetStream || (sourceType === 'device'
       ? (videoDevice || audioDevice || 'device')
       : selectedStreamKey);
@@ -1054,6 +1095,7 @@ export const IngestServerView: React.FC<Props> = ({
           recordingEncoders={recordingEncoders}
           activeRecordings={recordings.filter((recording: any) => recording?.is_active)}
           api={api}
+          userRole={userRole}
         />
 
         {/* Recent Recordings Table */}
@@ -1195,14 +1237,16 @@ export const IngestServerView: React.FC<Props> = ({
                         </button>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => setDeletingRec(rec)}
-                        className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#451220] dark:hover:text-[#F87171]"
-                        title="Delete recording archive"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => setDeletingRec(rec)}
+                          className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#451220] dark:hover:text-[#F87171]"
+                          title="Delete recording archive"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

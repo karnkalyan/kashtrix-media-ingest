@@ -114,15 +114,15 @@ const checkWindowsSmbShareStatus = (mediaPath = null) => {
             mediaShareActive,
             recordingsShareActive,
             mediaPath: mediaPath || 'C:\\Kashtrix\\media',
-            setupCommand: `net share media="${mediaPath || 'C:\\Kashtrix\\media'}" /grant:Everyone,FULL /unlimited`,
-            recordingsSetupCommand: `net share recordings="${mediaPath ? mediaPath + '\\recordings' : 'C:\\Kashtrix\\media\\recordings'}" /grant:Everyone,FULL /unlimited`,
+            setupCommand: `net share media="${mediaPath || 'C:\\Kashtrix\\media'}" /grant:"Authenticated Users",FULL /grant:media_admin,FULL /grant:kashtrix,FULL /unlimited`,
+            recordingsSetupCommand: `net share recordings="${mediaPath ? mediaPath + '\\recordings' : 'C:\\Kashtrix\\media\\recordings'}" /grant:"Authenticated Users",FULL /grant:media_admin,FULL /grant:kashtrix,FULL /unlimited`,
         };
     } catch (e) {
         return {
             isWindows: true,
             isShared: false,
             error: e.message,
-            setupCommand: `net share media="${mediaPath || 'C:\\Kashtrix\\media'}" /grant:Everyone,FULL /unlimited`,
+            setupCommand: `net share media="${mediaPath || 'C:\\Kashtrix\\media'}" /grant:"Authenticated Users",FULL /grant:media_admin,FULL /grant:kashtrix,FULL /unlimited`,
         };
     }
 };
@@ -138,16 +138,27 @@ const autoConfigureWindowsShare = (mediaPath) => {
     const resolvedRecordings = resolvedMedia + '\\recordings';
 
     try {
-        execSync(`net share media="${resolvedMedia}" /grant:Everyone,FULL /unlimited`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-        execSync(`net share recordings="${resolvedRecordings}" /grant:Everyone,FULL /unlimited`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-        return { success: true, message: 'Windows SMB shares (media & recordings) created successfully!' };
+        // Disable Guest account to prevent unauthenticated anonymous logons
+        try { execSync('net user Guest /active:no', { stdio: 'ignore' }); } catch (_) {}
+        // Flush any stale SMB sessions to release stuck file locks
+        try { execSync('net session /delete /y', { stdio: 'ignore' }); } catch (_) {}
+        // Ensure NTFS permissions
+        try { execSync(`icacls "${resolvedMedia}" /grant "Authenticated Users":(OI)(CI)(M) /grant "media_admin":(OI)(CI)(F) /grant "kashtrix":(OI)(CI)(M) /grant "Administrators":(OI)(CI)(F) /t /c /q`, { stdio: 'ignore' }); } catch (_) {}
+        try { execSync(`icacls "${resolvedRecordings}" /grant "Authenticated Users":(OI)(CI)(M) /grant "media_admin":(OI)(CI)(F) /grant "kashtrix":(OI)(CI)(M) /grant "Administrators":(OI)(CI)(F) /t /c /q`, { stdio: 'ignore' }); } catch (_) {}
+        // Delete existing shares if present
+        try { execSync('net share media /delete', { stdio: 'ignore' }); } catch (_) {}
+        try { execSync('net share recordings /delete', { stdio: 'ignore' }); } catch (_) {}
+
+        execSync(`net share media="${resolvedMedia}" /grant:"Authenticated Users",FULL /grant:media_admin,FULL /grant:kashtrix,FULL /unlimited`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+        execSync(`net share recordings="${resolvedRecordings}" /grant:"Authenticated Users",FULL /grant:media_admin,FULL /grant:kashtrix,FULL /unlimited`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+        return { success: true, message: 'Windows SMB authenticated shares created successfully! Guest access disabled; valid credentials required.' };
     } catch (e) {
         return {
             success: false,
             error: e.message,
             needsAdmin: true,
-            setupCommand: `net share media="${resolvedMedia}" /grant:Everyone,FULL /unlimited`,
-            recordingsSetupCommand: `net share recordings="${resolvedRecordings}" /grant:Everyone,FULL /unlimited`,
+            setupCommand: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-windows-share.ps1`,
+            recordingsSetupCommand: `net share recordings="${resolvedRecordings}" /grant:"Authenticated Users",FULL /grant:media_admin,FULL /grant:kashtrix,FULL /unlimited`,
             scriptPath: 'scripts/setup-windows-share.bat'
         };
     }
@@ -158,7 +169,7 @@ const autoConfigureWindowsShare = (mediaPath) => {
  */
 const getNetworkShareInfo = (req, options = {}) => {
     const customIp = options.customIp || null;
-    const authMode = options.authMode || 'anonymous'; // 'anonymous' | 'authenticated'
+    const authMode = options.authMode || 'authenticated'; // Default to 'authenticated' to disallow guest logins
     const users = Array.isArray(options.users) && options.users.length > 0 ? options.users : DEFAULT_NETWORK_SHARE_USERS;
     const mediaPath = options.mediaPath || null;
     const ftpPort = options.ftpPort || 21;

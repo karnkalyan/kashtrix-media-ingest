@@ -42,6 +42,7 @@ interface Props {
   settings: AppSettings;
   deleteRecording: (id: number | string) => Promise<any>;
   onOpenTranscodeStudio?: (file: { id?: string | number; name: string; path?: string; type: 'recording' }) => void;
+  userRole?: string;
 }
 
 const formatBytes = (bytes = 0) => {
@@ -122,10 +123,12 @@ const getRecordingUrl = (item: any): string => {
 
 const getRecordingDownloadUrl = (item: any): string => {
   if (!item) return '';
-  if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/download?download=1`;
+  const token = localStorage.getItem('kte-auth-token');
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+  if (item.id) return `/api/ingest/recordings/${encodeURIComponent(item.id)}/download?download=1${tokenParam}`;
   const fileName = item.file_name || item.stream;
-  if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}/download?download=1`;
-  return `/recordings/${encodeURIComponent(fileName || '')}?download=1`;
+  if (fileName) return `/api/ingest/recordings/file/${encodeURIComponent(fileName)}/download?download=1${tokenParam}`;
+  return `/recordings/${encodeURIComponent(fileName || '')}?download=1${tokenParam}`;
 };
 
 const TRANSCODE_PRESETS: { id: string; label: string; description: string; options: TranscodeJobOptions }[] = [
@@ -264,7 +267,10 @@ const TRANSCODE_PRESETS: { id: string; label: string; description: string; optio
   }
 ];
 
-export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording, onOpenTranscodeStudio }) => {
+export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings, deleteRecording, onOpenTranscodeStudio, userRole }) => {
+  const normalizedRole = (userRole || '').toLowerCase().trim();
+  const canDelete = ['superadmin', 'admin', 'operator', 'archive'].includes(normalizedRole);
+  const canTranscode = ['superadmin', 'admin', 'operator', 'archive'].includes(normalizedRole);
   const [recordings, setRecordings] = useState<any[]>(realtimeRecordings);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<'cards' | 'table'>('table');
@@ -367,6 +373,10 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
   }, []);
 
   const openTranscodeModal = (rec: any) => {
+    if (!canTranscode) {
+      toast.error('Permission denied: Viewer role cannot transcode media');
+      return;
+    }
     if (onOpenTranscodeStudio) {
       onOpenTranscodeStudio({ id: rec.id, name: rec.file_name, path: rec.file_path, type: 'recording' });
       return;
@@ -385,6 +395,10 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
   };
 
   const startTranscodeJob = async () => {
+    if (!canTranscode) {
+      toast.error('Permission denied: Your role does not have transcode privileges');
+      return;
+    }
     if (!transcodeModalRecording?.id) return;
     setIsStartingTranscode(true);
     try {
@@ -435,6 +449,10 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
   };
 
   const remove = (recording: any) => {
+    if (!canDelete) {
+      toast.error('Read-only access: your account role cannot delete recordings.');
+      return;
+    }
     setDeletingRec(recording);
   };
 
@@ -515,7 +533,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
         </div>
 
         <div className="flex items-center gap-2">
-          {onOpenTranscodeStudio && (
+          {onOpenTranscodeStudio && canTranscode && (
             <button
               type="button"
               onClick={() => onOpenTranscodeStudio({ name: '', type: 'recording' })}
@@ -636,7 +654,7 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                     )}
                     {job.status === 'completed' && (
                       <a
-                        href={`/api/ingest/recordings/file/${encodeURIComponent(job.targetFileName)}/download?download=1`}
+                        href={`/api/ingest/recordings/file/${encodeURIComponent(job.targetFileName)}/download?download=1&token=${encodeURIComponent(localStorage.getItem('kte-auth-token') || '')}`}
                         download={job.targetFileName}
                         className="inline-flex items-center gap-1 px-3 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 dark:bg-emerald-950/50 dark:border-emerald-700 dark:text-emerald-300"
                         title="Download transcoded MP4"
@@ -820,14 +838,16 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                         </a>
 
                         {/* Delete Button */}
-                        <button
-                          type="button"
-                          onClick={() => remove(recording)}
-                          className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#450A0A] dark:hover:text-[#FCA5A5]"
-                          title="Delete Recording"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => remove(recording)}
+                            className="inline-flex items-center justify-center rounded-md border border-[#E8DFF0] bg-white p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:bg-[#211335] dark:border-[#371F59] dark:text-[#B9A5CD] dark:hover:bg-[#450A0A] dark:hover:text-[#FCA5A5]"
+                            title="Delete Recording"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -895,13 +915,16 @@ export const RecordingLibrary: React.FC<Props> = ({ realtimeRecordings, settings
                       >
                         <Download size={11} /> Download
                       </a>
-                      <button
-                        type="button"
-                        onClick={() => remove(recording)}
-                        className="rounded-md border border-[#E8DFF0] p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:border-[#371F59] dark:text-[#B9A5CD]"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => remove(recording)}
+                          className="rounded-md border border-[#E8DFF0] p-1 text-[#6F6078] hover:bg-[#FEF2F2] hover:text-[#DC3545] dark:border-[#371F59] dark:text-[#B9A5CD]"
+                          title="Delete Recording"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

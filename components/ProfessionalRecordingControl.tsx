@@ -30,6 +30,7 @@ import {
   FiUpload,
   FiCopy,
   FiAlertCircle,
+  FiAlertTriangle,
   FiLock,
   FiUnlock,
   FiGlobe,
@@ -291,6 +292,7 @@ interface Props {
   recordingEncoders?: RecordingEncoderCapability[];
   activeRecordings?: any[];
   api?: (endpoint: string, options?: RequestInit) => Promise<any>;
+  userRole?: string;
 }
 
 const selectClass =
@@ -333,7 +335,10 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
   recordingEncoders = [],
   activeRecordings = [],
   api,
+  userRole,
 }) => {
+  const normalizedRole = (userRole || '').toLowerCase().trim();
+  const canOperate = ['superadmin', 'admin', 'operator'].includes(normalizedRole);
   // Stepper state
   const [activeStep, setActiveStep] = useState<number>(1);
 
@@ -508,7 +513,13 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       if (target.audioDevice !== undefined && typeof setAudioDevice === "function") setAudioDevice(target.audioDevice);
       if (target.selectedStreamKey !== undefined && typeof setSelectedStreamKey === "function") setSelectedStreamKey(target.selectedStreamKey);
       if (target.config) {
-        setConfig((prev: any) => ({ ...(prev || defaultConfig), ...target.config }));
+        setConfig((prev: any) => ({
+          ...(prev || defaultConfig),
+          ...target.config,
+          presetId: target.id,
+          presetName: target.name,
+          presetDetails: target.config,
+        }));
       }
     }
   }, [defaultPresetId, savedPresets, setSourceType, setVideoDevice, setAudioDevice, setSelectedStreamKey, setConfig]);
@@ -1085,7 +1096,12 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       setSelectedStreamKey(target.selectedStreamKey);
     }
     if (target.config) {
-      patch(target.config);
+      patch({
+        ...target.config,
+        presetId: target.id,
+        presetName: target.name,
+        presetDetails: target.config,
+      });
 
       // Persist active recording configuration directly into database
       if (shouldPersist) {
@@ -1310,7 +1326,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
 
   const baseStartDisabled =
     sourceType === "device" ? !videoDevice && !audioDevice : !selectedStreamKey;
-  const startDisabled = baseStartDisabled || isStorageFull;
+  const startDisabled = baseStartDisabled || isStorageFull || !canOperate;
 
   // Real Dynamic Telemetry Computations (NO MOCK DATA)
   const sourceName =
@@ -1620,15 +1636,29 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
       type="button"
       disabled={startDisabled}
       onClick={async () => {
+        if (!canOperate) {
+          toast.error("Permission denied: Viewer role cannot start recordings");
+          return;
+        }
+        if (loadedPresetId && loadedPreset) {
+          patch({
+            presetId: loadedPreset.id,
+            presetName: loadedPreset.name,
+            presetDetails: loadedPreset.config || config,
+          });
+        }
         await start();
       }}
+      title={!canOperate ? "Viewer role cannot initiate recordings" : isStorageFull ? "Storage full" : "Start Recording"}
       className="flex h-10 items-center justify-center gap-2 rounded-xl bg-red-600 px-6 text-[12px] font-bold text-white shadow-md transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
     >
       <FiDisc size={15} />
-      <span>Start Recording</span>
-      <span className="ml-1 rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-black uppercase tracking-widest text-white">
-        REC
-      </span>
+      <span>{canOperate ? "Start Recording" : "Viewer (Read-Only)"}</span>
+      {canOperate && (
+        <span className="ml-1 rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-black uppercase tracking-widest text-white">
+          REC
+        </span>
+      )}
     </button>
   );
 
@@ -2926,6 +2956,18 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
               </select>
             </Label>
 
+            {activeConfig.videoCodec === 'v210' && (
+              <div className="col-span-full rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200 shadow-2xs">
+                <div className="flex items-center gap-2 font-bold">
+                  <FiAlertTriangle className="text-amber-600 dark:text-amber-400 shrink-0" size={14} />
+                  Heavy Uncompressed I/O Warning (~1.1 Gbps / ~138 MB/s)
+                </div>
+                <div className="mt-1 leading-relaxed">
+                  V210 10-bit writes ~500 GB per hour uncompressed. Requires ultra-fast NVMe storage. On standard disks or with concurrent recordings, DeckLink hardware buffer overruns and frame drops will occur.
+                </div>
+              </div>
+            )}
+
             <Label>
               Hardware Encoder
               <select
@@ -3383,7 +3425,7 @@ const ProfessionalRecordingControl: React.FC<Props> = ({
                   </p>
                   <div className="flex items-center justify-between bg-white dark:bg-[#1E1130] p-1.5 rounded-lg border border-amber-200 dark:border-amber-900/60">
                     <code className="font-mono text-[10px] text-slate-800 dark:text-slate-200 truncate">
-                      {networkShares.windowsStatus?.setupCommand || 'net share media="C:\\Kashtrix\\media" /grant:Everyone,FULL /unlimited'}
+                      {networkShares.windowsStatus?.setupCommand || 'powershell -ExecutionPolicy Bypass -File scripts/setup-windows-share.ps1'}
                     </code>
                     <button
                       type="button"

@@ -7,7 +7,7 @@ const toPrismaRole = role => ({
 
 const snakeUser = row => row && ({
   id: row.id, username: row.username, password_hash: row.passwordHash,
-  role: normalizeUserRole(row.role), is_active: row.isActive !== false, created_at: row.createdAt,
+  role: normalizeUserRole(row.lastName || row.role), is_active: row.isActive !== false, created_at: row.createdAt,
 });
 
 const snakeSession = row => row && ({
@@ -59,8 +59,15 @@ class PrismaStore {
   findUserById(id) { return this.data.users.find(row => Number(row.id) === Number(id)); }
 
   async createUser({ username, passwordHash, role }) {
+    const normRole = normalizeUserRole(role);
     const user = await this.prisma.user.create({
-      data: { username, email: `${username}@kashtrix.local`, passwordHash, role: toPrismaRole(role) },
+      data: {
+        username,
+        email: `${username}@kashtrix.local`,
+        passwordHash,
+        role: toPrismaRole(normRole),
+        lastName: normRole,
+      },
     });
     const row = snakeUser(user);
     this.data.users.push(row);
@@ -69,12 +76,13 @@ class PrismaStore {
 
   async updateUser(id, { username, passwordHash, role }) {
     if (!this.findUserById(id)) return null;
+    const normRole = role !== undefined ? normalizeUserRole(role) : undefined;
     const user = await this.prisma.user.update({
       where: { id: Number(id) },
       data: {
         ...(username !== undefined ? { username, email: `${username}@kashtrix.local` } : {}),
         ...(passwordHash !== undefined ? { passwordHash } : {}),
-        ...(role !== undefined ? { role: toPrismaRole(role) } : {}),
+        ...(normRole !== undefined ? { role: toPrismaRole(normRole), lastName: normRole } : {}),
       },
     });
     const row = snakeUser(user);
@@ -224,6 +232,119 @@ class PrismaStore {
     await this.prisma.streamSession.updateMany({ where: { app, stream, endTime: null }, data: { endTime: new Date(endTime) } });
     this.data.sessions.filter(row => row.app === app && row.stream === stream && !row.end_time)
       .forEach(row => { row.end_time = endTime; });
+  }
+
+  async createAuditLog({ userId, username, userRole, action, targetId, type = 'SYSTEM', details, ipAddress, status = 'SUCCESS' }) {
+    try {
+      const jsonDetails = typeof details === 'object' ? JSON.stringify({
+        username: username || 'system',
+        userRole: userRole || 'system',
+        status,
+        ...details,
+      }) : (details || '');
+
+      const record = await this.prisma.auditLog.create({
+        data: {
+          userId: userId ? Number(userId) : undefined,
+          action: String(action || 'UNKNOWN'),
+          targetId: targetId ? String(targetId) : undefined,
+          type: ['AUTH', 'CONNECTION', 'PLAYBACK_ERROR', 'SYSTEM'].includes(type) ? type : 'SYSTEM',
+          details: jsonDetails,
+          ipAddress: ipAddress ? String(ipAddress) : undefined,
+        },
+      });
+      return record;
+    } catch (err) {
+      console.error('[AuditLog] Failed to persist audit entry:', err.message);
+      return null;
+    }
+  }
+
+  async listAuditLogs({ page = 1, limit = 50, type, entityType, action, username, status, search, startDate, endDate } = {}) {
+    try {
+      const take = Math.min(100, Math.max(1, Number(limit) || 50));
+      const skip = Math.max(0, (Number(page) - 1) * take);
+      const filterType = type || entityType;
+
+      const where = {};
+      if (filterType && filterType !== 'all' && filterType !== 'ALL') where.type = filterType;
+      if (action && action !== 'all' && action !== 'ALL') where.action = { contains: action };
+      if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) where.createdAt.gte = new Date(startDate);
+        if (endDate) where.createdAt.lte = new Date(endDate);
+      }
+      if (search && search.trim()) {
+        where.OR = [
+          { action: { contains: search.trim() } },
+          { targetId: { contains: search.trim() } },
+          { details: { contains: search.trim() } },
+        ];
+      }
+
+      const [total, rows] = await Promise.all([
+        this.prisma.auditLog.count({ where }),
+        this.prisma.auditLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take,
+          include: { user: { select: { id: true, username: true, role: true, lastName: true } } },
+        }),
+      ]);
+
+      const logs = rows.map(r => {
+        let parsed = {};
+        try { parsed = JSON.parse(r.details || '{}'); } catch (_) { parsed = { raw: r.details }; }
+        const createdAtIso = r.createdAt?.toISOString?.() || r.createdAt;
+        const normRole = parsed.userRole || normalizeUserRole(r.user?.lastName || r.user?.role) || 'system';
+        const entityTypeVal = r.type || 'SYSTEM';
+        const targetIdVal = r.targetId || null;
+        const ipVal = r.ipAddress || parsed.ipAddress || '';
+        const userAgentVal = parsed.userAgent || '';
+        return {
+          id: r.id,
+          userId: r.userId,
+          user_id: r.userId,
+          username: parsed.username || r.user?.username || 'system',
+          userRole: normRole,
+          user_role: normRole,
+          action: r.action,
+          targetId: targetIdVal,
+          entityId: targetIdVal,
+          entity_id: targetIdVal,
+          type: entityTypeVal,
+          entityType: entityTypeVal,
+          entity_type: entityTypeVal,
+          status: parsed.status || 'SUCCESS',
+          details: parsed,
+          ipAddress: ipVal,
+          ip_address: ipVal,
+          userAgent: userAgentVal,
+          user_agent: userAgentVal,
+          createdAt: createdAtIso,
+          created_at: createdAtIso,
+        };
+      });
+
+      let filteredLogs = logs;
+      if (username && username !== 'all') {
+        filteredLogs = filteredLogs.filter(l => l.username?.toLowerCase() === username.toLowerCase());
+      }
+      if (status && status !== 'all') {
+        filteredLogs = filteredLogs.filter(l => l.status?.toLowerCase() === status.toLowerCase());
+      }
+
+      return {
+        total,
+        page: Number(page) || 1,
+        totalPages: Math.ceil(total / take) || 1,
+        logs: filteredLogs,
+      };
+    } catch (err) {
+      console.error('[AuditLog] Failed to list audit entries:', err.message);
+      return { total: 0, page: 1, totalPages: 1, logs: [] };
+    }
   }
 }
 

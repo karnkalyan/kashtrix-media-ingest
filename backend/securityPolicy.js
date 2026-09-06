@@ -30,7 +30,7 @@ const resolvePersistedIdentity = (claims, findUser) => {
   if (!username) throw new Error('Token subject is missing');
   const user = findUser(username);
   if (!user) throw new Error('Authenticated user no longer exists');
-  return { sub: user.username, role: normalizeUserRole(user.role), exp: claims.exp };
+  return { id: user.id, sub: user.username, role: normalizeUserRole(user.lastName || user.role), exp: claims.exp };
 };
 
 const isSuperadmin = user => normalizeUserRole(user?.role) === 'superadmin';
@@ -76,7 +76,16 @@ const verifyPassword = (password, storedHash) => {
   return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
 };
 
+const canViewAuditLogs = user => ['superadmin', 'admin'].includes(normalizeUserRole(user?.role));
+const canManageSystem = user => ['superadmin', 'admin'].includes(normalizeUserRole(user?.role));
+const canOperateStreams = user => ['superadmin', 'admin', 'operator'].includes(normalizeUserRole(user?.role));
+const canManageArchive = user => ['superadmin', 'admin', 'operator', 'archive'].includes(normalizeUserRole(user?.role));
+
 module.exports = {
+  canManageArchive,
+  canManageSystem,
+  canOperateStreams,
+  canViewAuditLogs,
   canViewTerminal,
   createTokenCodec,
   hashPassword,
@@ -90,3 +99,4 @@ module.exports = {
   resolvePersistedIdentity,
   verifyPassword,
 };
+

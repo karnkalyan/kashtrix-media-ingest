@@ -1905,25 +1905,25 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                   type="button"
                   onClick={() => handleToggleAuthMode('anonymous')}
                   className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                    networkSharesInfo?.authMode !== 'authenticated'
-                      ? 'bg-emerald-600 text-white shadow-xs'
+                    networkSharesInfo?.authMode === 'anonymous'
+                      ? 'bg-amber-600 text-white shadow-xs'
                       : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
                   }`}
                 >
                   <Unlock size={12} />
-                  <span>Anonymous / Guest</span>
+                  <span>Public Anonymous</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleToggleAuthMode('authenticated')}
                   className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                    networkSharesInfo?.authMode === 'authenticated'
+                    networkSharesInfo?.authMode !== 'anonymous'
                       ? 'bg-[#7C3AED] text-white shadow-xs'
                       : 'text-[#6F6078] hover:text-[#1B1024] dark:text-[#B9A5CD] dark:hover:text-white'
                   }`}
                 >
                   <Lock size={12} />
-                  <span>User Authentication</span>
+                  <span>Password Protected (Required)</span>
                 </button>
               </div>
             </div>
@@ -1984,10 +1984,10 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               <div className="rounded-lg border border-[#E8DFF0] bg-[#F8F7FA] p-3 dark:bg-[#211335] dark:border-[#371F59] space-y-1">
                 <span className="block text-[10px] uppercase font-bold text-[#6F6078] dark:text-[#B9A5CD]">Access Authorization</span>
                 <span className={`inline-flex items-center gap-1 text-xs font-bold ${
-                  networkSharesInfo?.authMode === 'authenticated' ? 'text-purple-600 dark:text-purple-300' : 'text-emerald-600 dark:text-emerald-400'
+                  networkSharesInfo?.authMode !== 'anonymous' ? 'text-purple-600 dark:text-purple-300' : 'text-amber-600 dark:text-amber-400'
                 }`}>
-                  {networkSharesInfo?.authMode === 'authenticated' ? <Lock size={13} /> : <Unlock size={13} />}
-                  {networkSharesInfo?.authMode === 'authenticated' ? 'User Credentials Required' : 'Public Anonymous / Guest Access'}
+                  {networkSharesInfo?.authMode !== 'anonymous' ? <Lock size={13} /> : <Unlock size={13} />}
+                  {networkSharesInfo?.authMode !== 'anonymous' ? 'User Credentials Required (Guest Disabled)' : 'Public Anonymous / Guest Access'}
                 </span>
               </div>
 
@@ -1999,13 +1999,13 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
               </div>
             </div>
 
-            {/* Windows Host SMB Share Status Banner */}
-            {networkSharesInfo?.windowsStatus?.isWindows && !networkSharesInfo?.windowsStatus?.isShared && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 dark:border-amber-900/60 dark:bg-amber-950/30 text-xs space-y-2">
-                <div className="flex items-center justify-between font-bold text-amber-900 dark:text-amber-200">
+            {/* Windows Host SMB Share Setup & Security Notice */}
+            {networkSharesInfo?.windowsStatus?.isWindows && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-3.5 dark:border-purple-900/60 dark:bg-purple-950/30 text-xs space-y-2">
+                <div className="flex items-center justify-between font-bold text-purple-950 dark:text-purple-200 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <AlertTriangle size={15} className="text-amber-600" />
-                    <span>Windows Host Setup Required for SMB Share (\\{networkSharesInfo?.primaryIp}\media)</span>
+                    <Lock size={15} className="text-[#7C3AED]" />
+                    <span>Windows Authenticated SMB Share Setup (\\{networkSharesInfo?.primaryIp}\media)</span>
                   </div>
                   <button
                     type="button"
@@ -2017,28 +2017,28 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                           toast.success(data.message);
                           fetchNetworkShares();
                         } else {
-                          toast.error(data.error || 'Administrator privileges required to create Windows share');
+                          toast.error(data.error || 'Run scripts/setup-windows-share.bat as Administrator to apply');
                         }
                       } catch (e: any) {
-                        toast.error(e?.message || 'Failed to auto-configure Windows share');
+                        toast.error(e?.message || 'Failed to configure Windows share');
                       }
                     }}
-                    className="px-2.5 py-1 rounded bg-amber-600 text-white font-bold text-[11px] hover:bg-amber-700 transition-colors shadow-xs"
+                    className="px-2.5 py-1 rounded bg-[#7C3AED] text-white font-bold text-[11px] hover:bg-[#6D28D9] transition-colors shadow-xs"
                   >
-                    Auto-Configure SMB Share
+                    Configure Secure Authenticated Share
                   </button>
                 </div>
-                <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-                  On bare-metal Windows hosts, Windows requires the media folder to be shared once. Run as Administrator in CMD or PowerShell:
+                <p className="text-[11px] text-[#593E72] dark:text-[#D1C3E2] leading-relaxed">
+                  Guest login is disabled so connecting PCs are prompted for a username and password. To configure or fix sharing violations (e.g. <em>&quot;file is being used by another process&quot;</em>), run this script as Administrator:
                 </p>
-                <div className="flex items-center justify-between bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-amber-200 dark:border-amber-900/60">
+                <div className="flex items-center justify-between bg-white dark:bg-[#1E1130] p-2 rounded-lg border border-purple-200 dark:border-purple-900/60">
                   <code className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate">
-                    {networkSharesInfo?.windowsStatus?.setupCommand || 'net share media="C:\\Kashtrix\\media" /grant:Everyone,FULL /unlimited'}
+                    powershell -ExecutionPolicy Bypass -File scripts/setup-windows-share.ps1
                   </code>
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(networkSharesInfo?.windowsStatus?.setupCommand || '', 'Windows Setup Command')}
-                    className="ml-2 px-2 py-0.5 rounded bg-amber-600 text-white text-[10px] font-bold hover:bg-amber-700 transition-colors shrink-0"
+                    onClick={() => copyToClipboard('powershell -ExecutionPolicy Bypass -File scripts/setup-windows-share.ps1', 'Setup Command')}
+                    className="ml-2 px-2 py-0.5 rounded bg-[#7C3AED] text-white text-[10px] font-bold hover:bg-[#6D28D9] transition-colors shrink-0"
                   >
                     Copy Command
                   </button>
@@ -2094,10 +2094,30 @@ const SystemAdminView: React.FC<SystemAdminViewProps> = ({ token, onNavigate }) 
                       </button>
                     </div>
                   </div>
+                  {networkSharesInfo?.authMode !== 'anonymous' && (
+                    <div className="bg-[#EFE8F6] dark:bg-[#25123A] p-2 rounded-lg border border-[#D8C5ED] dark:border-[#4B2577] space-y-1 text-[10px]">
+                      <div className="flex items-center justify-between font-bold text-[#4B1E78] dark:text-[#E9D5FF]">
+                        <span className="flex items-center gap-1">
+                          <Lock size={10} /> Password Required on Client PCs:
+                        </span>
+                        <span className="text-[9px] font-mono">User: media_admin</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[#5C2B92] dark:text-[#C4B5FD] font-mono">
+                        <span>Password: Password123!</span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard('Password123!', 'Share Password')}
+                          className="px-1.5 py-0.5 rounded bg-[#7C3AED] text-white text-[9px] font-bold hover:bg-[#6D28D9]"
+                        >
+                          Copy Pass
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <p className="text-[9.5px] text-emerald-900/80 dark:text-emerald-200/80 leading-tight pt-1">
-                Supports Windows, macOS (Finder &gt; Connect to Server), and Linux CIFS.
+                Supports Windows, macOS (Finder &gt; Connect to Server), and Linux CIFS. (Tip: If a client PC shows sharing error, run <code className="font-mono bg-emerald-100 dark:bg-emerald-900 px-1 py-0.5 rounded">net use * /delete /y</code> on that PC).
               </p>
             </div>
 

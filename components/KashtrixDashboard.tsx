@@ -118,7 +118,9 @@ const readCachedOverview = (): DashboardOverview => {
   }
 };
 
-export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPort?: number }> = ({ onNavigate, mediaPort = 8080 }) => {
+export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; mediaPort?: number; userRole?: string }> = ({ onNavigate, mediaPort = 8080, userRole }) => {
+  const normalizedRole = (userRole || '').toLowerCase().trim();
+  const canManageChannels = ['superadmin', 'admin', 'operator'].includes(normalizedRole);
   const [overview, setOverview] = useState<DashboardOverview>(readCachedOverview);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -621,9 +623,11 @@ export const KashtrixDashboard: React.FC<{ onNavigate?: (tab: string) => void; m
             <Tv size={28} className="mx-auto text-[#6F6078] dark:text-[#B9A5CD]" />
             <p className="mt-2 text-xs font-bold text-[#1B1024] dark:text-white">No broadcast channels configured</p>
             <p className="text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">Add an SDI DeckLink input, UDP stream, or VOD playlist in Channels.</p>
-            <div className="mt-3">
-              <Button onClick={() => onNavigate?.('channels')}>Create Channel</Button>
-            </div>
+            {canManageChannels && (
+              <div className="mt-3">
+                <Button onClick={() => onNavigate?.('channels')}>Create Channel</Button>
+              </div>
+            )}
           </div>
         ) : servicesViewMode === 'thumbnails' ? (
           /* Multiviewer Thumbnail Grid */

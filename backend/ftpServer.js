@@ -39,7 +39,7 @@ class KashtrixFtpServer {
         this.mediaRoot = mediaRoot || path.join(process.cwd(), 'media');
         this.port = options.port || 21;
         this.fallbackPort = options.fallbackPort || 2121;
-        this.getAuthSettings = options.getAuthSettings || (() => ({ authMode: 'anonymous', users: [] }));
+        this.getAuthSettings = options.getAuthSettings || (() => ({ authMode: 'authenticated', users: [] }));
         this.server = null;
         this.activePort = null;
         this.isRunning = false;

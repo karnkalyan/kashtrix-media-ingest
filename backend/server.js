@@ -45,6 +45,10 @@ const { KashtrixFtpServer } = require('./ftpServer');
 const { MODULES, hasModule: hasSecureModule } = require('./licensePolicy');
 const { SecureLicenseRuntime } = require('./secureLicenseRuntime');
 const {
+    canManageArchive,
+    canManageSystem,
+    canOperateStreams,
+    canViewAuditLogs,
     canViewTerminal,
     createTokenCodec,
     hashPassword,
@@ -549,7 +553,7 @@ const resolveAuthenticatedUser = async (claims) => {
     const username = String(claims?.sub || '').trim();
     const user = username ? await db.prisma.user.findFirst({
         where: { username },
-        select: { username: true, role: true, isActive: true },
+        select: { id: true, username: true, role: true, lastName: true, isActive: true },
     }) : null;
     if (!user?.isActive) throw new Error('Authenticated user is missing or inactive');
     return resolvePersistedIdentity(claims, subject => subject === user.username ? user : null);
@@ -585,6 +589,7 @@ const defaultSettings = {
     storageThresholdPercent: 90,
     storageCriticalThresholdPercent: 95,
     storageMinFreeMb: 500,
+    timezone: 'Asia/Kathmandu',
 };
 let persistedSettings = await getJsonSetting('settings', {});
 const clampPort = (value, fallback) => Math.max(1, Math.min(65535, Number(value) || fallback));
@@ -603,6 +608,7 @@ const getSettings = () => {
         storageThresholdPercent: !isNaN(threshold) && threshold >= 50 && threshold <= 99 ? threshold : 90,
         storageCriticalThresholdPercent: !isNaN(criticalThreshold) && criticalThreshold >= 60 && criticalThreshold <= 99 ? criticalThreshold : 95,
         storageMinFreeMb: !isNaN(minFreeMb) && minFreeMb >= 100 ? minFreeMb : 500,
+        timezone: typeof settings.timezone === 'string' && settings.timezone.trim() ? settings.timezone.trim() : 'Asia/Kathmandu',
     };
 };
 const getLicense = () => secureLicense.getPublicStatus();
@@ -986,6 +992,52 @@ const streamOrDownloadFile = (req, res, targetPath, customFileName) => {
             'Accept-Ranges': 'bytes',
         });
         return res.end();
+    }
+
+    // Audit logging for recording download (recorded once per download session)
+    if (isDownload && (!range || String(range).trim().startsWith('bytes=0-'))) {
+        let authUser = req.user;
+        if (!authUser && req.query?.token) {
+            try {
+                const verified = verifyToken(String(req.query.token));
+                if (verified?.sub) {
+                    const persisted = db.findUserByUsername(verified.sub);
+                    authUser = {
+                        id: persisted ? persisted.id : null,
+                        sub: verified.sub,
+                        role: persisted ? normalizeUserRole(persisted.role) : 'user'
+                    };
+                }
+            } catch (_) {}
+        }
+        const formatBytes = (bytes = 0) => {
+            if (!bytes) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const idx = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+            return `${(bytes / Math.pow(1024, idx)).toFixed(idx ? 1 : 0)} ${units[idx]}`;
+        };
+        const ipAddress = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || req.ip || '';
+        const userAgent = String(req.headers['user-agent'] || '');
+        logAuditTrail({
+            userId: authUser?.id || null,
+            username: authUser?.sub || 'anonymous',
+            userRole: authUser?.role || 'unknown',
+            action: 'RECORDING_DOWNLOADED',
+            entityType: 'RECORDING',
+            entityId: path.basename(normalizedPath),
+            details: {
+                fileName: fileName,
+                filePath: normalizedPath,
+                fileSize: fileSize,
+                fileSizeFormatted: formatBytes(fileSize),
+                format: ext,
+                clientIp: ipAddress,
+                userAgent: userAgent,
+                downloadedAt: new Date().toISOString()
+            },
+            status: 'SUCCESS',
+            req
+        }).catch(e => console.error('[AuditLog] Download log error:', e.message));
     }
 
     if (range) {
@@ -1404,11 +1456,27 @@ const publicPaths = new Set([
 ]);
 
 const authMiddleware = async (req, res, next) => {
-    if (!req.path.startsWith('/api') || publicPaths.has(req.path) || req.path.startsWith('/api/ingest/recordings/file/') || req.path.includes('/file') || req.path.includes('/download')) return next();
+    const isPublic = !req.path.startsWith('/api') || publicPaths.has(req.path);
+    const isFileOrDownload = req.path.startsWith('/api/ingest/recordings/file/') || req.path.includes('/file') || req.path.includes('/download');
     const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : (req.query?.token ? String(req.query.token).trim() : '');
+
+    if (token) {
+        try {
+            req.user = await authenticateToken(token);
+        } catch (_) {}
+    }
+
+    if (isPublic || (isFileOrDownload && !token)) {
+        return next();
+    }
+
+    if (!req.user) {
+        if (isFileOrDownload) return next();
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+
     try {
-        req.user = await authenticateToken(token);
         const requiredModules = requiredModulesForRequest(req);
         if (requiredModules.length && !requiredModules.some(module => licenseHasModule(getLicense(), module))) {
             return res.status(403).json({ error: `License module required: ${requiredModules.join(' or ')}`, requiredModules });
@@ -1442,11 +1510,59 @@ const requireSuperadmin = (req, res, next) => {
     next();
 };
 
+const logAuditTrail = async ({
+    userId,
+    username,
+    userRole,
+    action,
+    entityType = 'SYSTEM',
+    entityId = null,
+    details = {},
+    status = 'SUCCESS',
+    req = null
+}) => {
+    try {
+        const ipAddress = req ? (
+            req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+            req.socket?.remoteAddress ||
+            req.ip ||
+            ''
+        ) : '';
+        const userAgent = req ? String(req.headers['user-agent'] || '') : '';
+        const finalUserId = userId !== undefined ? userId : (req?.user?.id ? Number(req.user.id) : null);
+        const finalUsername = username || req?.user?.sub || 'system';
+        const finalRole = userRole || req?.user?.role || 'system';
+
+        await db.createAuditLog({
+            userId: finalUserId,
+            username: finalUsername,
+            userRole: finalRole,
+            action,
+            entityType,
+            entityId: entityId ? String(entityId) : null,
+            details: typeof details === 'object' ? details : { message: String(details || '') },
+            ipAddress,
+            userAgent,
+            status
+        });
+    } catch (err) {
+        console.error('[AuditLog] Failed to record audit log:', err.message);
+    }
+};
+
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body || {};
     await db.refreshUsers();
     const user = db.findUserByUsername(username || '');
     if (!user || user.is_active === false || !verifyPassword(password || '', user.password_hash)) {
+        await logAuditTrail({
+            username: username || 'anonymous',
+            action: 'USER_LOGIN_FAILED',
+            entityType: 'AUTH',
+            details: { reason: 'Invalid credentials or inactive account' },
+            status: 'FAILURE',
+            req
+        });
         return res.status(401).json({ error: 'Invalid username or password' });
     }
     if (passwordNeedsUpgrade(user.password_hash)) {
@@ -1454,6 +1570,17 @@ app.post('/api/auth/login', async (req, res) => {
         await db.refreshUsers();
     }
     const persistedUser = { username: user.username, role: normalizeUserRole(user.role) };
+    await logAuditTrail({
+        userId: user.id,
+        username: user.username,
+        userRole: persistedUser.role,
+        action: 'USER_LOGIN',
+        entityType: 'AUTH',
+        entityId: String(user.id),
+        details: { method: 'password' },
+        status: 'SUCCESS',
+        req
+    });
     res.json({ token: signAuthToken(persistedUser), user: persistedUser, license: getLicense() });
 });
 
@@ -1618,6 +1745,9 @@ app.put('/api/settings', authMiddleware, requireRole('admin'), async (req, res) 
     const storageMinFreeMb = !isNaN(rawMinFree) && rawMinFree >= 100
         ? rawMinFree
         : (prev.storageMinFreeMb || 500);
+    const timezone = typeof req.body?.timezone === 'string' && req.body.timezone.trim()
+        ? req.body.timezone.trim()
+        : (prev.timezone || 'Asia/Kathmandu');
 
     const portChanged = clampPort(req.body?.rtmpPort, 1935) !== prev.rtmpPort
         || clampPort(req.body?.mediaPort, MEDIA_PORT) !== prev.mediaPort
@@ -1634,6 +1764,7 @@ app.put('/api/settings', authMiddleware, requireRole('admin'), async (req, res) 
         storageThresholdPercent,
         storageCriticalThresholdPercent,
         storageMinFreeMb,
+        timezone,
     };
     await setJsonSetting('settings', nextSettings);
     persistedSettings = nextSettings;
@@ -1672,7 +1803,7 @@ app.get('/api/state', authMiddleware, async (req, res) => {
     }
 });
 
-app.put('/api/profiles/:id', authMiddleware, async (req, res) => {
+app.put('/api/profiles/:id', authMiddleware, requireRole('admin', 'operator'), async (req, res) => {
     const profile = { ...req.body, id: req.params.id };
     const name = profile.name || profile.id;
     const data = JSON.stringify(profile);
@@ -1684,7 +1815,7 @@ app.put('/api/profiles/:id', authMiddleware, async (req, res) => {
     res.json(profile);
 });
 
-app.delete('/api/profiles/:id', authMiddleware, async (req, res) => {
+app.delete('/api/profiles/:id', authMiddleware, requireRole('admin', 'operator'), async (req, res) => {
     await db.prisma.transcodeProfile.delete({ where: { id: req.params.id } }).catch(() => {});
     res.json({ ok: true });
 });
@@ -1930,7 +2061,7 @@ app.post('/api/live-server/security/generate-urls', authMiddleware, (req, res) =
 // =========================================================================
 // CHANNELS CRUD, START/STOP & PROBE ENDPOINTS
 // =========================================================================
-app.put('/api/channels/:id', authMiddleware, async (req, res) => {
+app.put('/api/channels/:id', authMiddleware, requireRole('admin', 'operator'), async (req, res) => {
     try {
         const channel = { ...req.body, id: req.params.id };
         await db.saveChannel(channel);
@@ -1940,7 +2071,7 @@ app.put('/api/channels/:id', authMiddleware, async (req, res) => {
     }
 });
 
-app.delete('/api/channels/:id', authMiddleware, async (req, res) => {
+app.delete('/api/channels/:id', authMiddleware, requireRole('admin', 'operator'), async (req, res) => {
     try {
         if (runningProcesses[req.params.id]) {
             try { runningProcesses[req.params.id].kill('SIGKILL'); } catch (_) {}
@@ -1953,7 +2084,7 @@ app.delete('/api/channels/:id', authMiddleware, async (req, res) => {
     }
 });
 
-app.delete('/api/channels', authMiddleware, async (req, res) => {
+app.delete('/api/channels', authMiddleware, requireRole('admin'), async (req, res) => {
     try {
         for (const [chId, proc] of Object.entries(runningProcesses)) {
             try { proc.kill('SIGKILL'); } catch (_) {}
@@ -2008,7 +2139,7 @@ function parseArgsStringToArgv(cmd) {
     return args;
 }
 
-app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req, res) => {
+app.post('/api/channels/start', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
     const { channelId, command: overrideCommand } = req.body;
     try {
         const channels = await db.getChannels();
@@ -2155,7 +2286,7 @@ app.post('/api/channels/start', authMiddleware, requireActiveLicense, async (req
     }
 });
 
-app.post('/api/channels/stop', authMiddleware, async (req, res) => {
+app.post('/api/channels/stop', authMiddleware, requireRole('admin', 'operator'), async (req, res) => {
     const { channelId } = req.body;
     const proc = runningProcesses[channelId];
     if (proc) {
@@ -3583,6 +3714,12 @@ const beginRecording = async (appNameValue, streamValue, rawOptions = {}) => {
         isPaused: false,
         pauseStartedAt: null,
         totalPausedMs: 0,
+        initiatedBy: rawOptions.initiatedBy || null,
+        bufferOverrunCount: 0,
+        bufferOverrunFirstSeen: null,
+        bufferOverrunLastSeen: null,
+        bufferOverrunLastNotified: 0,
+        autoStopTriggered: false,
     };
     activeRecordings.set(key, active);
     broadcastRecordingEvent('recording_started', {
@@ -3631,9 +3768,59 @@ const beginRecording = async (appNameValue, streamValue, rawOptions = {}) => {
         console.error(`[Recording] ${key}:`, error);
     });
     proc.stderr.on('data', data => {
-        const message = data.toString().trim();
+        const text = data.toString();
+        const message = text.trim();
         active.lastError = `${active.lastError}\n${message}`.trim().slice(-8000);
         if (message) console.error(`[Recording][${key}] ${message}`);
+
+        // Real-time hardware buffer overrun detection
+        if (/Decklink input buffer overrun/i.test(text)) {
+            const now = Date.now();
+            active.bufferOverrunCount = (active.bufferOverrunCount || 0) + 1;
+            if (!active.bufferOverrunFirstSeen) {
+                active.bufferOverrunFirstSeen = now;
+            }
+            active.bufferOverrunLastSeen = now;
+
+            // Throttle WebSocket warning broadcast to once every 5 seconds
+            if (now - (active.bufferOverrunLastNotified || 0) > 5000) {
+                active.bufferOverrunLastNotified = now;
+                const durationOverrunSec = Math.max(1, Math.round((now - active.bufferOverrunFirstSeen) / 1000));
+                broadcastRecordingEvent('recording_warning', {
+                    key,
+                    app: appName,
+                    stream,
+                    type: 'DECKLINK_BUFFER_OVERRUN',
+                    message: `DeckLink input buffer overrun detected (${active.bufferOverrunCount} drop events over ${durationOverrunSec}s). Storage disk write speed or PCIe bandwidth is insufficient!`,
+                    count: active.bufferOverrunCount,
+                    durationOverrunSec,
+                });
+            }
+
+            // Auto-stop recording gracefully if buffer overruns persist continuously for >= 25 seconds
+            // This flushes remaining written frames and prevents silent multi-hour corrupted captures
+            const continuousDuration = now - active.bufferOverrunFirstSeen;
+            if (continuousDuration >= 25000 && !active.autoStopTriggered) {
+                active.autoStopTriggered = true;
+                const durationSec = Math.round(continuousDuration / 1000);
+                console.warn(`[Recording][${key}] CRITICAL: Continuous DeckLink buffer overruns for ${durationSec}s! Auto-stopping recording gracefully to protect media file.`);
+
+                broadcastRecordingEvent('recording_auto_stopped', {
+                    key,
+                    app: appName,
+                    stream,
+                    reason: 'DECKLINK_BUFFER_OVERRUN_AUTO_STOP',
+                    message: `Recording automatically stopped to protect file integrity after ${durationSec}s of continuous DeckLink buffer overruns (${active.bufferOverrunCount} drops). Please select a compressed codec (ProRes/DNxHD/MPEG-2) or high-speed NVMe storage.`,
+                });
+
+                finishRecording(key, 'SIGTERM', true).catch(err => {
+                    console.error(`[Recording][${key}] Error during buffer-overrun auto-stop:`, err);
+                });
+            }
+        } else if (active.bufferOverrunLastSeen && (Date.now() - active.bufferOverrunLastSeen > 15000)) {
+            // Buffer overrun recovered for > 15 seconds
+            active.bufferOverrunFirstSeen = null;
+        }
     });
     proc.on('close', async () => {
         if (activeRecordings.has(key)) {
@@ -4200,6 +4387,39 @@ const finishRecording = async (key, signal = 'SIGTERM', forceComplete = false) =
                 }
             }
         }
+
+        const durationSec = Math.round(durationMs / 1000);
+        const hasCompleted = completedOutputs.length > 0;
+        const hasFailed = failedOutputs.length > 0;
+        const autoStopped = Boolean(data.autoStopTriggered);
+        const auditStatus = autoStopped ? 'WARNING' : (hasCompleted && !hasFailed ? 'SUCCESS' : (hasCompleted ? 'WARNING' : 'FAILURE'));
+        const auditAction = autoStopped ? 'RECORDING_AUTO_STOPPED' : (hasCompleted ? 'RECORDING_STOPPED' : 'RECORDING_FAILED');
+
+        await logAuditTrail({
+            userId: data.initiatedBy?.userId,
+            username: data.initiatedBy?.username || 'system',
+            userRole: data.initiatedBy?.role || 'system',
+            action: auditAction,
+            entityType: 'RECORDING',
+            entityId: key,
+            details: {
+                app: data.appName,
+                stream: data.stream,
+                durationMs,
+                durationSec,
+                sourceType: data.options?.sourceType,
+                formats: data.options?.formats || [data.options?.format],
+                videoCodec: data.options?.videoCodec,
+                audioCodec: data.options?.audioCodec,
+                encoder: data.options?.encoder,
+                completedFiles: completedOutputs.map(o => ({ fileName: o.fileName, size: o.size, duration: o.duration, captureStatus: o.captureStatus })),
+                failedFiles: failedOutputs.map(o => ({ fileName: o.fileName, error: o.error })),
+                bufferOverrunCount: data.bufferOverrunCount || 0,
+                autoStopTriggered: autoStopped,
+                reason: autoStopped ? 'DeckLink hardware buffer overrun continuous threshold (>25s) exceeded' : (hasCompleted ? 'Session stopped/completed' : (data.lastError || 'Capture failed')),
+            },
+            status: auditStatus,
+        });
 
         broadcastRecordingEvent('recording_stopped', {
             key,
@@ -4887,6 +5107,17 @@ const handleCreateUser = async (req, res) => {
         const existing = db.findUserByUsername(username);
         if (existing) return res.status(409).json({ error: 'Username already exists' });
         const result = await db.createUser({ username, passwordHash: hashPassword(password), role: nextRole });
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'USER_CREATED',
+            entityType: 'USER',
+            entityId: String(result.id),
+            details: { createdUsername: username, assignedRole: nextRole },
+            status: 'SUCCESS',
+            req
+        });
         res.status(201).json({ success: true, message: 'User created successfully', userId: result.id });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -4914,6 +5145,17 @@ const handleUpdateUser = async (req, res) => {
         const nextRole = parseManagedRole(role || user.role);
         if (!nextRole) return res.status(400).json({ error: 'Role must be admin, operator, archive, or user' });
         await db.updateUser(id, { username: nextUsername, passwordHash: nextHash, role: nextRole });
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'USER_UPDATED',
+            entityType: 'USER',
+            entityId: String(id),
+            details: { targetUsername: nextUsername, assignedRole: nextRole, passwordChanged: Boolean(password) },
+            status: 'SUCCESS',
+            req
+        });
         res.json({ success: true, message: 'User updated successfully' });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -4935,6 +5177,17 @@ const handleDeleteUser = async (req, res) => {
         if (normalizeUserRole(user.role) === 'superadmin') return res.status(403).json({ error: 'Cannot delete a superadmin account' });
         if (user.username === req.user.sub) return res.status(400).json({ error: 'Cannot delete logged in user account' });
         await db.deleteUser(id);
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'USER_DELETED',
+            entityType: 'USER',
+            entityId: String(id),
+            details: { deletedUsername: user.username, deletedRole: user.role },
+            status: 'SUCCESS',
+            req
+        });
         res.json({ success: true, message: 'User deleted successfully' });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -4943,6 +5196,86 @@ const handleDeleteUser = async (req, res) => {
 
 app.delete('/api/users/:id', authMiddleware, canManageUsers, handleDeleteUser);
 app.delete('/api/users/:id/', authMiddleware, canManageUsers, handleDeleteUser);
+
+// === AUDIT LOGS API (SUPERADMIN & ADMIN) ===
+app.get('/api/audit-logs', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 50,
+            type,
+            action,
+            username,
+            status,
+            from,
+            to,
+            search
+        } = req.query;
+
+        const result = await db.listAuditLogs({
+            page: Number(page) || 1,
+            limit: Math.min(200, Number(limit) || 50),
+            type: type || req.query.entityType,
+            entityType: type || req.query.entityType,
+            action,
+            username,
+            status,
+            startDate: from,
+            endDate: to,
+            search
+        });
+
+        res.json(result);
+    } catch (e) {
+        console.error('[AuditLog] Error listing audit logs:', e);
+        res.status(500).json({ error: 'Failed to retrieve audit logs: ' + e.message });
+    }
+});
+
+app.post('/api/audit-logs/export', authMiddleware, requireRole('admin'), async (req, res) => {
+    try {
+        const { type, action, username, status, from, to, search, format = 'json' } = req.body || {};
+        const result = await db.listAuditLogs({
+            page: 1,
+            limit: 2000,
+            entityType: type,
+            action,
+            username,
+            status,
+            startDate: from,
+            endDate: to,
+            search
+        });
+
+        if (format === 'csv') {
+            const fields = ['id', 'created_at', 'username', 'user_role', 'action', 'entity_type', 'entity_id', 'status', 'ip_address', 'details'];
+            const header = fields.join(',');
+            const rows = (result.logs || []).map(log => {
+                const detailsStr = typeof log.details === 'object' ? JSON.stringify(log.details) : String(log.details || '');
+                return [
+                    log.id,
+                    `"${log.created_at || ''}"`,
+                    `"${log.username || ''}"`,
+                    `"${log.user_role || ''}"`,
+                    `"${log.action || ''}"`,
+                    `"${log.entity_type || ''}"`,
+                    `"${log.entity_id || ''}"`,
+                    `"${log.status || ''}"`,
+                    `"${log.ip_address || ''}"`,
+                    `"${detailsStr.replace(/"/g, '""')}"`
+                ].join(',');
+            });
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="streamops_audit_logs_${Date.now()}.csv"`);
+            return res.send([header, ...rows].join('\n'));
+        }
+
+        res.json(result.logs || []);
+    } catch (e) {
+        console.error('[AuditLog] Error exporting audit logs:', e);
+        res.status(500).json({ error: 'Failed to export audit logs: ' + e.message });
+    }
+});
 
 // === STORAGE PROTOCOL & MULTI-DESTINATION REMOTE DIRECTORY VALIDATION ===
 const testSingleStorageLocation = async (loc = {}) => {
@@ -5333,11 +5666,11 @@ const kashtrixFtpServer = new KashtrixFtpServer(MEDIA_ROOT, {
     getAuthSettings: () => {
         try {
             return {
-                authMode: settingsCache?.network_share_auth_mode || 'anonymous',
+                authMode: settingsCache?.network_share_auth_mode || 'authenticated',
                 users: settingsCache?.network_share_users || DEFAULT_NETWORK_SHARE_USERS,
             };
         } catch (_) {
-            return { authMode: 'anonymous', users: DEFAULT_NETWORK_SHARE_USERS };
+            return { authMode: 'authenticated', users: DEFAULT_NETWORK_SHARE_USERS };
         }
     }
 });
@@ -5345,7 +5678,7 @@ const kashtrixFtpServer = new KashtrixFtpServer(MEDIA_ROOT, {
 app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
     try {
         const customIp = await getJsonSetting('custom_network_share_ip', null);
-        const authMode = await getJsonSetting('network_share_auth_mode', 'anonymous');
+        const authMode = await getJsonSetting('network_share_auth_mode', 'authenticated');
         const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
         const ftpPort = kashtrixFtpServer?.getStatus()?.port || 21;
         const info = getNetworkShareInfo(req, { customIp, authMode, users, mediaPath: MEDIA_ROOT, ftpPort });
@@ -5358,7 +5691,7 @@ app.get(['/api/ingest/record/network-shares', '/api/system/network-shares', '/ap
 app.put(['/api/ingest/record/network-shares', '/api/system/network-shares', '/api/recording/network-shares'], authMiddleware, async (req, res) => {
     try {
         const customIp = req.body?.customIp !== undefined ? (String(req.body.customIp).trim() || null) : await getJsonSetting('custom_network_share_ip', null);
-        const authMode = req.body?.authMode === 'authenticated' ? 'authenticated' : (req.body?.authMode === 'anonymous' ? 'anonymous' : await getJsonSetting('network_share_auth_mode', 'anonymous'));
+        const authMode = req.body?.authMode === 'anonymous' ? 'anonymous' : 'authenticated';
         if (req.body?.customIp !== undefined) await setJsonSetting('custom_network_share_ip', customIp);
         if (req.body?.authMode !== undefined) await setJsonSetting('network_share_auth_mode', authMode);
         const users = await getJsonSetting('network_share_users', DEFAULT_NETWORK_SHARE_USERS);
@@ -5637,7 +5970,7 @@ app.get('/api/file-manager/list', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/file-manager/mkdir', authMiddleware, async (req, res) => {
+app.post('/api/file-manager/mkdir', authMiddleware, requireRole('admin', 'operator', 'archive'), async (req, res) => {
     try {
         const { path: parentPath = '', name } = req.body || {};
         const folderName = String(name || '').trim().replace(/[\\\/:\*\?"<>\|]/g, '');
@@ -5651,13 +5984,26 @@ app.post('/api/file-manager/mkdir', authMiddleware, async (req, res) => {
         }
 
         fs.mkdirSync(newDirPath, { recursive: true });
+
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'FOLDER_CREATED',
+            entityType: 'SYSTEM',
+            entityId: folderName,
+            details: { path: targetSub },
+            status: 'SUCCESS',
+            req
+        });
+
         res.json({ success: true, message: `Folder "${folderName}" created successfully` });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.delete('/api/file-manager/delete', authMiddleware, async (req, res) => {
+app.delete('/api/file-manager/delete', authMiddleware, requireRole('admin', 'operator', 'archive'), async (req, res) => {
     try {
         const targetPath = req.body?.path;
         if (!targetPath) return res.status(400).json({ success: false, error: 'Path is required' });
@@ -5674,13 +6020,25 @@ app.delete('/api/file-manager/delete', authMiddleware, async (req, res) => {
             fs.unlinkSync(fsPath);
         }
 
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'FILE_DELETED',
+            entityType: 'SYSTEM',
+            entityId: path.basename(fsPath),
+            details: { path: targetPath, isDirectory: stat.isDirectory() },
+            status: 'SUCCESS',
+            req
+        });
+
         res.json({ success: true, message: 'Deleted successfully' });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.post('/api/file-manager/rename', authMiddleware, async (req, res) => {
+app.post('/api/file-manager/rename', authMiddleware, requireRole('admin', 'operator', 'archive'), async (req, res) => {
     try {
         const { oldPath, newName } = req.body || {};
         const cleanName = String(newName || '').trim().replace(/[\\\/:\*\?"<>\|]/g, '');
@@ -5695,11 +6053,24 @@ app.post('/api/file-manager/rename', authMiddleware, async (req, res) => {
         const newFsPath = path.join(parentDir, cleanName);
 
         if (fs.existsSync(newFsPath)) {
-            return res.status(400).json({ success: false, error: 'An item with this name already exists' });
+            return res.status(400).json({ success: false, error: 'A file or folder with that name already exists' });
         }
 
         fs.renameSync(oldFsPath, newFsPath);
-        res.json({ success: true, message: 'Renamed successfully' });
+
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'FILE_RENAMED',
+            entityType: 'SYSTEM',
+            entityId: cleanName,
+            details: { oldPath, newPath: path.join(path.dirname(oldPath), cleanName) },
+            status: 'SUCCESS',
+            req
+        });
+
+        res.json({ success: true, message: 'Renamed successfully', newName: cleanName });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -5708,8 +6079,8 @@ app.post('/api/file-manager/rename', authMiddleware, async (req, res) => {
 const fileManagerStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         try {
-            const destPath = req.query.path || req.body?.path || '';
-            const { resolved } = resolveSafeMediaPath(destPath);
+            const folder = req.body?.folder || req.query?.folder || '';
+            const { resolved } = resolveSafeMediaPath(folder);
             if (!fs.existsSync(resolved)) {
                 fs.mkdirSync(resolved, { recursive: true });
             }
@@ -5725,9 +6096,20 @@ const fileManagerStorage = multer.diskStorage({
 });
 const fileManagerUpload = multer({ storage: fileManagerStorage, limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
 
-app.post('/api/file-manager/upload', authMiddleware, fileManagerUpload.array('files', 50), (req, res) => {
+app.post('/api/file-manager/upload', authMiddleware, requireRole('admin', 'operator', 'archive'), fileManagerUpload.array('files', 50), async (req, res) => {
     try {
         const files = req.files || [];
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'FILE_UPLOADED',
+            entityType: 'SYSTEM',
+            entityId: files.map(f => f.filename).join(', '),
+            details: { count: files.length, fileNames: files.map(f => f.filename) },
+            status: 'SUCCESS',
+            req
+        });
         res.json({
             success: true,
             message: `Successfully uploaded ${files.length} file(s)`,
@@ -6051,7 +6433,7 @@ app.put(['/api/ingest/record/presets/default', '/api/recording/presets/default']
     }
 });
 
-app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async (req, res) => {
+app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
     const { app: appName, stream, ...requestedOptions } = req.body || {};
     if (!appName || !stream) return res.status(400).json({ error: 'app and stream are required' });
 
@@ -6059,6 +6441,12 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
     const options = liveIngestSelected
         ? { ...requestedOptions, sourceType: 'ingest', videoDevice: '', audioDevice: '' }
         : requestedOptions;
+
+    options.initiatedBy = {
+        userId: req.user?.id,
+        username: req.user?.sub,
+        role: req.user?.role,
+    };
 
     // Physical capture-device concurrency comes from the signed numeric
     // RECORDING_DEVICES entitlement. Live ingest recordings do not consume it.
@@ -6120,12 +6508,90 @@ app.post('/api/ingest/record/start', authMiddleware, requireActiveLicense, async
             if (activeRecordings.has(recordingKey)) {
                 await finishRecording(recordingKey, 'SIGTERM', false);
             }
+            await logAuditTrail({
+                userId: req.user?.id,
+                username: req.user?.sub,
+                userRole: req.user?.role,
+                action: 'RECORDING_START_FAILED',
+                entityType: 'RECORDING',
+                entityId: recordingKey,
+                details: {
+                    appName: active.appName,
+                    stream: active.stream,
+                    sourceType: options.sourceType,
+                    error: startError.message || active.lastError,
+                },
+                status: 'FAILURE',
+                req
+            });
             return res.status(422).json({
                 error: formatUserFriendlyFfmpegError(startError.message || active.lastError) || 'FFmpeg could not write media from the selected source',
             });
         }
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'RECORDING_STARTED',
+            entityType: 'RECORDING',
+            entityId: recordingKey,
+            details: {
+                appName: active.appName,
+                stream: active.stream,
+                presetId: options.presetId || null,
+                presetName: options.presetName || (options.presetId ? 'Loaded Preset' : null),
+                presetDetails: options.presetDetails || null,
+                sourceType: options.sourceType || 'stream',
+                formats: options.formats || [options.format || 'mp4'],
+                videoCodec: options.videoCodec || 'auto',
+                audioCodec: options.audioCodec || 'auto',
+                encoder: options.encoder || 'auto',
+                resolution: options.resolution || 'source',
+                framerate: options.framerate || 25,
+                videoBitrate: options.videoBitrate || null,
+                audioBitrate: options.audioBitrate || null,
+                audioChannels: options.audioChannels || null,
+                sampleRate: options.sampleRate || null,
+                preset: options.preset || null,
+                pixelFormat: options.pixelFormat || null,
+                rateControl: options.rateControl || null,
+                formatCode: options.formatCode || null,
+                videoInput: options.videoInput || null,
+                rawFormat: options.rawFormat || null,
+                continuous: Boolean(options.continuous),
+                autoRecord: Boolean(options.autoRecord),
+                videoDevice: options.videoDevice || options.rawVideoDevice || null,
+                audioDevice: options.audioDevice || options.rawAudioDevice || null,
+                storageType: options.storageType || 'local',
+                storagePath: options.storagePath || null,
+                recordIds: active.outputs.map(item => item.recordId),
+                outputFiles: active.outputs.map(item => ({
+                    recordId: item.recordId,
+                    format: item.format,
+                    fileName: item.fileName,
+                    filePath: item.filePath
+                }))
+            },
+            status: 'SUCCESS',
+            req
+        });
         res.status(201).json({ success: true, message: 'Recording started', recordIds: active.outputs.map(item => item.recordId), recording: getActiveRecordingPayload(active.appName, active.stream) });
     } catch (error) {
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'RECORDING_START_FAILED',
+            entityType: 'RECORDING',
+            entityId: `${appName}/${stream}`,
+            details: {
+                appName,
+                stream,
+                error: error.message,
+            },
+            status: 'FAILURE',
+            req
+        });
         res.status(409).json({ error: error.message });
     }
 });
@@ -6205,6 +6671,18 @@ const setRecordingPaused = async (req, res, shouldPause) => {
             broadcastDevicePreviewState(activeDevicePreviewState);
         }
 
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: shouldPause ? 'RECORDING_PAUSED' : 'RECORDING_RESUMED',
+            entityType: 'RECORDING',
+            entityId: targetKey,
+            details: { app: data.appName, stream: data.stream },
+            status: 'SUCCESS',
+            req
+        });
+
         return res.json({
             success: true,
             message: shouldPause ? 'Recording paused' : 'Recording resumed',
@@ -6220,15 +6698,15 @@ const setRecordingPaused = async (req, res, shouldPause) => {
     }
 };
 
-app.post('/api/ingest/record/pause', authMiddleware, requireActiveLicense, (req, res) => (
+app.post('/api/ingest/record/pause', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), (req, res) => (
     setRecordingPaused(req, res, true)
 ));
 
-app.post('/api/ingest/record/resume', authMiddleware, requireActiveLicense, (req, res) => (
+app.post('/api/ingest/record/resume', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), (req, res) => (
     setRecordingPaused(req, res, false)
 ));
 
-app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, async (req, res) => {
+app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, requireRole('admin', 'operator'), async (req, res) => {
     const { app: appName, stream, key: requestedKey } = req.body || {};
     let targetKey = requestedKey;
     if (!targetKey && appName && stream) {
@@ -6275,7 +6753,7 @@ app.post('/api/ingest/record/stop', authMiddleware, requireActiveLicense, async 
     });
 });
 
-app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, async (req, res) => {
+app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, requireRole('admin', 'operator', 'archive'), async (req, res) => {
     const { id } = req.params;
     let recording;
     try {
@@ -6352,6 +6830,23 @@ app.delete('/api/ingest/recordings/:id', authMiddleware, requireActiveLicense, a
 
         // 7. Delete database row only after filesystem unlink succeeded
         await db.deleteRecording(id);
+
+        await logAuditTrail({
+            userId: req.user?.id,
+            username: req.user?.sub,
+            userRole: req.user?.role,
+            action: 'RECORDING_DELETED',
+            entityType: 'RECORDING',
+            entityId: String(id),
+            details: {
+                fileName: recording.file_name,
+                filePath: recording.file_path,
+                size: recording.size,
+                format: recording.format,
+            },
+            status: 'SUCCESS',
+            req
+        });
 
         console.log(`[RecordingDelete] completed deletion for recording ${id}`);
         res.json({ success: true, message: 'Recording deleted' });
@@ -8098,12 +8593,56 @@ mediaServer.on('error', (err) => {
 
 const startStorageMonitoring = () => {
     let lastStorageAlertNotification = 0;
+    let lastWarningAuditLogTime = 0;
+    let lastWarningLoggedPercent = 0;
+    let wasInWarningState = false;
+
     setInterval(async () => {
         try {
             const diskStatus = checkStorageDiskCapacity(RECORDINGS_DIR);
             const now = Date.now();
+            const runtimeSettings = getSettings();
+            const warningThreshold = runtimeSettings.storageThresholdPercent
+                ? Math.max(50, runtimeSettings.storageThresholdPercent - 5)
+                : 85;
 
-            // 1. If recordings are active, enforce emergency deadline (<5% free space remaining)
+            // 1. Audit log storage capacity warning when threshold is reached/exceeded
+            if (diskStatus.usePercent >= warningThreshold) {
+                const percentDiff = Math.abs(diskStatus.usePercent - lastWarningLoggedPercent);
+                const timeDiff = now - lastWarningAuditLogTime;
+                // Log on first warning entry, or if usage shifted by >= 1%, or after 30 minutes
+                if (!wasInWarningState || percentDiff >= 1.0 || timeDiff >= 30 * 60 * 1000) {
+                    wasInWarningState = true;
+                    lastWarningAuditLogTime = now;
+                    lastWarningLoggedPercent = diskStatus.usePercent;
+                    const warningMessage = `STORAGE CAPACITY WARNING: Harddisk storage is ${diskStatus.usePercent.toFixed(1)}% full (${diskStatus.usedFmt} / ${diskStatus.sizeFmt}, ${diskStatus.availableFmt} free). Please monitor free storage space and archive or clean up old recordings.`;
+                    console.warn(`[Storage Monitor] ${warningMessage}`);
+                    await logAuditTrail({
+                        username: 'system',
+                        userRole: 'system',
+                        action: 'STORAGE_CAPACITY_WARNING',
+                        entityType: 'SYSTEM',
+                        status: 'WARNING',
+                        details: {
+                            message: warningMessage,
+                            usePercent: Number(diskStatus.usePercent.toFixed(1)),
+                            usedFmt: diskStatus.usedFmt,
+                            sizeFmt: diskStatus.sizeFmt,
+                            availableFmt: diskStatus.availableFmt,
+                            availableBytes: diskStatus.availableBytes,
+                            usedBytes: diskStatus.usedBytes,
+                            sizeBytes: diskStatus.sizeBytes,
+                            mount: diskStatus.mount || '/',
+                            thresholdPercent: warningThreshold,
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                }
+            } else {
+                wasInWarningState = false;
+            }
+
+            // 2. If recordings are active, enforce emergency deadline (<5% free space remaining)
             if (activeRecordings.size > 0) {
                 if (diskStatus.isCritical) { // >= 95% full or < 5% free
                     console.error(`[STORAGE CRITICAL] Storage reached ${diskStatus.usePercent.toFixed(1)}% used (${diskStatus.availableFmt} free). Stopping all active recordings immediately.`);
@@ -8112,6 +8651,22 @@ const startStorageMonitoring = () => {
                         stoppedKeys.push(key);
                         await finishRecording(key, 'SIGTERM', true);
                     }
+                    await logAuditTrail({
+                        username: 'system',
+                        userRole: 'system',
+                        action: 'STORAGE_CRITICAL_STOP',
+                        entityType: 'SYSTEM',
+                        status: 'WARNING',
+                        details: {
+                            message: `CRITICAL STORAGE DEADLINE (<5% free): Disk reached ${diskStatus.usePercent.toFixed(1)}% capacity. All ${stoppedKeys.length} active recording(s) have been safely stopped to prevent disk exhaustion and data corruption.`,
+                            usePercent: Number(diskStatus.usePercent.toFixed(1)),
+                            usedFmt: diskStatus.usedFmt,
+                            sizeFmt: diskStatus.sizeFmt,
+                            availableFmt: diskStatus.availableFmt,
+                            stoppedKeys,
+                            timestamp: new Date().toISOString()
+                        }
+                    });
                     broadcastRecordingEvent('storage_critical_stop', {
                         level: 'critical',
                         message: `CRITICAL STORAGE DEADLINE (<5% free): Disk reached ${diskStatus.usePercent.toFixed(1)}% capacity. All ${stoppedKeys.length} active recording(s) have been safely stopped to prevent disk exhaustion and data corruption.`,

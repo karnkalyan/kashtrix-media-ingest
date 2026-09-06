@@ -67,6 +67,8 @@ import { MuxView } from "./components/MuxView";
 import { sendRealtime, subscribeRealtime } from "./services/realtime";
 import { FiSliders } from "react-icons/fi";
 import TranscodingProfilesView from "./components/TranscodingProfilesView";
+import AuditLogsView from "./components/AuditLogsView";
+import CriticalIncidentModal, { CriticalIncidentData } from "./components/ui/CriticalIncidentModal";
 
 type ActiveView =
   | "dashboard"
@@ -83,6 +85,7 @@ type ActiveView =
   | "events"
   | "system-admin"
   | "users"
+  | "audit-logs"
   | "settings"
   | "license"
   | "account";
@@ -709,6 +712,67 @@ const SettingsView: React.FC<{
             </div>
           </div>
         </div>
+
+        {/* Timezone & Regional Localization */}
+        <div className="rounded-xl border border-[#E8DFF0] bg-white p-4 space-y-3 shadow-xs lg:col-span-2 dark:bg-[#190E28] dark:border-[#311B4E]">
+          <div>
+            <h2 className="font-display text-[14px] font-bold text-[#1B1024] dark:text-white">
+              Timezone & Regional Localization
+            </h2>
+            <p className="mt-0.5 text-[11px] text-[#6F6078] dark:text-[#B9A5CD]">
+              Configure system timezone for security audit logs, incident telemetry, and schedule triggers
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-[#6F6078] dark:text-[#B9A5CD]">
+                Operational Timezone (Default: Asia/Kathmandu UTC+05:45)
+              </label>
+              <select
+                className={inputClass}
+                value={form.timezone || "Asia/Kathmandu"}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, timezone: e.target.value }))
+                }
+              >
+                <option value="Asia/Kathmandu">Asia/Kathmandu (UTC+05:45 - Nepal Standard Time - Default)</option>
+                <option value="Asia/Kolkata">Asia/Kolkata (UTC+05:30 - India Standard Time)</option>
+                <option value="Asia/Dhaka">Asia/Dhaka (UTC+06:00 - Bangladesh Time)</option>
+                <option value="Asia/Dubai">Asia/Dubai (UTC+04:00 - Gulf Standard Time)</option>
+                <option value="Asia/Singapore">Asia/Singapore (UTC+08:00 - Singapore Time)</option>
+                <option value="Europe/London">Europe/London (UTC+00:00 / BST)</option>
+                <option value="UTC">UTC (UTC+00:00 - Universal Coordinated Time)</option>
+                <option value="America/New_York">America/New_York (UTC-05:00 - US Eastern)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (UTC-08:00 - US Pacific)</option>
+              </select>
+              <p className="mt-1 text-[10px] text-[#6F6078] dark:text-[#8E78A6]">
+                Default is set to Kathmandu, Nepal (UTC+05:45). All audit log timestamps and capacity alert records will reflect this timezone.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-3 dark:border-purple-900/40 dark:bg-purple-950/20">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                Live Timezone Preview
+              </div>
+              <div className="mt-1 font-mono text-[13px] font-extrabold text-[#1B1024] dark:text-white">
+                {new Intl.DateTimeFormat('en-GB', {
+                  timeZone: form.timezone || 'Asia/Kathmandu',
+                  year: 'numeric',
+                  month: 'short',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: true,
+                }).format(new Date())}
+              </div>
+              <p className="mt-1 text-[10px] text-purple-800 dark:text-purple-300">
+                Selected zone: {form.timezone || "Asia/Kathmandu"} (UTC+05:45 Nepal Standard Time)
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1150,7 +1214,7 @@ const navItems: NavItem[] = [
     iconColor: "text-[#7C3AED]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]",
     licenseModule: "streamops",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive", "user"],
   },
   {
     id: "channels",
@@ -1160,7 +1224,7 @@ const navItems: NavItem[] = [
     iconColor: "text-[#9333EA]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(147,51,234,0.45)]",
     licenseModule: "channels",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator"],
   },
   {
     id: "vod",
@@ -1170,7 +1234,7 @@ const navItems: NavItem[] = [
     iconColor: "text-[#10B981]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(16,185,129,0.45)]",
     licenseModule: "vod-playout",
-    allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive"],
   },
   {
     id: "mux",
@@ -1182,7 +1246,7 @@ const navItems: NavItem[] = [
     badge: "MPTS",
     badgeColor: "bg-[#8B5CF6]",
     licenseModule: "mpts-mux",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator"],
   },
   {
     id: "profiles",
@@ -1194,7 +1258,7 @@ const navItems: NavItem[] = [
     badge: "DVB",
     badgeColor: "bg-[#6366F1]",
     licenseModule: "transcode",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator"],
   },
   {
     id: "transcode",
@@ -1206,7 +1270,7 @@ const navItems: NavItem[] = [
     badge: "GPU",
     badgeColor: "bg-[#D946EF]",
     licenseModule: "transcode",
-    allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive"],
   },
   {
     id: "ingest",
@@ -1218,7 +1282,7 @@ const navItems: NavItem[] = [
     badge: "REC",
     badgeColor: "bg-[#E11D48]",
     licenseModule: "ingest-server",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator"],
   },
   {
     id: "live-server",
@@ -1230,7 +1294,7 @@ const navItems: NavItem[] = [
     badge: "LIVE",
     badgeColor: "bg-[#059669]",
     licenseModule: "live-server",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator"],
   },
   {
     id: "recordings",
@@ -1240,7 +1304,7 @@ const navItems: NavItem[] = [
     iconColor: "text-[#EA580C]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]",
     licenseModule: "ingest-server",
-    allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive", "user"],
   },
   {
     id: "file-manager",
@@ -1248,10 +1312,10 @@ const navItems: NavItem[] = [
     icon: FiFolder,
     group: "Media & Archive",
     iconColor: "text-[#0D9488]",
-    iconShadow: "drop-shadow-[0_4px_6px_rgba(13,148,136,0.45)]",
+    iconShadow: "drop-shadow-[0_4px_6px_rgba(139,92,246,0.45)]",
     badge: "FILES",
     badgeColor: "bg-[#0D9488]",
-    allowedRoles: ["superadmin", "admin", "user", "operator", "archive"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive"],
   },
   {
     id: "monitor",
@@ -1260,7 +1324,7 @@ const navItems: NavItem[] = [
     group: "Observability",
     iconColor: "text-[#0284C7]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(2,132,199,0.45)]",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive", "user"],
   },
   {
     id: "events",
@@ -1269,7 +1333,7 @@ const navItems: NavItem[] = [
     group: "Observability",
     iconColor: "text-[#EA580C]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(234,88,12,0.45)]",
-    allowedRoles: ["superadmin", "admin", "user", "operator"],
+    allowedRoles: ["superadmin", "admin", "operator", "archive", "user"],
   },
   {
     id: "system-admin",
@@ -1289,6 +1353,17 @@ const navItems: NavItem[] = [
     group: "System & Admin",
     iconColor: "text-[#7C3AED]",
     iconShadow: "drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]",
+    allowedRoles: ["superadmin", "admin"],
+  },
+  {
+    id: "audit-logs",
+    label: "Security Audit Logs",
+    icon: FiShield,
+    group: "System & Admin",
+    iconColor: "text-[#7C3AED]",
+    iconShadow: "drop-shadow-[0_4px_6px_rgba(124,58,237,0.45)]",
+    badge: "ROOT",
+    badgeColor: "bg-[#7C3AED]",
     allowedRoles: ["superadmin", "admin"],
   },
   {
@@ -1346,14 +1421,16 @@ const Sidebar: React.FC<{
   onMobileClose,
 }) => {
   const visibleItems = useMemo(() => {
+    const effectiveRole = (userRole || "user").toLowerCase().trim();
     return navItems.filter((item) => {
       // Role-based filtering: if allowedRoles is defined, user's role must be in the list
       if (
         item.allowedRoles &&
-        userRole &&
-        !item.allowedRoles.includes(userRole)
-      )
+        effectiveRole !== "superadmin" &&
+        !item.allowedRoles.map((r) => r.toLowerCase().trim()).includes(effectiveRole)
+      ) {
         return false;
+      }
       // Operational entitlements apply to every role, including administrators.
       return hasLicenseModule(license, item.licenseModule);
     });
@@ -2116,6 +2193,7 @@ const FloatingTelemetryHud: React.FC<{
 const TopHeader: React.FC<{
   activeView: ActiveView;
   username?: string;
+  userRole?: string;
   customerName?: string;
   licenseStatus?: string;
   saveStatus: string;
@@ -2129,6 +2207,7 @@ const TopHeader: React.FC<{
 }> = ({
   activeView,
   username,
+  userRole,
   customerName,
   licenseStatus,
   saveStatus,
@@ -2156,6 +2235,7 @@ const TopHeader: React.FC<{
     events: "Events & Alerts",
     "system-admin": "System Administration",
     users: "User Management",
+    "audit-logs": "Security Audit Logs",
     settings: "Settings",
     license: "License",
     account: "Account",
@@ -2274,8 +2354,23 @@ const TopHeader: React.FC<{
               {username?.charAt(0).toUpperCase() || "U"}
             </span>
             <span className="hidden text-[12px] font-semibold text-[#1B1024] dark:text-white sm:block">
-              {username || "Admin"}
+              {username || "User"}
             </span>
+            {userRole && (
+              <span className={`hidden sm:inline-flex items-center rounded-md px-2 py-0.5 text-[9px] font-extrabold tracking-wider uppercase border shadow-2xs ${
+                userRole.toLowerCase() === 'superadmin'
+                  ? 'border-purple-300 bg-purple-100 text-purple-900 dark:border-purple-700 dark:bg-purple-950 dark:text-purple-200'
+                  : userRole.toLowerCase() === 'admin'
+                  ? 'border-indigo-300 bg-indigo-100 text-indigo-900 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200'
+                  : userRole.toLowerCase() === 'operator'
+                  ? 'border-blue-300 bg-blue-100 text-blue-900 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200'
+                  : userRole.toLowerCase() === 'archive'
+                  ? 'border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'
+                  : 'border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {userRole.toLowerCase() === 'user' ? 'VIEWER' : userRole.toUpperCase()}
+              </span>
+            )}
           </button>
 
           {userMenuOpen && (
@@ -2318,9 +2413,11 @@ const getInitialActiveView = (): ActiveView => {
       "monitor",
       "ingest",
       "recordings",
+      "file-manager",
       "events",
       "system-admin",
       "users",
+      "audit-logs",
       "settings",
       "license",
       "account",
@@ -2640,6 +2737,59 @@ const App: React.FC = () => {
   const userRole = (engine.auth.user?.role || "").toLowerCase().trim();
   const isSuperadmin = userRole === "superadmin";
 
+  const [criticalIncident, setCriticalIncident] = useState<CriticalIncidentData | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeRealtime((msg) => {
+      if (!msg) return;
+
+      if (msg.type === 'storage_critical_stop') {
+        const payload = msg.payload || {};
+        setCriticalIncident({
+          title: 'EMERGENCY SHUTDOWN: DISK FULL (<5% FREE)',
+          incidentType: 'DISK_FULL',
+          message: payload.message || 'Disk storage reached critical capacity threshold (<5% free). Active recordings were stopped immediately to prevent filesystem corruption.',
+          reason: 'DISK_CAPACITY_CRITICAL_HALT',
+          stream: Array.isArray(payload.stoppedKeys) ? payload.stoppedKeys.join(', ') : (payload.stoppedKeys || 'All active streams'),
+          key: Array.isArray(payload.stoppedKeys) ? payload.stoppedKeys.join(', ') : (payload.stoppedKeys || 'All active streams'),
+          storage: payload.storage || {
+            usePercent: 95,
+            availableFmt: '< 5% free',
+            thresholdPercent: 90,
+          },
+          details: payload,
+          timestamp: new Date().toISOString(),
+        });
+      } else if (msg.type === 'recording_auto_stopped') {
+        const payload = msg.payload || {};
+        setCriticalIncident({
+          title: 'DECKLINK HARDWARE BUFFER OVERRUN — RECORDING AUTO-STOPPED',
+          incidentType: 'BUFFER_OVERRUN',
+          message: payload.message || 'Continuous DeckLink buffer overruns detected. Recording automatically halted safely to prevent corrupted frames.',
+          reason: payload.reason || 'DECKLINK_BUFFER_OVERRUN_AUTO_STOP',
+          app: payload.app || 'device',
+          stream: payload.stream || payload.key || 'DeckLink 4K Extreme',
+          key: payload.key || payload.stream || 'DeckLink 4K Extreme',
+          details: payload,
+          timestamp: new Date().toISOString(),
+        });
+      } else if (msg.type === 'recording_warning') {
+        const payload = msg.payload || {};
+        toast(payload.message || 'Hardware buffer overrun warning', {
+          icon: '⚠️',
+          duration: 6000,
+        });
+      } else if (msg.type === 'recording_error') {
+        const payload = msg.payload || {};
+        toast.error(payload.message || 'Recording error occurred', {
+          duration: 6000,
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const setActiveView = (view: ActiveView) => {
     setActiveViewState(view);
     try {
@@ -2669,6 +2819,7 @@ const App: React.FC = () => {
         "events",
         "system-admin",
         "users",
+        "audit-logs",
         "settings",
         "license",
         "account",
@@ -2723,15 +2874,53 @@ const App: React.FC = () => {
   ]);
 
   useEffect(() => {
+    const unsubscribe = subscribeRealtime((msg: any) => {
+      if (msg?.type === "recording_warning") {
+        toast(
+          msg.payload?.message ||
+            "DeckLink input buffer overrun detected! Storage write speed or PCIe bandwidth is dropping.",
+          {
+            icon: "⚠️",
+            duration: 8000,
+            style: {
+              background: "#FFFBEB",
+              color: "#92400E",
+              border: "1px solid #FCD34D",
+              fontWeight: 600,
+              fontSize: "12px",
+            },
+          }
+        );
+      } else if (msg?.type === "recording_auto_stopped") {
+        toast.error(
+          msg.payload?.message ||
+            "Recording automatically stopped after 25+ seconds of continuous hardware buffer overruns to protect file integrity.",
+          {
+            duration: 12000,
+            style: {
+              background: "#FEF2F2",
+              color: "#991B1B",
+              border: "1px solid #FCA5A5",
+              fontWeight: 700,
+              fontSize: "12px",
+            },
+          }
+        );
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (!engine.auth.token || !engine.auth.user) return;
-    const role = (engine.auth.user?.role || "").toLowerCase().trim();
+    const role = (engine.auth.user?.role || "user").toLowerCase().trim();
     const item = navItems.find((navItem) => navItem.id === activeView);
     const defaultView = "dashboard";
 
     // Role-based view guard: if the current nav item has allowedRoles and user's role is not in it, redirect
     if (
       item?.allowedRoles &&
-      role &&
+      role !== "superadmin" &&
       !item.allowedRoles.map((r) => r.toLowerCase().trim()).includes(role)
     ) {
       setActiveView(defaultView as ActiveView);
@@ -2772,6 +2961,20 @@ const App: React.FC = () => {
     >
       <Toaster position="top-right" />
 
+      <CriticalIncidentModal
+        isOpen={Boolean(criticalIncident)}
+        incident={criticalIncident}
+        onClose={() => setCriticalIncident(null)}
+        onNavigateToAuditLogs={() => {
+          setCriticalIncident(null);
+          setActiveView("audit-logs");
+        }}
+        onNavigateToRecordings={() => {
+          setCriticalIncident(null);
+          setActiveView("recordings");
+        }}
+      />
+
       <Sidebar
         activeView={activeView}
         setActiveView={setActiveView}
@@ -2791,6 +2994,7 @@ const App: React.FC = () => {
         <TopHeader
           activeView={activeView}
           username={engine.auth.user?.username}
+          userRole={engine.auth.user?.role}
           customerName={engine.auth.license.customerName}
           licenseStatus={engine.auth.license.status}
           saveStatus={engine.saveStatus}
@@ -2900,6 +3104,7 @@ const App: React.FC = () => {
             <KashtrixDashboard
               onNavigate={(view) => setActiveView(view as ActiveView)}
               mediaPort={engine.state.settings.mediaPort}
+              userRole={engine.auth.user?.role}
             />
           )}
           {activeView === "channels" && (
@@ -2941,6 +3146,7 @@ const App: React.FC = () => {
               licenseStatus={engine.auth.license.status}
               mode="recording"
               api={engine.api}
+              userRole={engine.auth.user?.role}
             />
           )}
           {activeView === "live-server" && (
@@ -2959,6 +3165,7 @@ const App: React.FC = () => {
               licenseStatus={engine.auth.license.status}
               mode="live"
               api={engine.api}
+              userRole={engine.auth.user?.role}
             />
           )}
           {activeView === "vod" && (
@@ -3009,6 +3216,7 @@ const App: React.FC = () => {
               realtimeRecordings={engine.recordings}
               settings={engine.state.settings}
               deleteRecording={engine.deleteRecording}
+              userRole={engine.auth.user?.role}
               onOpenTranscodeStudio={(file) => {
                 if (file && file.name) {
                   setPreSelectedTranscodeFile(file);
@@ -3020,6 +3228,7 @@ const App: React.FC = () => {
           {activeView === "file-manager" && (
             <FileManagerView
               token={engine.auth.token}
+              userRole={engine.auth.user?.role}
               onNavigateToTranscode={(file) => {
                 setPreSelectedTranscodeFile({ name: file.name, path: file.path, type: "recording" });
                 setActiveView("transcode");
@@ -3038,6 +3247,12 @@ const App: React.FC = () => {
               currentUser={engine.auth.user?.username}
               isSuperadmin={isSuperadmin}
               currentUserRole={engine.auth.user?.role}
+            />
+          )}
+          {activeView === "audit-logs" && (
+            <AuditLogsView
+              currentUserRole={engine.auth.user?.role}
+              timezone={engine.state.settings.timezone || "Asia/Kathmandu"}
             />
           )}
           {activeView === "settings" && (
