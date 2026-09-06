@@ -6510,7 +6510,29 @@ const startActiveRecording = async ({
     initiatedBy = { username: 'tcp-client', role: 'admin' },
     req = null
 } = {}) => {
-    if (!appName || !stream) return { success: false, statusCode: 400, error: 'app and stream are required' };
+    // Auto-detect active stream or preview device if not explicitly provided
+    if (!appName || !stream) {
+        const liveKeys = Array.from(activeSessions.keys());
+        if (liveKeys.length > 0) {
+            const [firstApp, firstStream] = liveKeys[0].split('/');
+            appName = firstApp;
+            stream = firstStream;
+        } else if (activeDevicePreviewState?.active && activeDevicePreviewState?.videoDevice) {
+            appName = 'device';
+            stream = activeDevicePreviewState.videoDevice;
+            requestedOptions.sourceType = 'device';
+            requestedOptions.videoDevice = activeDevicePreviewState.videoDevice;
+            requestedOptions.audioDevice = activeDevicePreviewState.audioDevice;
+        }
+    }
+
+    if (!appName || !stream) {
+        return {
+            success: false,
+            statusCode: 400,
+            error: 'No active ingest stream or device preview detected. Syntax: START <app> <stream> [format]',
+        };
+    }
 
     const liveIngestSelected = activeSessions.has(getRecordingKey(appName, stream));
     const options = liveIngestSelected

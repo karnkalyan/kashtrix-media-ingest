@@ -310,13 +310,35 @@ class KashtrixTcpCommandServer {
             }
 
             case 'START': {
-                if (args.length < 2) {
-                    this.safeWrite(socket, 'ERROR: Syntax: START <app> <stream> [format]\r\n');
-                    break;
+                let appName;
+                let streamName;
+                let format = 'mp4';
+
+                if (args.length === 0) {
+                    // Bare START: auto-detect from active ingest sessions or preview device
+                } else if (args.length === 1) {
+                    const arg = args[0];
+                    if (arg.includes('/')) {
+                        const [a, s] = arg.split('/');
+                        appName = a.toLowerCase();
+                        streamName = s;
+                    } else if (arg.toLowerCase() === 'device') {
+                        appName = 'device';
+                    } else {
+                        appName = 'live';
+                        streamName = arg;
+                    }
+                } else {
+                    appName = args[0].toLowerCase();
+                    const knownFormats = ['mp4', 'mkv', 'flv', 'mov', 'ts'];
+                    const lastArg = args[args.length - 1].toLowerCase();
+                    if (knownFormats.includes(lastArg) && args.length > 2) {
+                        format = lastArg;
+                        streamName = args.slice(1, -1).join(' ');
+                    } else {
+                        streamName = args.slice(1).join(' ');
+                    }
                 }
-                const appName = args[0].toLowerCase();
-                const streamName = args[1];
-                const format = (args[2] || 'mp4').toLowerCase();
 
                 const options = {
                     formats: [format],
@@ -334,7 +356,7 @@ class KashtrixTcpCommandServer {
                 });
 
                 if (result.success) {
-                    const resp = `OK: RECORDING_STARTED key=${result.key || `${appName}/${streamName}`}\r\n`;
+                    const resp = `OK: RECORDING_STARTED key=${result.key || `${appName || 'live'}/${streamName || 'stream'}`}\r\n`;
                     this.logger.log(`[TCP Command Server] ${resp.trim()}`);
                     this.safeWrite(socket, resp);
                 } else {
